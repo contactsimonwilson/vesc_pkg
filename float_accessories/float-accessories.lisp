@@ -11,10 +11,10 @@
 
 @const-start
 ; Debug flag for testing
-(def debug 0)
+(def debug 1)
 
 ; Settings version
-(def config-version 474i32)
+(def config-version 463i32)
 ; Define an alist to store the variable values
 (def config-alist '())
 ; Persistent settings
@@ -24,9 +24,9 @@
     ; Features enabled
     (led-enable                . (1  b 1))   ; Basic version works on previous VESC firmware
     (bms-enable                . (2  b 0))   ; Stock OneWheel BMS to Smart VESC BMS.
-    (pubmote-enable            . (3  b 0))   ; VESC 6.5 beta only. Also requires code-server
+    (pubmote-enable            . (3  b 1))   ; VESC 6.5 beta only. Also requires code-server
     ; VESC configuration
-    (can-id                    . (4  i 70))  ; if can-id < 0 then it will scan for one and pick the first. Takes awhile on startup
+    (can-id                    . (4  i 98))  ; if can-id < 0 then it will scan for one and pick the first. Takes awhile on startup
     (cells-series              . (5  i 18))  ;Dynamic if code-server-enable
     (led-highbeam-on           . (6  b 1))
     (led-type                  . (7  i 3))
@@ -62,7 +62,7 @@
     (esp-now-remote-mac-c      . (37 i 230))
     (esp-now-remote-mac-d      . (38 i 80))
     (esp-now-remote-mac-e      . (39 i 168))
-    (esp-now-remote-mac-f      . (40 i 12))
+    (esp-now-remote-mac-f      . (40 i 56))
 ))
 ;GLOBAL_VARS_DONT_TOUCH
 (def led-on 1)
@@ -88,7 +88,7 @@
 (def idle-rpm 10.0)
 (def led-status-duty-rpm 250.0)
 (def led-delay 0.1);delay between LED stuff. TODO: Maybe use timer instead and sleep dynamically instead of being tied to clock?
-
+(def pubmote-delay 1)
 ;Initialize the LED strips
 (defun init-leds () {
     (if (>= led-status-pin 0){
@@ -231,25 +231,7 @@
     })
 })
 
-; Update the front and rear LED strips based on the current direction
-(defun update-direction-leds (direction led-forward-color led-backward-color) {
-    (var rear-color (if (< direction 0) led-forward-color led-backward-color))
-    (var front-color (if (< direction 0) led-backward-color led-forward-color))
-    (var front-color-laserbeam (if (< direction 0) BLACK WHITE))
-    (var rear-color-laserbeam (if (< direction 0) WHITE BLACK))
-    (if (= led-front-has-laserbeam 1) {
-        (setix led-front-color 0 (if (= led-highbeam-on 1) front-color-laserbeam BLACK))
-    })
-    (looprange led-index led-front-has-laserbeam (- led-front-num led-front-has-laserbeam) {
-        (setix led-front-color led-index front-color)
-    })
-    (if (= led-rear-has-laserbeam 1) {
-        (setix led-rear-color 0 (if (= led-highbeam-on 1) rear-color-laserbeam BLACK))
-    })
-    (looprange led-index led-rear-has-laserbeam (- led-rear-num led-rear-has-laserbeam) {
-        (setix led-rear-color led-index rear-color)
-    })
-})
+
 
 (defun swap-rg (color-list) {
     (looprange led-index 0 (length color-list) {
@@ -337,27 +319,7 @@
         })
     })
 })
-
-;Pubmote loop
-(defun pubmote-loop () {
-    (loopwhile-thd 100 t {
-        (var data (bufcreate 20))
-        (esp-now-send esp-now-remote-mac data)
-        ;TODO add delay
-        ;battery, duty, speed, voltage, footpads, motor and controler temp, trip, remaining miles.
-        ;(print "Responded")
-        (free data)
-    })
-})
-
-(defun init-pubmote () {
-    (esp-now-start)
-    (wifi-set-chan 1)
-    (esp-now-add-peer esp-now-remote-mac) ; Add broadcast address as peer
-    ;(print (list "starting" (get-mac-addr) (wifi-get-chan)))
-    (event-enable 'event-esp-now-rx)
-})
-
+@const-end
 ; Retrieve VESC values from CAN bus
 (defun get-vesc-values () {
     (setq rpm (canget-rpm can-id))
@@ -508,7 +470,7 @@
 )
 
 (defun mklist (len val) (map (fn (x) val) (range len)))
-@const-end
+
 
 ; Main
 (defun main () {
@@ -521,6 +483,9 @@
     (load-config)
     
     ;TODO: Read in all settings
+    (def led-enable (get-config 'led-enable))
+    (def bms-enable (get-config 'bms-enable))
+    (def pubmote-enable (get-config 'pubmote-enable))
     (def can-id (init-can (get-config 'can-id)))
     (def esp-now-remote-mac (list (get-config 'esp-now-remote-mac-a) (get-config 'esp-now-remote-mac-b) (get-config 'esp-now-remote-mac-c) (get-config 'esp-now-remote-mac-d) (get-config 'esp-now-remote-mac-e) (get-config 'esp-now-remote-mac-f)))
     (def cells-series (get-config 'cells-series)) 
@@ -571,21 +536,79 @@
         (import "pkg@://vesc_packages/lib_code_server/code_server.vescpkg" 'code-server)
         (read-eval-program code-server)
         (setq data-rx-enable (get-vesc-config))
-        (if (and (= (get-config 'pubmote-enable) 1) (= data-rx-enable 1)) {
+        (if (and (= pubmote-enable 1) (= data-rx-enable 1)) {
             (init-pubmote)
             (pubmote-loop)
         })
     })
-    (if (= (get-config 'bms-enable) 1){
+    (if (= bms-enable 1){
         (init-bms)
         (if (>= bms-rs485-a-pin 0){
             (bms-loop)
         })
     })
-    (if (= (get-config 'led-enable) 1){
+    (if (= led-enable 1){
         (init-leds)
-        
         (led-loop)
+    })
+})
+(defun init-pubmote () {
+    (esp-now-start)
+    (wifi-set-chan 1)
+    (esp-now-add-peer esp-now-remote-mac) ;
+    ;(print (list "starting" (get-mac-addr) (wifi-get-chan)))
+    ;(print esp-now-remote-mac)
+    (event-enable 'event-esp-now-rx)
+})
+
+; Update the front and rear LED strips based on the current direction
+(defun update-direction-leds (direction led-forward-color led-backward-color) {
+    (var rear-color (if (< direction 0) led-forward-color led-backward-color))
+    (var front-color (if (< direction 0) led-backward-color led-forward-color))
+    (var front-color-laserbeam (if (< direction 0) BLACK WHITE))
+    (var rear-color-laserbeam (if (< direction 0) WHITE BLACK))
+    (if (= led-front-has-laserbeam 1) {
+        (setix led-front-color 0 (if (= led-highbeam-on 1) front-color-laserbeam BLACK))
+    })
+    (looprange led-index led-front-has-laserbeam (- led-front-num led-front-has-laserbeam) {
+        (setix led-front-color led-index front-color)
+    })
+    (if (= led-rear-has-laserbeam 1) {
+        (setix led-rear-color 0 (if (= led-highbeam-on 1) rear-color-laserbeam BLACK))
+    })
+    (looprange led-index led-rear-has-laserbeam (- led-rear-num led-rear-has-laserbeam) {
+        (setix led-rear-color led-index rear-color)
+    })
+})
+;Pubmote loop
+(defun pubmote-loop () {
+    (loopwhile-thd 50 t {
+        (if (= led-enable 0){
+            (float-cmd can-id (list (assoc float-cmds 'FLOAT_COMMAND_GET_ALLDATA) 3))
+        })
+        (var data (bufcreate 28))
+        (bufset-u8 data 0 69) ; Mode
+        (bufset-u8 data 1 fault-code)
+        (bufset-i16 data 2 (floor (* pitch-angle 10))) ; Store pitch-angle with 1 decimal place precision
+        (bufset-i16 data 4 (floor (* roll-angle 10))) ; Store roll-angle with 1 decimal place precision
+        (bufset-u8 data 6 state)
+        (bufset-u8 data 7 switch-state)
+        (bufset-i16 data 8 (floor (* input-voltage-filtered 10))) ; Store input-voltage-filtered with 1 decimal place precision
+        (bufset-i16 data 10 (floor rpm))
+        (bufset-i16 data 12 (floor (* speed 10))) ; Store speed with 1 decimal place precision
+        (bufset-i16 data 14 (floor (* tot-current 10))) ; Store tot-current with 1 decimal place precision
+        (bufset-u8 data 16 (floor (* (+ duty-cycle-now 0.5) 100))) ; Store duty-cycle-now as percentage (0-100)
+        (bufset-f32 data 17 distance-abs 'little-endian)
+        (bufset-u8 data 21 (floor (* fet-temp-filtered 2))) ; Store fet-temp-filtered with half-precision
+        (bufset-u8 data 22 (floor (* motor-temp-filtered 2))) ; Store motor-temp-filtered with half-precision
+        (bufset-u32 data 23 odometer)
+        (bufset-u8 data 27 (floor (* battery-level 2))) ; Store battery-level with half-precision
+        (esp-now-send esp-now-remote-mac data)
+        ;TODO add delay
+        (sleep pubmote-delay)
+        ;battery, duty, speed, voltage, footpads, motor and controler temp, trip, remaining miles.
+        ;(print "Responded")
+        (free data)
     })
 })
 
@@ -771,9 +794,10 @@
                             (setq tot-current (/ (to-float (bufget-i16 data 28)) 10))
                             (setq duty-cycle-now (- (/ (bufget-u8 data 30) 100.0) 0.5))
                             (if (>= mode 2) {
-                                (setq distance-abs (to-float (bufget-i32 data 34)))
-                                (setq fet-temp-filtered (/ (bufget-u8 data 36) 2.0))
-                                (setq motor-temp-filtered (/ (bufget-u8 data 38) 2.0))
+                                (setq distance-abs (bufget-f32 data 34))
+                                (setq fet-temp-filtered (/ (bufget-u8 data 38) 2.0))
+                                (setq motor-temp-filtered (/ (bufget-u8 data 39) 2.0))
+                              
                             })
                             (if (>= mode 3) {
                                 (setq odometer (bufget-u32 data 41)) ;meters
@@ -965,7 +989,7 @@
     (var bt-c (bufget-u8 data 8))
     (var bt-z (bufget-u8 data 9))
     (var is-rev (bufget-u8 data 10))
-    (rcode-run 25 0.5 (list 'set-remote-state jsy jsx bt-c bt-z is-rev))
+    (rcode-run-noret can-id `(set-remote-state ,jsy ,jsx 0 0 0))
 })
 
 ;CONSTANTS
