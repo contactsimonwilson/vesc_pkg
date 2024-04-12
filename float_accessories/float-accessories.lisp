@@ -989,7 +989,7 @@
     (var bt-c (bufget-u8 data 8))
     (var bt-z (bufget-u8 data 9))
     (var is-rev (bufget-u8 data 10))
-    (rcode-run-noret can-id `(set-remote-state ,jsy ,jsx 0 0 0))
+    (rcode-run-noret can-id `(set-remote-state ,jsy ,jsx ,bt-c ,bt-z ,is-rev))
 })
 
 ;CONSTANTS
