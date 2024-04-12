@@ -14,7 +14,7 @@
 (def debug 1)
 
 ; Settings version
-(def config-version 469i32)
+(def config-version 468i32)
 ; Define an alist to store the variable values
 (def config-alist '())
 ; Persistent settings
@@ -22,7 +22,7 @@
 (def eeprom-addrs '(
     (ver-code                  . (0  i config-version))
     ; Features enabled
-    (led-enable                . (1  b 1))   ; Basic version works on previous VESC firmware
+    (led-enable                . (1  b 0))   ; Basic version works on previous VESC firmware
     (bms-enable                . (2  b 0))   ; Stock OneWheel BMS to Smart VESC BMS.
     (pubmote-enable            . (3  b 1))   ; VESC 6.5 beta only. Also requires code-server
     ; VESC configuration
@@ -89,6 +89,7 @@
 (def led-status-duty-rpm 250.0)
 (def led-delay 0.1);delay between LED stuff. TODO: Maybe use timer instead and sleep dynamically instead of being tied to clock?
 (def pubmote-delay 1)
+(def startup-delay 5)
 ;Initialize the LED strips
 (defun init-leds () {
     (if (>= led-status-pin 0){
@@ -529,6 +530,8 @@
     (event-register-handler (spawn event-handler))
     (event-enable 'event-data-rx)
     
+    ;gotta wait for vesc to boot
+    (sleep startup-delay)
     ;check if features are supported
     (def fw-num (+ (first (sysinfo 'fw-ver)) (* (second (sysinfo 'fw-ver)) 0.01)))
     ;todo better error handeling
@@ -786,8 +789,8 @@
                             (setq pitch-angle (/ (to-float (bufget-i16 data 5)) 10))
                             ;(print pitch-angle)
                             (setq roll-angle (/ (to-float (bufget-i16 data 7)) 10))
-                            (setq state (bufget-u8 data 10))
-                            (setq switch-state (bufget-u8 data 11))
+                            (setq state (bufget-u8 data 9))
+                            (setq switch-state (bufget-u8 data 10))
                             (setq input-voltage-filtered (/ (to-float (bufget-i16 data 22)) 10))
                             (setq rpm (to-float(bufget-i16 data 24)))
                             (setq speed (/ (to-float (bufget-i16 data 26)) 10))
