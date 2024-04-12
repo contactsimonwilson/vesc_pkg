@@ -14,7 +14,7 @@
 (def debug 1)
 
 ; Settings version
-(def config-version 463i32)
+(def config-version 469i32)
 ; Define an alist to store the variable values
 (def config-alist '())
 ; Persistent settings
@@ -989,6 +989,7 @@
     (var bt-c (bufget-u8 data 8))
     (var bt-z (bufget-u8 data 9))
     (var is-rev (bufget-u8 data 10))
+    ;(print (list jsy jsx bt-c bt-z is-rev))
     (rcode-run-noret can-id `(set-remote-state ,jsy ,jsx ,bt-c ,bt-z ,is-rev))
 })
 
