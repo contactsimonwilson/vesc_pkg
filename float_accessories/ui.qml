@@ -106,17 +106,17 @@ Item {
                 ColumnLayout {
                     anchors.fill: parent
                     spacing: 10
+                    
+                    CheckBox {
+                        id: ledOn
+                        text: "LED On"
+                        checked: true
+                    }
 
                     CheckBox {
                         id: ledHighbeamOn
                         text: "LED Highbeam On"
                         checked: true
-                    }
-
-                    ComboBox {
-                        id: ledType
-                        model: ["WS2811", "WS2812", "SK6812", "WS2813"]
-                        currentIndex: 3
                     }
 
                     Text {
@@ -586,7 +586,7 @@ function makeArgStr() {
     canId.value + " " +
     cellsSeries.value + " " +
     ledHighbeamOn.checked * 1 + " " +
-    ledType.currentIndex + " " +
+    ledOn.checked + " " +
     ledMode.value + " " +
     ledModeIdle.value + " " +
     ledModeStatus.value + " " +
@@ -640,7 +640,7 @@ function makeArgStr() {
                 canId.value = Number(tokens[5])
                 cellsSeries.value = Number(tokens[6])
                 ledHighbeamOn.checked = Number(tokens[7])
-                ledType.currentIndex = Number(tokens[8])
+                ledOn.checked = Number(tokens[8])
                 ledMode.value = Number(tokens[9])
                 ledModeIdle.value = Number(tokens[10])
                 ledModeStatus.value = Number(tokens[11])

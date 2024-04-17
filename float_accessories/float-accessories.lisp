@@ -11,10 +11,10 @@
 
 @const-start
 ; Debug flag for testing
-(def debug 1)
+(def debug 0)
 
 ; Settings version
-(def config-version 468i32)
+(def config-version 420i32)
 ; Define an alist to store the variable values
 (def config-alist '())
 ; Persistent settings
@@ -22,14 +22,14 @@
 (def eeprom-addrs '(
     (ver-code                  . (0  i config-version))
     ; Features enabled
-    (led-enable                . (1  b 0))   ; Basic version works on previous VESC firmware
+    (led-enable                . (1  b 1))   ; Basic version works on previous VESC firmware
     (bms-enable                . (2  b 0))   ; Stock OneWheel BMS to Smart VESC BMS.
-    (pubmote-enable            . (3  b 1))   ; VESC 6.5 beta only. Also requires code-server
+    (pubmote-enable            . (3  b 0))   ; VESC 6.5 beta only. Also requires code-server
     ; VESC configuration
-    (can-id                    . (4  i 98))  ; if can-id < 0 then it will scan for one and pick the first. Takes awhile on startup
+    (can-id                    . (4  i -1))  ; if can-id < 0 then it will scan for one and pick the first. Takes awhile on startup
     (cells-series              . (5  i 18))  ;Dynamic if code-server-enable
     (led-highbeam-on           . (6  b 1))
-    (led-type                  . (7  i 3))
+    (led-on                    . (7  i 1))
     (led-mode                  . (8  i 0))
     (led-mode-idle             . (9  i 5))
     (led-mode-status           . (10 i 0))
@@ -65,7 +65,7 @@
     (esp-now-remote-mac-f      . (40 i 56))
 ))
 ;GLOBAL_VARS_DONT_TOUCH
-(def led-on 1)
+(def led-type 3)
 (def data-rx-enable 0) ; VESC 6.5 beta only. Needed for communication to float package for advanced LED support and pubmote telemetry.
 (def fault-code -1)
 (def pitch-angle -1)
@@ -340,12 +340,18 @@
     )
 })
 
-(defunret init-can (can-id) { ;might have race condition with xlite D:
+(defunret init-can (can-id) { ;TODO: might have race condition with xlite D:
     (if (< can-id 0) {
         (var can-devices (can-scan))
         (loopwhile (<= (length can-devices) 0) {
             (setq can-devices (can-scan))
         })
+        ;(if (= (length can-devices 2) ){
+        ;    (var bms-can-id (get-bms-val 'bms-can-id)) ; CAN ID of BMS
+        ;    (loopforeach can-index can-devices {
+                ;
+        ;    })
+        ;})
         (setq can-id (first (can-scan)))
     })
     (return can-id)
@@ -492,7 +498,7 @@
     (def cells-series (get-config 'cells-series)) 
     ; LED Configuration
     (def led-highbeam-on (get-config 'led-highbeam-on)) 
-    (def led-type (get-config 'led-type)) 
+    (def led-on (get-config 'led-on))
     (def led-mode (get-config 'led-mode)) 
     (def led-mode-idle (get-config 'led-mode-idle)) 
     (def led-mode-status (get-config 'led-mode-status)) 
@@ -640,14 +646,14 @@
   (send-data config-string)
 })
 
-(defun recv-config (led-enable bms-enable pubmote-enable can-id cells-series led-highbeam-on led-type led-mode led-mode-idle led-mode-status led-mode-startup led-mall-grab-enabled led-brake-light-enabled idle-timeout idle-timeout-shutoff led-brightness led-brightness-idle led-brightness-status led-status-pin led-status-num led-status-type led-status-reversed led-front-pin led-front-num led-front-type led-front-reversed led-front-has-laserbeam led-rear-pin led-rear-num led-rear-type led-rear-reversed led-rear-has-laserbeam bms-rs485-a-pin bms-wakeup-pin esp-now-remote-mac-a esp-now-remote-mac-b esp-now-remote-mac-c esp-now-remote-mac-d esp-now-remote-mac-e esp-now-remote-mac-f) {
+(defun recv-config (led-enable bms-enable pubmote-enable can-id cells-series led-highbeam-on led-on led-mode led-mode-idle led-mode-status led-mode-startup led-mall-grab-enabled led-brake-light-enabled idle-timeout idle-timeout-shutoff led-brightness led-brightness-idle led-brightness-status led-status-pin led-status-num led-status-type led-status-reversed led-front-pin led-front-num led-front-type led-front-reversed led-front-has-laserbeam led-rear-pin led-rear-num led-rear-type led-rear-reversed led-rear-has-laserbeam bms-rs485-a-pin bms-wakeup-pin esp-now-remote-mac-a esp-now-remote-mac-b esp-now-remote-mac-c esp-now-remote-mac-d esp-now-remote-mac-e esp-now-remote-mac-f) {
     (set-config 'led-enable (to-i led-enable))
     (set-config 'bms-enable (to-i bms-enable))
     (set-config 'pubmote-enable (to-i pubmote-enable))
     (set-config 'can-id (to-i can-id))
     (set-config 'cells-series (to-i cells-series))
     (set-config 'led-highbeam-on (to-i led-highbeam-on))
-    (set-config 'led-type (to-i led-type))
+    (set-config 'led-on (to-i led-on))
     (set-config 'led-mode (to-i led-mode))
     (set-config 'led-mode-idle (to-i led-mode-idle))
     (set-config 'led-mode-status (to-i led-mode-status))
