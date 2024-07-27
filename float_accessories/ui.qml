@@ -1,4 +1,4 @@
-import QtQuick 2.12
+import Vedder.vesc.vescinterface 1.0;import "qrc:/mobile";import QtQuick 2.12
 import QtQuick.Controls 2.12
 import QtQuick.Layouts 1.3
 
@@ -13,10 +13,9 @@ Item {
 
     property Commands mCommands: VescIf.commands()
     property int floatAccessoriesMagic: 102
-    
     Component.onCompleted: {
-        if (VescIf.getLastFwRxParams().hw.includes("Express")) {
-            canId.value = -2
+        if (! (VescIf.getLastFwRxParams().hw.includes("Express") || VescIf.getLastFwRxParams().hw.includes("Avaspark"))) {
+            VescIf.emitMessageDialog("Float Accessories","Warning: It doesn't look like this is installed on a VESC Express or Avaspark board", false, false)
         }
         sendCode("f"+"(send-config)")
     }
@@ -27,7 +26,7 @@ Item {
 
         ColumnLayout {
             id: columnLayout
-            spacing: 10
+            spacing: 1
             Layout.preferredWidth: 400
 
             Text {
@@ -36,77 +35,41 @@ Item {
                 font.pointSize: 20
                 text: "Float Accessories"
             }
+            // New: Float Package Connection Status
+            Text {
+                id: floatPackageStatus
+                color: Utility.getAppHexColor("lightText")
+                horizontalAlignment: Text.AlignHCenter
+                font.pointSize: 12
+                text: "Float Package Status: Unknown"
+            }
+            // New: Pubmote Connection Status
+            Text {
+                id: pubmoteStatus
+                color: Utility.getAppHexColor("lightText")
+                text: "Pubmote Status: Unknown"
+            }
+            // New: BMS Connection Status
+            Text {
+                id: bmsStatus
+                color: Utility.getAppHexColor("lightText")
+                text: "BMS Status: Unknown"
+            }
 
-            // Features
-            GroupBox {
-                title: "Features"
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    spacing: 10
-
-                    CheckBox {
-                        id: ledEnable
-                        text: "LED Enable"
-                        checked: true
-                    }
-
-                    CheckBox {
-                        id: bmsEnable
-                        text: "BMS Enable"
-                        checked: true
-                    }
-
-                    CheckBox {
-                        id: pubmoteEnable
-                        text: "Pubmote Enable"
-                        checked: false
-                    }
+            Button {
+                text: "Check Status"
+                onClicked: {
+                sendCode("f"+"(status)")
                 }
             }
 
-            // VESC Configuration
+            // LED Control
             GroupBox {
-                title: "VESC Configuration"
-
+                title: "LED Control"
                 ColumnLayout {
                     anchors.fill: parent
                     spacing: 10
 
-                    Text {
-                        color: Utility.getAppHexColor("lightText")
-                        text: "CAN ID"
-                    }
-
-                    SpinBox {
-                        id: canId
-                        from: -2
-                        to: 254
-                        value: 98
-                    }
-
-                    Text {
-                        color: Utility.getAppHexColor("lightText")
-                        text: "Cell Series"
-                    }
-
-                    SpinBox {
-                        id: cellsSeries
-                        from: 1
-                        to: 100
-                        value: 18
-                    }
-                }
-            }
-
-            // LED Settings
-            GroupBox {
-                title: "LED Settings"
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    spacing: 10
-                    
                     CheckBox {
                         id: ledOn
                         text: "LED On"
@@ -121,95 +84,22 @@ Item {
 
                     Text {
                         color: Utility.getAppHexColor("lightText")
-                        text: "LED Mode"
-                    }
-
-                    SpinBox {
-                        id: ledMode
-                        from: 0
-                        to: 10
-                        value: 0
-                    }
-
-                    Text {
-                        color: Utility.getAppHexColor("lightText")
-                        text: "LED Mode Idle"
-                    }
-
-                    SpinBox {
-                        id: ledModeIdle
-                        from: 0
-                        to: 10
-                        value: 0
-                    }
-
-                    Text {
-                        color: Utility.getAppHexColor("lightText")
-                        text: "LED Mode Status"
-                    }
-
-                    SpinBox {
-                        id: ledModeStatus
-                        from: 0
-                        to: 10
-                        value: 0
-                    }
-
-                    Text {
-                        color: Utility.getAppHexColor("lightText")
-                        text: "LED Mode Startup"
-                    }
-
-                    SpinBox {
-                        id: ledModeStartup
-                        from: 0
-                        to: 10
-                        value: 0
-                    }
-
-                    CheckBox {
-                        id: ledMallGrabEnabled
-                        text: "LED Mall Grab Enabled"
-                        checked: true
-                    }
-
-                    CheckBox {
-                        id: ledBrakeLightEnabled
-                        text: "LED Brake Light Enabled"
-                        checked: false
-                    }
-
-                    Text {
-                        color: Utility.getAppHexColor("lightText")
-                        text: "Idle Timeout (sec)"
-                    }
-
-                    SpinBox {
-                        id: idleTimeout
-                        from: 0
-                        to: 100
-                        value: 5
-                    }
-
-                    Text {
-                        color: Utility.getAppHexColor("lightText")
-                        text: "Idle Timeout Shutoff (sec)"
-                    }
-
-                    SpinBox {
-                        id: idleTimeoutShutoff
-                        from: 0
-                        to: 1000
-                        value: 120
-                    }
-
-                    Text {
-                        color: Utility.getAppHexColor("lightText")
                         text: "LED Brightness"
                     }
 
                     Slider {
                         id: ledBrightness
+                        from: 0.0
+                        to: 1.0
+                        value: 0.5
+                    }
+                    Text {
+                        color: Utility.getAppHexColor("lightText")
+                        text: "LED Highbeam Brightness"
+                    }
+
+                    Slider {
+                        id: ledBrightnessHighbeam
                         from: 0.0
                         to: 1.0
                         value: 0.5
@@ -240,10 +130,198 @@ Item {
                     }
                 }
             }
-
-            // LED Status Settings
+            // Pubmote
             GroupBox {
-                title: "LED Status Settings"
+                title: "Pubmote"
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 5
+
+                    RowLayout {
+                        spacing: 5
+
+                    Button {
+                            text: "Pair Pubmote"
+
+                            onClicked: {
+                        sendCode("f"+"(pair-pubmote 420)")
+                            }
+                        }
+                    // Pubmote MAC Address
+                    Text {
+                        id: pubmoteMacAddress
+                        color: Utility.getAppHexColor("lightText")
+                        text: "Pubmote MAC: Unknown"
+                    }
+                    }
+                }
+            }
+            // LED General Config
+            GroupBox {
+                title: "LED General Config"
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 10
+
+                    Text {
+                        color: Utility.getAppHexColor("lightText")
+                        text: "LED Mode"
+                    }
+
+                    ComboBox {
+                        id: ledMode
+                        model: [
+                            {text: "White/Red", value: 0},
+                            {text: "Battery Meter", value: 1},
+                            {text: "Cyan/Magenta", value: 2},
+                            {text: "Blue/Green", value: 3},
+                            {text: "Yellow/Green", value: 4},
+                            {text: "RGB Fade", value: 5},
+                            {text: "Strobe", value: 6},
+                            {text: "Rave", value: 7},
+                            {text: "Mullet", value: 8},
+                            {text: "Knight Rider", value: 9},
+                            {text: "Felony", value: 10}
+                        ]
+                        textRole: "text"
+                        valueRole: "value"
+                        onCurrentIndexChanged: {
+                            value = model[currentIndex].value
+                        }
+                        property int value: 0
+                    }
+
+                    Text {
+                        color: Utility.getAppHexColor("lightText")
+                        text: "LED Mode Idle"
+                    }
+
+                    ComboBox {
+                        id: ledModeIdle
+                        model: [
+                            {text: "White/Red", value: 0},
+                            {text: "Battery Meter", value: 1},
+                            {text: "Cyan/Magenta", value: 2},
+                            {text: "Blue/Green", value: 3},
+                            {text: "Yellow/Green", value: 4},
+                            {text: "RGB Fade", value: 5},
+                            {text: "Strobe", value: 6},
+                            {text: "Rave", value: 7},
+                            {text: "Mullet", value: 8},
+                            {text: "Knight Rider", value: 9},
+                            {text: "Felony", value: 10}
+                        ]
+                        textRole: "text"
+                        valueRole: "value"
+                        onCurrentIndexChanged: {
+                            value = model[currentIndex].value
+                        }
+                        property int value: 0
+                    }
+
+                    Text {
+                        color: Utility.getAppHexColor("lightText")
+                        text: "LED Mode Startup"
+                    }
+
+                    ComboBox {
+                        id: ledModeStartup
+                        model: [
+                            {text: "White/Red", value: 0},
+                            {text: "Battery Meter", value: 1},
+                            {text: "Cyan/Magenta", value: 2},
+                            {text: "Blue/Green", value: 3},
+                            {text: "Yellow/Green", value: 4},
+                            {text: "RGB Fade", value: 5},
+                            {text: "Strobe", value: 6},
+                            {text: "Rave", value: 7},
+                            {text: "Mullet", value: 8},
+                            {text: "Knight Rider", value: 9},
+                            {text: "Felony", value: 10}
+                        ]
+                        textRole: "text"
+                        valueRole: "value"
+                        onCurrentIndexChanged: {
+                            value = model[currentIndex].value
+                        }
+                        property int value: 0
+                    }
+
+                    Text {
+                        color: Utility.getAppHexColor("lightText")
+                        text: "LED Mode Status"
+                    }
+
+                    ComboBox {
+                        id: ledModeStatus
+                        model: [
+                            {text: "Green->Red Voltage, Blue Sensor, Yellow->Red Duty", value: 0},
+                        ]
+                        textRole: "text"
+                        valueRole: "value"
+                        onCurrentIndexChanged: {
+                            value = model[currentIndex].value
+                        }
+                        property int value: 0
+                    }
+
+
+
+                    CheckBox {
+                        id: ledMallGrabEnabled
+                        text: "LED Mall Grab Enabled"
+                        checked: true
+                    }
+
+                    CheckBox {
+                        id: ledBrakeLightEnabled
+                        text: "LED Brake Light Enabled"
+                        checked: false
+                    }
+
+                    Text {
+                        color: Utility.getAppHexColor("lightText")
+                        text: "LED Brake Light Min Amps"
+                    }
+
+                    SpinBox {
+                        id: ledBrakeLightMinAmps
+                        from: -20.0
+                        to: 0.0
+                        value: -4.0
+                    }
+
+                    Text {
+                        color: Utility.getAppHexColor("lightText")
+                        text: "Idle Timeout (sec)"
+                    }
+
+                    SpinBox {
+                        id: idleTimeout
+                        from: 0
+                        to: 100
+                        value: 5
+                    }
+
+                    Text {
+                        color: Utility.getAppHexColor("lightText")
+                        text: "Idle Timeout Shutoff (sec)"
+                    }
+
+                    SpinBox {
+                        id: idleTimeoutShutoff
+                        from: 0
+                        to: 1000
+                        value: 120
+                    }
+                }
+            }
+
+            // LED Status Config
+            GroupBox {
+                title: "LED Status Config"
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -278,11 +356,20 @@ Item {
                         text: "LED Status Type"
                     }
 
-                    SpinBox {
+                    ComboBox {
                         id: ledStatusType
-                        from: 0
-                        to: 3
-                        value: 1
+                        model: [
+                            {text: "GRB", value: 0},
+                            {text: "RGB", value: 1},
+                            {text: "GRBW", value: 2},
+                            {text: "RGBW", value: 3},
+                        ]
+                        textRole: "text"
+                        valueRole: "value"
+                        onCurrentIndexChanged: {
+                            value = model[currentIndex].value
+                        }
+                        property int value: 0
                     }
 
                     CheckBox {
@@ -293,9 +380,9 @@ Item {
                 }
             }
 
-            // LED Front Settings
+            // LED Front Config
             GroupBox {
-                title: "LED Front Settings"
+                title: "LED Front Config"
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -330,30 +417,52 @@ Item {
                         text: "LED Front Type"
                     }
 
-                    SpinBox {
+                    ComboBox {
                         id: ledFrontType
-                        from: 0
-                        to: 3
-                        value: 2
+                        model: [
+                            {text: "GRB", value: 0},
+                            {text: "RGB", value: 1},
+                            {text: "GRBW", value: 2},
+                            {text: "RGBW", value: 3},
+                        ]
+                        textRole: "text"
+                        valueRole: "value"
+                        onCurrentIndexChanged: {
+                            value = model[currentIndex].value
+                        }
+                        property int value: 0
                     }
 
+                    Text {
+                        color: Utility.getAppHexColor("lightText")
+                        text: "LED Front Highbeam Type"
+                    }
+                    ComboBox {
+                        id: ledFrontHighbeamType
+                        model: [
+                            {text: "None", value: 0},
+                            {text: "Avaspark Laserbeam", value: 1},
+                            {text: "JetFleet H4", value: 2},
+                            {text: "JetFleet GT", value: 3},
+                        ]
+                        textRole: "text"
+                        valueRole: "value"
+                        onCurrentIndexChanged: {
+                            value = model[currentIndex].value
+                        }
+                        property int value: 0
+                    }
                     CheckBox {
                         id: ledFrontReversed
                         text: "LED Front Reversed"
                         checked: false
                     }
-
-                    CheckBox {
-                        id: ledFrontHasLaserbeam
-                        text: "LED Front Has Laserbeam"
-                        checked: false
-                    }
                 }
             }
 
-            // LED Rear Settings
+            // LED Rear Config
             GroupBox {
-                title: "LED Rear Settings"
+                title: "LED Rear Config"
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -388,30 +497,52 @@ Item {
                         text: "LED Rear Type"
                     }
 
-                    SpinBox {
+                    ComboBox {
                         id: ledRearType
-                        from: 0
-                        to: 3
-                        value: 2
+                        model: [
+                            {text: "GRB", value: 0},
+                            {text: "RGB", value: 1},
+                            {text: "GRBW", value: 2},
+                            {text: "RGBW", value: 3},
+                        ]
+                        textRole: "text"
+                        valueRole: "value"
+                        onCurrentIndexChanged: {
+                            value = model[currentIndex].value
+                        }
+                        property int value: 0
                     }
 
+                    Text {
+                        color: Utility.getAppHexColor("lightText")
+                        text: "LED Rear Highbeam Type"
+                    }
+                    ComboBox {
+                        id: ledRearHighbeamType
+                        model: [
+                            {text: "None", value: 0},
+                            {text: "Avaspark Laserbeam", value: 1},
+                            {text: "JetFleet H4", value: 2},
+                            {text: "JetFleet GT", value: 3},
+                        ]
+                        textRole: "text"
+                        valueRole: "value"
+                        onCurrentIndexChanged: {
+                            value = model[currentIndex].value
+                        }
+                        property int value: 0
+                    }
                     CheckBox {
                         id: ledRearReversed
                         text: "LED Rear Reversed"
                         checked: false
                     }
-
-                    CheckBox {
-                        id: ledRearHasLaserbeam
-                        text: "LED Rear Has Laserbeam"
-                        checked: false
-                    }
                 }
             }
 
-            // BMS Settings
+            // BMS Config
             GroupBox {
-                title: "BMS Settings"
+                title: "BMS Config"
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -440,117 +571,13 @@ Item {
                         to: 100
                         value: -1
                     }
-                }
-            }
 
-            // Pubmote MAC Address
-            GroupBox {
-                title: "Pubmote MAC Address"
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    spacing: 5
-
-                    RowLayout {
-                        spacing: 5
-
-                        Text {
-                            color: Utility.getAppHexColor("lightText")
-                            text: "A:"
-                        }
-
-                        SpinBox {
-                            id: espNowRemoteMacA
-                            from: 0
-                            to: 255
-                            value: 132
-                        }
-                    }
-
-                    RowLayout {
-                        spacing: 5
-
-                        Text {
-                            color: Utility.getAppHexColor("lightText")
-                            text: "B:"
-                        }
-
-                        SpinBox {
-                            id: espNowRemoteMacB
-                            from: 0
-                            to: 255
-                            value: 252
-                        }
-                    }
-
-                    RowLayout {
-                        spacing: 5
-
-                        Text {
-                            color: Utility.getAppHexColor("lightText")
-                            text: "C:"
-                        }
-
-                        SpinBox {
-                            id: espNowRemoteMacC
-                            from: 0
-                            to: 255
-                            value: 230
-                        }
-                    }
-
-                    RowLayout {
-                        spacing: 5
-
-                        Text {
-                            color: Utility.getAppHexColor("lightText")
-                            text: "D:"
-                        }
-
-                        SpinBox {
-                            id: espNowRemoteMacD
-                            from: 0
-                            to: 255
-                            value: 80
-                        }
-                    }
-
-                    RowLayout {
-                        spacing: 5
-
-                        Text {
-                            color: Utility.getAppHexColor("lightText")
-                            text: "E:"
-                        }
-
-                        SpinBox {
-                            id: espNowRemoteMacE
-                            from: 0
-                            to: 255
-                            value: 168
-                        }
-                    }
-
-                    RowLayout {
-                        spacing: 5
-
-                        Text {
-                            color: Utility.getAppHexColor("lightText")
-                            text: "F:"
-                        }
-
-                        SpinBox {
-                            id: espNowRemoteMacF
-                            from: 0
-                            to: 255
-                            value: 12
-                        }
+                    CheckBox {
+                        id: bmsOverrideSOC
+                        text: "BMS Override SOC (Voltage)"
+                        checked: false
                     }
                 }
-            }
-
-            Item {
-                Layout.fillHeight: true
             }
 
             // Save and Restore Buttons
@@ -558,7 +585,15 @@ Item {
                 spacing: 10
 
                 Button {
-                    text: "Save Config"
+                    text: "Read Config"
+
+                    onClicked: {
+                        sendCode("f"+"(send-config)")
+                    }
+                }
+
+                Button {
+                    text: "Write Config"
 
                     onClicked: {
                         sendCode("f"+"(recv-config " + makeArgStr() + " )")
@@ -580,22 +615,19 @@ Item {
 
 function makeArgStr() {
   return (
-    ledEnable.checked * 1 + " " +
-    bmsEnable.checked * 1 + " " +
-    pubmoteEnable.checked * 1 + " " +
-    canId.value + " " +
-    cellsSeries.value + " " +
+    ledOn.checked * 1 + " " +
     ledHighbeamOn.checked * 1 + " " +
-    ledOn.checked + " " +
     ledMode.value + " " +
     ledModeIdle.value + " " +
     ledModeStatus.value + " " +
     ledModeStartup.value + " " +
     ledMallGrabEnabled.checked * 1 + " " +
     ledBrakeLightEnabled.checked * 1 + " " +
+    parseFloat(ledBrakeLightMinAmps.value).toFixed(2) + " " +
     idleTimeout.value + " " +
     idleTimeoutShutoff.value + " " +
     parseFloat(ledBrightness.value).toFixed(2) + " " +
+    parseFloat(ledBrightnessHighbeam.value).toFixed(2) + " " +
     parseFloat(ledBrightnessIdle.value).toFixed(2) + " " +
     parseFloat(ledBrightnessStatus.value).toFixed(2) + " " +
     ledStatusPin.value + " " +
@@ -606,20 +638,15 @@ function makeArgStr() {
     ledFrontNum.value + " " +
     ledFrontType.value + " " +
     ledFrontReversed.checked * 1 + " " +
-    ledFrontHasLaserbeam.checked * 1 + " " +
+    ledFrontHighbeamType.value * 1 + " " +
     ledRearPin.value + " " +
     ledRearNum.value + " " +
     ledRearType.value + " " +
     ledRearReversed.checked * 1 + " " +
-    ledRearHasLaserbeam.checked * 1 + " " +
+    ledRearHighbeamType.value * 1 + " " +
     bmsRs485APin.value + " " +
     bmsWakeupPin.value + " " +
-    espNowRemoteMacA.value + " " +
-    espNowRemoteMacB.value + " " +
-    espNowRemoteMacC.value + " " +
-    espNowRemoteMacD.value + " " +
-    espNowRemoteMacE.value + " " +
-    espNowRemoteMacF.value
+    bmsOverrideSOC.checked * 1
   );
 }
     function sendCode(str) {
@@ -634,49 +661,59 @@ function makeArgStr() {
 
             if (str.startsWith("settings")) {
                 var tokens = str.split(" ")
-                ledEnable.checked = Number(tokens[2])
-                bmsEnable.checked = Number(tokens[3])
-                pubmoteEnable.checked = Number(tokens[4])
-                canId.value = Number(tokens[5])
-                cellsSeries.value = Number(tokens[6])
-                ledHighbeamOn.checked = Number(tokens[7])
-                ledOn.checked = Number(tokens[8])
-                ledMode.value = Number(tokens[9])
-                ledModeIdle.value = Number(tokens[10])
-                ledModeStatus.value = Number(tokens[11])
-                ledModeStartup.value = Number(tokens[12])
-                ledMallGrabEnabled.checked = Number(tokens[13])
-                ledBrakeLightEnabled.checked = Number(tokens[14])
-                idleTimeout.value = Number(tokens[15])
-                idleTimeoutShutoff.value = Number(tokens[16])
-                ledBrightness.value = Number(tokens[17])
-                ledBrightnessIdle.value = Number(tokens[18])
-                ledBrightnessStatus.value = Number(tokens[19])
-                ledStatusPin.value = Number(tokens[20])
-                ledStatusNum.value = Number(tokens[21])
-                ledStatusType.value = Number(tokens[22])
-                ledStatusReversed.checked = Number(tokens[23])
-                ledFrontPin.value = Number(tokens[24])
-                ledFrontNum.value = Number(tokens[25])
-                ledFrontType.value = Number(tokens[26])
-                ledFrontReversed.checked = Number(tokens[27])
-                ledFrontHasLaserbeam.checked = Number(tokens[28])
-                ledRearPin.value = Number(tokens[29])
-                ledRearNum.value = Number(tokens[30])
-                ledRearType.value = Number(tokens[31])
-                ledRearReversed.checked = Number(tokens[32])
-                ledRearHasLaserbeam.checked = Number(tokens[33])
-                bmsRs485APin.value = Number(tokens[34])
-                bmsWakeupPin.value = Number(tokens[35])
-                espNowRemoteMacA.value = Number(tokens[36])
-                espNowRemoteMacB.value = Number(tokens[37])
-                espNowRemoteMacC.value = Number(tokens[38])
-                espNowRemoteMacD.value = Number(tokens[39])
-                espNowRemoteMacE.value = Number(tokens[40])
-                espNowRemoteMacF.value = Number(tokens[41])
+                ledOn.checked = Number(tokens[4])
+                ledHighbeamOn.checked = Number(tokens[5])
+                ledMode.currentIndex = Number(tokens[6])
+                ledModeIdle.currentIndex = Number(tokens[7])
+                ledModeStatus.currentIndex = Number(tokens[8])
+                ledModeStartup.currentIndex = Number(tokens[9])
+                ledMallGrabEnabled.checked = Number(tokens[10])
+                ledBrakeLightEnabled.checked = Number(tokens[11])
+                ledBrakeLightMinAmps.value = Number(tokens[12])
+                idleTimeout.value = Number(tokens[13])
+                idleTimeoutShutoff.value = Number(tokens[14])
+                ledBrightness.value = Number(tokens[15])
+                ledBrightnessHighbeam.value = Number(tokens[16])
+                ledBrightnessIdle.value = Number(tokens[17])
+                ledBrightnessStatus.value = Number(tokens[18])
+                ledStatusPin.value = Number(tokens[19])
+                ledStatusNum.value = Number(tokens[20])
+                ledStatusType.currentIndex = Number(tokens[21])
+                ledStatusReversed.checked = Number(tokens[22])
+                ledFrontPin.value = Number(tokens[23])
+                ledFrontNum.value = Number(tokens[24])
+                ledFrontType.currentIndex = Number(tokens[25])
+                ledFrontReversed.checked = Number(tokens[26])
+                ledFrontHighbeamType.currentIndex = Number(tokens[27])
+                ledRearPin.value = Number(tokens[28])
+                ledRearNum.value = Number(tokens[29])
+                ledRearType.currentIndex = Number(tokens[30])
+                ledRearReversed.checked = Number(tokens[31])
+                ledRearHighbeamType.currentIndex = Number(tokens[32])
+                bmsRs485APin.value = Number(tokens[33])
+                bmsWakeupPin.value = Number(tokens[34])
+                bmsOverrideSOC.checked = Number(tokens[35])
+                // Format and display MAC address
+                var macAddress = tokens.slice(36, 42).map(function(token) {
+                return ("0" + Number(token).toString(16)).slice(-2);
+                }).join(":");
+
+                pubmoteMacAddress.text = "Pubmote MAC: " + ((Number(tokens[36]) == -1) ? "Not Paired" : macAddress.toUpperCase());
             } else if (str.startsWith("msg")) {
                 var msg = str.substring(4)
                 VescIf.emitMessageDialog("Float Accessories", msg, false, false)
+            } else if (str.startsWith("status")) {
+                var tokens = str.split(" ")
+                // Update Float Package Connection Status
+                var floatPackageConnected = Number(tokens[1])
+                floatPackageStatus.text = "Float Package Status: " + (floatPackageConnected ? "Connected" : "Not Connected")
+                floatPackageStatus.color = floatPackageConnected ? "green" : "red"
+                var pubmoteConnected = Number(tokens[2])
+                pubmoteStatus.text = "Pubmote Status: " + (pubmoteConnected ? "Connected" : "Not Connected")
+                pubmoteStatus.color = pubmoteConnected ? "green" : "red"
+                var bmsConnected = Number(tokens[3])
+                bmsStatus.text = "BMS Status: " + (bmsConnected ? "Connected" : "Not Connected")
+                bmsStatus.color = bmsConnected ? "green" : "red"
             } else {
                 VescIf.emitStatusMessage(str, true)
             }

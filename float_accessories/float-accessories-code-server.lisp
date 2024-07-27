@@ -1,6 +1,0 @@
-(import "pkg@://vesc_packages/lib_code_server/code_server.vescpkg" 'code-server)
-(read-eval-program code-server)
-(start-code-server)
-(import "pkg@://vesc_packages/float/float.vescpkg" 'float)
-(import "float/float.bin" 'floatlib)
-(read-eval-program float)
