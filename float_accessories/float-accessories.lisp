@@ -41,8 +41,6 @@
 
 (def rainbow-colors '(0xFF0000u32 0xFFFF00u32 0x00FF00u32 0x00FFFFu32 0x0000FFu32 0xFF00FFu32))
 (def rave-colors '(0x00FFFF00 0x0000FF00 0x0000FFFF 0x000000FF 0x00FF00FF 0x00FF0000))
-; Debug flag for testing
-(def debug 0)
 
 ; Settings version
 (def config-version 420i32)
@@ -98,6 +96,7 @@
 (defun strobe-pattern () {
     (setq strobe-index (mod (+ strobe-index 1) 2))
     (var color (if (= strobe-index 0) 0xFFFFFFFF 0x00000000))
+	
     (looprange i 0 (length led-front-color) {
         (setix led-front-color i color)
     })
@@ -109,32 +108,20 @@
 (def brake-index 0)
 (defun brake-pattern () {
     (setq brake-index (mod (+ brake-index 1) 2))
-    (var color (if (= brake-index 0) 0x00FF0000 0x00000000))
     (looprange i 0 (length led-rear-color) {
-        (setix led-rear-color i color)
+        (setix led-rear-color i (if (= brake-index 0) 0x00FF0000 0x00000000))
     })
 })
 
 (def rave-index 0)
-(defun rave-pattern (){
+(defun rave-pattern (type){
         (var current-color (ix rave-colors rave-index))
         (looprange i 0 (length led-front-color)
-            (setix led-front-color i current-color))
+            (setix led-front-color i (if (= type 0) current-color 0xFF000000)))
         (looprange i 0 (length led-rear-color)
             (setix led-rear-color i current-color))
         (setq rave-index (mod (+ rave-index 1) 6))
 })
-
-(def mullet-index 0)
-(defun mullet-pattern (){
-        (var rave-color (bufget-u32 rave-colors (* mullet-index 4)))
-        (looprange i 0 (length led-front-color)
-            (setix led-front-color i 0xFFFFFFFF))
-        (looprange i 0 (length led-rear-color)
-            (setix led-rear-color i rave-color))
-        (setq mullet-index (mod (+ mullet-index 1) 6))
-})
-    
 (def knight-rider-position 0)
 (def knight-rider-direction 1)
 (defun max (a b) (if (> a b) a b))
@@ -287,7 +274,6 @@
 	(var led-status-num (length led-status-color))
     (var color-status-half1 (if (or (= switch-state 1) (= switch-state 3)) 0xFF 0x00))
     (var color-status-half2 (if (or (= switch-state 2) (= switch-state 3)) 0xFF 0x00))
-    
     (looprange led-index 0 led-status-num {
         (setix led-status-color led-index (if (< led-index (/ led-status-num 2)) color-status-half1 color-status-half2))
     })
@@ -870,8 +856,6 @@
 (defun led-loop () {
     (var direction 0)
     (var previous-direction 0)
-    (var debug-val 1)
-    (var debug-timer (systime))
     (var idle-timeout-shutoff-event 0)
     (var led-mall-grab 0)
     (var next-run-time (secs-since 0))
@@ -904,15 +888,6 @@
             (if (= (get-config 'led-mall-grab-enabled) 1){
                 (if (> pitch-angle 70) (setq led-mall-grab 1) (setq led-mall-grab 0))
 				;(print pitch-angle)
-            })
-            (if (= debug 1) {
-                (setq direction 0)
-				(set-config 'idle-timeout 10)
-				(set-config 'idle-timeout-shutoff 20)
-                (if (< (secs-since debug-timer) (get-config 'idle-timeout) ) {
-                    (setq direction debug-val)
-                    (setq debug-val (* debug-val -1))
-                })
             })
             (update-leds (secs-since led-last-activity-time) previous-direction direction idle-timeout-shutoff-event led-mall-grab)
             (setq previous-direction direction)
@@ -1080,7 +1055,7 @@
         )
     )
 })
-@const-end
+
 (defun pubmote-rx (src des data rssi) {
 	(if (= pairing-state 2) {
 		(setq esp-now-remote-mac src)
@@ -1105,7 +1080,7 @@
 	(free data)
 })
 (defun sleep2 (x) (yield (* x 1000000)))
-
+@const-end
 (defun update-leds (last-activity-sec previous-direction direction idle-timeout-shutoff-event led-mall-grab) {
 	(var idle-timeout (get-config 'idle-timeout))
 	(var can-last-activity-time-sec (secs-since can-last-activity-time))
@@ -1143,17 +1118,17 @@
 					;})
 				})
 				((= current-led-mode 2) {
-					(setq led-forward-color 0xFF00FFFFu32)
+					(setq led-forward-color 0x0000FFFFu32)
 					(setq led-backward-color 0x00FF00FFu32)
 					(update-direction-leds direction led-forward-color led-backward-color)
 				})
 				((= current-led-mode 3) {
-					(setq led-forward-color 0xFF0000FFu32)
+					(setq led-forward-color 0x000000FFu32)
 					(setq led-backward-color 0x0000FF00u32)
 					(update-direction-leds direction led-forward-color led-backward-color)
 				})
 				((= current-led-mode 4) {
-					(setq led-forward-color 0xFFFFFF00u32)
+					(setq led-forward-color 0x00FFFF00u32)
 					(setq led-backward-color 0x0000FF00u32)
 					(update-direction-leds direction led-forward-color led-backward-color)
 				})
@@ -1164,10 +1139,10 @@
 					(strobe-pattern)
 				})
 				((= current-led-mode 7) {
-					(rave-pattern)
+					(rave-pattern 0)
 				})
 				((= current-led-mode 8) {
-					(mullet-pattern)
+					(rave-pattern 1)
 				})
 				((= current-led-mode 9) {
 					(knight-rider-pattern)
