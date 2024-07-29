@@ -42,7 +42,7 @@
 (def rainbow-colors '(0xFF0000u32 0xFFFF00u32 0x00FF00u32 0x00FFFFu32 0x0000FFu32 0xFF00FFu32))
 (def rave-colors '(0x00FFFF00 0x0000FF00 0x0000FFFF 0x000000FF 0x00FF00FF 0x00FF0000))
 ; Debug flag for testing
-(def debug 0)
+(def debug 1)
 
 ; Settings version
 (def config-version 420i32)
@@ -341,6 +341,7 @@
 	(var led-rear-highbeam-type (get-config 'led-rear-highbeam-type) )
     (var front-color-highbeam (if (or (< direction 0) (= led-highbeam-on 0)) 0x00 (to-i(* 0xFF led-brightness-highbeam))))
     (var rear-color-highbeam (if (or (>= direction 0) (= led-highbeam-on 0)) 0x00 (to-i(* 0xFF led-brightness-highbeam))))
+	(if (!= direction 0) {
     (if (= led-front-highbeam-type 1) {
 		(setq led-front-color (append (list front-color-highbeam) led-front-color))
     })
@@ -378,6 +379,7 @@
 		
     })
 	;(print led-rear-color)
+	})
 	(var led-status-type (get-config 'led-status-type))
 	(var led-front-type (get-config 'led-front-type))
 	(var led-rear-type (get-config 'led-rear-type))
