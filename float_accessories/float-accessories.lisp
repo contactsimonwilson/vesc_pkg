@@ -43,7 +43,7 @@
 (def rave-colors '(0x00FFFF00 0x0000FF00 0x0000FFFF 0x000000FF 0x00FF00FF 0x00FF0000))
 
 ; Settings version
-(def config-version 420i32)
+(def config-version 422i32)
 ; Persistent settings
 
 ; Format: (label . (offset type default-value current-value))
@@ -74,12 +74,12 @@
     (led-front-num             . (23 i 13 -1))
     (led-front-type            . (24 i 2 -1))
     (led-front-reversed        . (25 b 0 -1))
-    (led-front-highbeam-type   . (26 b 0 -1))
+    (led-front-strip-type      . (26 b 1 -1))
     (led-rear-pin              . (27 i 17 -1))
     (led-rear-num              . (28 i 13 -1))
     (led-rear-type             . (29 i 2 -1))
     (led-rear-reversed         . (30 b 0 -1))
-    (led-rear-highbeam-type    . (31 b 0 -1))
+    (led-rear-strip-type       . (31 b 1 -1))
     (bms-rs485-a-pin           . (32 i -1 -1))
     (bms-wakeup-pin            . (33 i -1 -1))
     (bms-override-soc          . (34 i 1 -1))
@@ -323,23 +323,23 @@
 	(var led-status-pin (get-config 'led-status-pin))
 	(var led-front-pin (get-config 'led-front-pin))
 	(var led-rear-pin (get-config 'led-rear-pin))
-	(var led-front-highbeam-type (get-config 'led-front-highbeam-type) )
-	(var led-rear-highbeam-type (get-config 'led-rear-highbeam-type) )
+	(var led-front-strip-type (get-config 'led-front-strip-type) )
+	(var led-rear-strip-type (get-config 'led-rear-strip-type) )
     (var front-color-highbeam (if (and (> direction 0) (= led-highbeam-on 0)) (to-i(* 0xFF led-brightness-highbeam)) 0x00))
     (var rear-color-highbeam (if (and (< direction 0) (= led-highbeam-on 0)) (to-i(* 0xFF led-brightness-highbeam)) 0x00))
-    (if (= led-front-highbeam-type 1) {
+    (if (or (= led-front-strip-type 2) (= led-front-strip-type 3)) {
 		(setq led-front-color (append (list front-color-highbeam) led-front-color))
     })
-    (if (= led-rear-highbeam-type 1) {
+    (if (or (= led-rear-strip-type 2) (= led-rear-strip-type 3)) {
         (setq led-rear-color (append (list rear-color-highbeam) led-rear-color))
     })
 	
-    (if (or (= led-front-highbeam-type 2) (= led-front-highbeam-type 3)) {
+    (if (or (= led-front-strip-type 4) (= led-front-strip-type 5)) {
 		(var led-tmp (take led-front-color (length led-front-color)))
 		(setq led-front-color (mklist (+(length led-front-color)4) 0))
 		(var led-tmp-index 0)
 		(looprange k 0 (length led-front-color){
-			(if (or (and (= led-front-highbeam-type 2) (or (= k 2) (= k 7) (= k 13) (= k 18))) (and (= led-front-highbeam-type 3) (or (= k 1) (= k 5) (= k 10) (= k 3)))) {
+			(if (or (and (= led-front-strip-type 4) (or (= k 2) (= k 7) (= k 13) (= k 18))) (and (= led-front-strip-type 5) (or (= k 1) (= k 5) (= k 10) (= k 3)))) {
 				(setix led-front-color k front-color-highbeam)
 			}{
 				(setix led-front-color k (ix led-tmp led-tmp-index))
@@ -349,12 +349,12 @@
 		
     })
 	;(print led-front-color)
-    (if (or (= led-rear-highbeam-type 2) (= led-rear-highbeam-type 3)) {
+    (if (or (= led-rear-strip-type 4) (= led-rear-strip-type 5)) {
 		(var led-tmp (take led-rear-color (length led-rear-color)))
 		(setq led-rear-color (mklist (+(length led-rear-color)4) 0))
 		(var led-tmp-index 0)
 		(looprange k 0 (length led-rear-color){
-			(if (or (and (= led-rear-highbeam-type 2) (or (= k 2) (= k 7) (= k 13) (= k 18))) (and (= led-rear-highbeam-type 3) (or (= k 1) (= k 5) (= k 10) (= k 3)))) {
+			(if (or (and (= led-rear-strip-type 4) (or (= k 2) (= k 7) (= k 13) (= k 18))) (and (= led-rear-strip-type 5) (or (= k 1) (= k 5) (= k 10) (= k 3)))) {
 				(setix led-rear-color k rear-color-highbeam)
 			}{
 				(setix led-rear-color k (ix led-tmp led-tmp-index))
@@ -622,6 +622,7 @@
 		(if (not-eq name 'crc) {
 			(bufset-i32 crcbuf i (get-config name))
 			;(print name)
+			;(print (get-config name))
 			(+ i 1)
 		})
 	})
@@ -723,7 +724,7 @@
     (init-bms)
     (spawn bms-loop)
 })
-(defun recv-config (led-on led-highbeam-on led-mode led-mode-idle led-mode-status led-mode-startup led-mall-grab-enabled led-brake-light-enabled led-brake-light-min-amps idle-timeout idle-timeout-shutoff led-brightness led-brightness-highbeam led-brightness-idle led-brightness-status led-status-pin led-status-num led-status-type led-status-reversed led-front-pin led-front-num led-front-type led-front-reversed led-front-highbeam-type led-rear-pin led-rear-num led-rear-type led-rear-reversed led-rear-highbeam-type bms-rs485-a-pin bms-wakeup-pin bms-override-soc) {
+(defun recv-config (led-on led-highbeam-on led-mode led-mode-idle led-mode-status led-mode-startup led-mall-grab-enabled led-brake-light-enabled led-brake-light-min-amps idle-timeout idle-timeout-shutoff led-brightness led-brightness-highbeam led-brightness-idle led-brightness-status led-status-pin led-status-num led-status-type led-status-reversed led-front-pin led-front-num led-front-type led-front-reversed led-front-strip-type led-rear-pin led-rear-num led-rear-type led-rear-reversed led-rear-strip-type bms-rs485-a-pin bms-wakeup-pin bms-override-soc) {
     (set-config 'led-on (to-i led-on))
     (set-config 'led-highbeam-on (to-i led-highbeam-on))
     (set-config 'led-mode (to-i led-mode))
@@ -747,12 +748,12 @@
     (set-config 'led-front-num (to-i led-front-num))
     (set-config 'led-front-type (to-i led-front-type))
     (set-config 'led-front-reversed (to-i led-front-reversed))
-    (set-config 'led-front-highbeam-type (to-i led-front-highbeam-type))
+    (set-config 'led-front-strip-type (to-i led-front-strip-type))
     (set-config 'led-rear-pin (to-i led-rear-pin))
     (set-config 'led-rear-num (to-i led-rear-num))
     (set-config 'led-rear-type (to-i led-rear-type))
     (set-config 'led-rear-reversed (to-i led-rear-reversed))
-    (set-config 'led-rear-highbeam-type (to-i led-rear-highbeam-type))
+    (set-config 'led-rear-strip-type (to-i led-rear-strip-type))
 	(var bms-rs485-a-pin-prev (get-config 'bms-rs485-a-pin))
     (set-config 'bms-rs485-a-pin (to-i bms-rs485-a-pin))
 	(var bms-wakeup-pin-prev (get-config 'bms-wakeup-pin))
