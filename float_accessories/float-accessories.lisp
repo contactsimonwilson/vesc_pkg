@@ -1082,15 +1082,14 @@
         (var current-led-mode (get-config 'led-mode))
         (setq led-current-brightness (get-config 'led-brightness))
 		(var idle-timeout (get-config 'idle-timeout))
-		(if (>= can-last-activity-time-sec 1){
-			(setq current-led-mode 0);failover to keeping the lights on if can fails.
-		}{
-			(if (and (<= (secs-since 0) idle-timeout) (= direction 0)) (setq current-led-mode (get-config 'led-mode-startup)))
-			(if (> last-activity-sec idle-timeout) {
-				(setq current-led-mode (get-config 'led-mode-idle))
-				(setq led-current-brightness (get-config 'led-brightness-idle))
-			})
+		
+		(if (>= last-activity-sec idle-timeout) {
+			(setq current-led-mode (get-config 'led-mode-idle))
+			(setq led-current-brightness (get-config 'led-brightness-idle))
 		})
+		
+		(if (and (<= (secs-since 0) idle-timeout) (= direction 0)) (setq current-led-mode (get-config 'led-mode-startup)))
+		
 		(if (and (> (length led-front-color) 0) (> (length led-rear-color) 0)){
 			(cond
 				((= state 15) {
@@ -1101,11 +1100,11 @@
 				((and (> last-activity-sec (get-config 'idle-timeout-shutoff)) (< can-last-activity-time-sec 1)){;make sure we dont' clear if we loose can bus
 					(clear-leds)
 				})
-				((or (= current-led-mode 1) (= led-mall-grab 1)) {
+				((and (or (= current-led-mode 1) (= led-mall-grab 1))(< can-last-activity-time-sec 1)) {
 					(battery-pattern led-front-color)
 					(battery-pattern led-rear-color)
 				})
-				((= current-led-mode 0) {
+				((or (= current-led-mode 0) (and (> can-last-activity-time-sec 1) (> (secs-since 0) idle-timeout))) {
 					(set-led-strip-color (if (>= direction 0) led-front-color led-rear-color) 0xFFFFFFFFu32)
 					(set-led-strip-color (if (< direction 0) led-front-color led-rear-color) 0x00FF0000u32)
 				})
