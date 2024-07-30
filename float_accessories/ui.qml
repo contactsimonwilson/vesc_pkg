@@ -234,6 +234,7 @@ Item {
 
                                 ComboBox {
                                     id: ledMode
+                                    Layout.fillWidth: true
                                     model: [
                                         {text: "White/Red", value: 0},
                                         {text: "Battery Meter", value: 1},
@@ -262,6 +263,7 @@ Item {
 
                                 ComboBox {
                                     id: ledModeIdle
+                                    Layout.fillWidth: true
                                     model: ledMode.model
                                     textRole: "text"
                                     valueRole: "value"
@@ -278,6 +280,7 @@ Item {
 
                                 ComboBox {
                                     id: ledModeStartup
+                                    Layout.fillWidth: true
                                     model: ledMode.model
                                     textRole: "text"
                                     valueRole: "value"
@@ -294,6 +297,7 @@ Item {
 
                                 ComboBox {
                                     id: ledModeStatus
+                                    Layout.fillWidth: true
                                     model: [
                                         {text: "Green->Red Voltage, Blue Sensor, Yellow->Red Duty", value: 0},
                                     ]
@@ -376,6 +380,7 @@ Item {
 
                                 ComboBox {
                                     id: ledStatusStripType
+                                    Layout.fillWidth: true
                                     model: [
                                         {text: "None", value: 0},
                                         {text: "Custom", value: 1},
@@ -425,6 +430,7 @@ Item {
 
                                     ComboBox {
                                         id: ledStatusType
+                                        Layout.fillWidth: true
                                         model: [
                                             {text: "GRB", value: 0},
                                             {text: "RGB", value: 1},
@@ -463,6 +469,7 @@ Item {
 
                                 ComboBox {
                                     id: ledFrontStripType
+                                    Layout.fillWidth: true
                                     model: [
                                         {text: "None", value: 0},
                                         {text: "Custom", value: 1},
@@ -522,6 +529,7 @@ Item {
 
                                     ComboBox {
                                         id: ledFrontType
+                                        Layout.fillWidth: true
                                         model: [
                                             {text: "GRB", value: 0},
                                             {text: "RGB", value: 1},
@@ -566,6 +574,7 @@ Item {
 
                                 ComboBox {
                                     id: ledRearStripType
+                                    Layout.fillWidth: true
                                     model: [
                                         {text: "None", value: 0},
                                         {text: "Custom", value: 1},
@@ -625,6 +634,7 @@ Item {
 
                                     ComboBox {
                                         id: ledRearType
+                                        Layout.fillWidth: true
                                         model: [
                                             {text: "GRB", value: 0},
                                             {text: "RGB", value: 1},
