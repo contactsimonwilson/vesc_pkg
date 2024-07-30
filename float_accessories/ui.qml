@@ -90,16 +90,19 @@ Item {
             Layout.fillWidth: true
 
             TabButton {
-                text: qsTr("LED Control")
+                text: qsTr("Control")
             }
             TabButton {
-                text: qsTr("LED Configuration")
+                text: qsTr("Config")
             }
             TabButton {
                 text: qsTr("Pubmote")
             }
             TabButton {
-                text: qsTr("BMS Config")
+                text: qsTr("BMS")
+            }
+            TabButton {
+                text: qsTr("About")
             }
         }
 
@@ -741,7 +744,98 @@ Item {
                     }
                 }
             }
+        // About Tab
+        ScrollView {
+            clip: true
+            ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+            ColumnLayout {
+                width: stackLayout.width
+                spacing: 20
+
+                Text {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: Utility.getAppHexColor("lightText")
+                    font.pointSize: 16
+                    font.bold: true
+                    text: "FLOAT ACCESSORIES PACKAGE"
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: Utility.getAppHexColor("lightText")
+                    text: "A VESC Express package for controlling LEDs, BMS, and Pubmote."
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: Utility.getAppHexColor("lightText")
+                    font.bold: true
+                    text: "DISCLAIMER"
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: Utility.getAppHexColor("lightText")
+                    text: "This package is not endorsed by the vesc-project. Use at your own risk."
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: Utility.getAppHexColor("lightText")
+                    font.bold: true
+                    text: "CREDITS"
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: Utility.getAppHexColor("lightText")
+                    text: "Special Thanks: Benjamin Vedder, surfdado, NuRxG, Siwoz, lolwheel (OWIE), ThankTheMaker (rESCue), 4_fools (avaspark), auden_builds (pubmote)\n\n" +
+                          "gr33tz: outlandnish, exphat, datboig42069\n\n" +
+                          "Beta Testers: Koddex, Pickles"
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: Utility.getAppHexColor("lightText")
+                    font.bold: true
+                    text: "RELEASE NOTES"
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: Utility.getAppHexColor("lightText")
+                    text: "Requires 6.05 firmware on VESC Express. Checkout the fancy appUI\n\n" +
+                          "The VESC Express seems to run out of memory if too many things are going on. I've tried to cut down on memory with lisbm_minimizer.py. " +
+                          "Try disabling WiFi or removing some functionality in the script if you're having an issue. " +
+                          "Ideally someone will look into improvements with vesc express since wifi is needed for pubmote feature."
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: Utility.getAppHexColor("lightText")
+                    font.bold: true
+                    text: "BUILD INFO"
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: Utility.getAppHexColor("lightText")
+                    text: "Source code can be found here: https://github.com/relys/vesc_pkg"
+                }
+            }
         }
+    }
 
         // Save and Restore Buttons
         RowLayout {
