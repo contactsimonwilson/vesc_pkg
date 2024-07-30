@@ -888,19 +888,19 @@ Item {
                 break
             case 2: // Avaspark Laserbeam
                 ledFrontNum.value = 13
-                ledFrontType.currentIndex = 1
+                ledFrontType.currentIndex = 0
                 break
             case 3: // Avaspark Laserbeam Pint
                 ledFrontNum.value = 10
-                ledFrontType.currentIndex = 1
+                ledFrontType.currentIndex = 0
                 break
             case 4: // JetFleet H4
                 ledFrontNum.value = 17
-                ledFrontType.currentIndex = 0
+                ledFrontType.currentIndex = 1
                 break
             case 5: // JetFleet GT
                 ledFrontNum.value = 11
-                ledFrontType.currentIndex = 0
+                ledFrontType.currentIndex = 1
                 break
             default:
                 // Do nothing, keep user-defined values
@@ -916,19 +916,19 @@ Item {
                 break
             case 2: // Avaspark Laserbeam
                 ledRearNum.value = 13
-                ledRearType.currentIndex = 1
+                ledRearType.currentIndex = 0
                 break
             case 3: // Avaspark Laserbeam Pint
                 ledRearNum.value = 10
-                ledRearType.currentIndex = 1
+                ledRearType.currentIndex = 0
                 break
             case 4: // JetFleet H4
                 ledRearNum.value = 17
-                ledRearType.currentIndex = 0
+                ledRearType.currentIndex = 1
                 break
             case 5: // JetFleet GT
                 ledRearNum.value = 11
-                ledRearType.currentIndex = 0
+                ledRearType.currentIndex = 1
                 break
             default:
                 // Do nothing, keep user-defined values

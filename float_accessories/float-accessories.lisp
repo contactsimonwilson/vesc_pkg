@@ -41,7 +41,30 @@
 
 (def rainbow-colors '(0xFF0000u32 0xFFFF00u32 0x00FF00u32 0x00FFFFu32 0x0000FFu32 0xFF00FFu32))
 (def rave-colors '(0x00FFFF00 0x0000FF00 0x0000FFFF 0x000000FF 0x00FF00FF 0x00FF0000))
+(def FLOAT_MAGIC 101) ; Magic number used by float
+(def FLOAT_ACCESSORIES_MAGIC 102)
 
+; Float commands. Here we are using an association list, but there
+; are many other ways to do the same thing.
+(def float-cmds '(
+		(COMMAND_GET_INFO . 0)
+		(COMMAND_GET_ALLDATA . 10)
+        (COMMAND_LCM_POLL . 24)
+		(COMMAND_LCM_GET_BATTERY . 29)
+		(COMMAND_LIGHTS_CONTROL . 202)
+))
+(def strobe-index 0)
+(def brake-index 0)
+(def rave-index 0)
+(def knight-rider-position 0)
+(def knight-rider-direction 1)
+(def rainbow-index 0)
+(def felony-index 0)
+(def pairing-state 0)
+(def lut [0 0 0 0 1 2 3 4 5 7 8 11 14 16 18 19 25 30 33 37 43 48 53 60 67 71 76 82 92 97 100])
+;(def min-mv 2700)
+;(def max-mv 4200)
+;(def mv-range (- max-mv min-mv));1500
 ; Settings version
 (def config-version 422i32)
 ; Persistent settings
@@ -92,38 +115,42 @@
 	(esp-now-secret-code       . (41 i -1 -1))
 ))
 @const-start
-(def strobe-index 0)
+(defun led-float-disabled (led-color) {
+    (var led-num (length led-color))
+    (var start (floor (/ led-num 4.0)))
+    (var end (floor (* led-num 3 (/ 1 4.0))))
+    ; Single loop for LEDs
+    (looprange i 0 led-num {
+        (if (and (>= i start) (< i end)) {
+            (if (or (= i start) (= i (- end 1))) {
+                (setix led-color i 0x007F0000)  ; Dimmed red for first and last
+            } {
+                (setix led-color i 0x00FF0000)  ; Full red for center
+            })
+        } {
+            (setix led-color i 0x00000000)  ; Black for outer LEDs
+        })
+    })
+})
+
 (defun strobe-pattern () {
     (setq strobe-index (mod (+ strobe-index 1) 2))
     (var color (if (= strobe-index 0) 0xFFFFFFFF 0x00000000))
-	
-    (looprange i 0 (length led-front-color) {
-        (setix led-front-color i color)
-    })
-    (looprange i 0 (length led-rear-color) {
-        (setix led-rear-color i color)
-    })
+	(set-led-strip-color led-front-color color)
+	(set-led-strip-color led-rear-color color)
 })
-
-(def brake-index 0)
 (defun brake-pattern () {
     (setq brake-index (mod (+ brake-index 1) 2))
-    (looprange i 0 (length led-rear-color) {
-        (setix led-rear-color i (if (= brake-index 0) 0x00FF0000 0x00000000))
-    })
+	(set-led-strip-color led-rear-color (if (= brake-index 0) 0x00FF0000 0x00000000))
 })
 
-(def rave-index 0)
 (defun rave-pattern (type){
-        (var current-color (ix rave-colors rave-index))
-        (looprange i 0 (length led-front-color)
-            (setix led-front-color i (if (= type 0) current-color 0xFF000000)))
-        (looprange i 0 (length led-rear-color)
-            (setix led-rear-color i current-color))
-        (setq rave-index (mod (+ rave-index 1) 6))
+	(var current-color (ix rave-colors rave-index))
+	(set-led-strip-color led-front-color (if (= type 0) current-color 0xFF000000))
+	(set-led-strip-color led-rear-color current-color)
+	(setq rave-index (mod (+ rave-index 1) 6))
 })
-(def knight-rider-position 0)
-(def knight-rider-direction 1)
+
 (defun max (a b) (if (> a b) a b))
 (defun min (a b) (if (< a b) a b))
   
@@ -141,7 +168,6 @@
         (if (or (>= knight-rider-position total-leds) (< knight-rider-position 0))
             (setq knight-rider-direction (* knight-rider-direction -1)))
 })
-
 
 ; Battery LED strip based on the current voltage
 (defun battery-pattern (color-list) {
@@ -170,7 +196,6 @@
     })
 })
 ; Update the rainbow LED effect on the front and rear LED strips
-(def rainbow-index 0)
 (defun rainbow-pattern () {
     (var num-colors (length rainbow-colors))
     (looprange led-index 0 (length led-front-color) {
@@ -186,7 +211,6 @@
     (setq rainbow-index (mod (+ rainbow-index 1) num-colors))
 })
 
-(def felony-index 0)
 (defun felony-pattern () {
     (var felony-state (mod felony-index 3))
 	(var led-front-num (length led-front-color))
@@ -279,17 +303,16 @@
     })
 })
 
-(defun clear-leds () {
-    (looprange led-index 0 (length led-status-color) {
-		(setix led-status-color led-index 0x00)
-    })      
+(defun set-led-strip-color (led-color color) {
+    (looprange led-index 0 (length led-color) {
+		(setix led-color led-index color)
+    })
+})
 
-    (looprange led-index 0 (length led-front-color) {
-        (setix led-front-color led-index 0x00)
-    })
-	(looprange led-index 0 (length led-rear-color) {
-        (setix led-rear-color led-index 0x00)
-    })
+(defun clear-leds () {
+	(set-led-strip-color led-status-color 0x00)
+	(set-led-strip-color led-front-color 0x00)
+	(set-led-strip-color led-rear-color 0x00)
 })
 
 (defun swap-rg (color-list) {
@@ -533,19 +556,6 @@
 	(return 0)
 })
 
-(def FLOAT_MAGIC 101) ; Magic number used by float
-(def FLOAT_ACCESSORIES_MAGIC 102)
-
-; Float commands. Here we are using an association list, but there
-; are many other ways to do the same thing.
-(def float-cmds '(
-		(COMMAND_GET_INFO . 0)
-		(COMMAND_GET_ALLDATA . 10)
-        (COMMAND_LCM_POLL . 24)
-		(COMMAND_LCM_GET_BATTERY . 29)
-		(COMMAND_LIGHTS_CONTROL . 202)
-))
-
 (defun float-cmd (can-id cmd) {
         (send-data (append (list FLOAT_MAGIC) cmd) 2 can-id)
 })
@@ -683,22 +693,11 @@
 )
 
 (defun mklist (len val) (map (fn (x) val) (range len)))
-
-(defun update-direction-leds (direction led-forward-color led-backward-color) {
-    (var rear-color (if (< direction 0) led-forward-color led-backward-color))
-    (var front-color (if (< direction 0) led-backward-color led-forward-color))
-    (looprange led-index 0 (length led-front-color) {
-        (setix led-front-color led-index front-color)
-    })
-    (looprange led-index 0 (length led-rear-color) {
-        (setix led-rear-color led-index rear-color)
-    })
-})
 (defun main () {
     (if (!= (str-cmp (to-str (sysinfo 'hw-type)) "hw-express") 0) {
         (exit-error "Not running on hw-express")
     })
-	(def fw-num (+ (first (sysinfo 'fw-ver)) (* (second (sysinfo 'fw-ver)) 0.01)))
+	(var fw-num (+ (first (sysinfo 'fw-ver)) (* (second (sysinfo 'fw-ver)) 0.01)))
 	(if (< fw-num 6.05) (exit-error "hw-express needs to be running 6.05"))
 	
 	; Restore settings if version number does not match
@@ -764,10 +763,6 @@
 	})
 })
 
-(def lut [0 0 0 0 1 2 3 4 5 7 8 11 14 16 18 19 25 30 33 37 43 48 53 60 67 71 76 82 92 97 100])
-;(def min-mv 2700)
-;(def max-mv 4200)
-;(def mv-range (- max-mv min-mv));1500
 (defun soc (mv)
   (let ((v (max 0 (min (- mv 2700) (- 1500 1)))))
     (let ((i (* v (/ 30.0 1500))))
@@ -856,8 +851,6 @@
 
 (defun led-loop () {
     (var direction 0)
-    (var previous-direction 0)
-    (var idle-timeout-shutoff-event 0)
     (var led-mall-grab 0)
     (var next-run-time (secs-since 0))
     (var loop-start-time 0)
@@ -886,21 +879,19 @@
             (if (< rpm (* idle-rpm-darkride -1)) {
                 (setq direction -1)
             })
+			
             (if (= (get-config 'led-mall-grab-enabled) 1){
                 (if (> pitch-angle 70) (setq led-mall-grab 1) (setq led-mall-grab 0))
 				;(print pitch-angle)
             })
-            (update-leds (secs-since led-last-activity-time) previous-direction direction idle-timeout-shutoff-event led-mall-grab)
-            (setq previous-direction direction)
+            (update-leds (secs-since led-last-activity-time) direction led-mall-grab)
             (if (or (!= direction 0) (= led-mall-grab 1)) {
-                (setq idle-timeout-shutoff-event 0)
                 (setq led-last-activity-time (systime))
             })
-            (if (< idle-timeout-shutoff-event 2) (led-update direction))
         } {
             (clear-leds)
-			(led-update direction)
         })
+		(led-update direction)
         ; Capture end time and calculate actual loop time
         ;(setq loop-end-time (secs-since 0))
         ;(setq actual-loop-time (- loop-end-time loop-start-time))
@@ -942,7 +933,6 @@
 	;(print (list "starting" (get-mac-addr) (wifi-get-chan)))
 	;(print esp-now-remote-mac)
 })
-(def pairing-state 0)
 (defun pair-pubmote (pairing) {
 	(if (= (conf-get 'wifi-mode) 0) {
 		(send-msg "WiFi is disabled. Please enable and reboot.")
@@ -1078,14 +1068,12 @@
 			(can-cmd (get-config 'can-id) (str-replace (to-str(list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
 		})
 	})
-	(free data)
 })
 (defun sleep2 (x) (yield (* x 1000000)))
 @const-end
-(defun update-leds (last-activity-sec previous-direction direction idle-timeout-shutoff-event led-mall-grab) {
+(defun update-leds (last-activity-sec direction led-mall-grab) {
 	(var idle-timeout (get-config 'idle-timeout))
 	(var can-last-activity-time-sec (secs-since can-last-activity-time))
-    (if (or (> can-last-activity-time-sec idle-timeout) (< last-activity-sec (get-config 'idle-timeout-shutoff))) {
 		(if (> (length led-status-color) 0){
 			(if (= (get-config 'led-mode-status) 0)
 				(update-status-leds)
@@ -1094,8 +1082,8 @@
         (var current-led-mode (get-config 'led-mode))
         (setq led-current-brightness (get-config 'led-brightness))
 		(var idle-timeout (get-config 'idle-timeout))
-		(if (>= can-last-activity-time-sec idle-timeout){
-			(setq current-led-mode 0)
+		(if (>= can-last-activity-time-sec 1){
+			(setq current-led-mode 0);failover to keeping the lights on if can fails.
 		}{
 			(if (and (<= (secs-since 0) idle-timeout) (= direction 0)) (setq current-led-mode (get-config 'led-mode-startup)))
 			(if (> last-activity-sec idle-timeout) {
@@ -1103,35 +1091,35 @@
 				(setq led-current-brightness (get-config 'led-brightness-idle))
 			})
 		})
-        (var led-forward-color 0x00)
-        (var led-backward-color 0x00)
 		(if (and (> (length led-front-color) 0) (> (length led-rear-color) 0)){
 			(cond
+				((= state 15) {
+					(clear-leds)
+					(led-float-disabled led-status-color)
+					(led-float-disabled led-front-color)
+				})
+				((and (> last-activity-sec (get-config 'idle-timeout-shutoff)) (< can-last-activity-time-sec 1)){;make sure we dont' clear if we loose can bus
+					(clear-leds)
+				})
 				((or (= current-led-mode 1) (= led-mall-grab 1)) {
 					(battery-pattern led-front-color)
 					(battery-pattern led-rear-color)
 				})
 				((= current-led-mode 0) {
-					(setq led-forward-color 0xFFFFFFFFu32)
-					(setq led-backward-color 0x00FF0000u32)
-					;(if (or (and (> direction 0) (<= previous-direction 0)) (and (<= direction 0) (> previous-direction 0))) {
-					(update-direction-leds direction led-forward-color led-backward-color)
-					;})
+					(set-led-strip-color (if (>= direction 0) led-front-color led-rear-color) 0xFFFFFFFFu32)
+					(set-led-strip-color (if (< direction 0) led-front-color led-rear-color) 0x00FF0000u32)
 				})
 				((= current-led-mode 2) {
-					(setq led-forward-color 0x0000FFFFu32)
-					(setq led-backward-color 0x00FF00FFu32)
-					(update-direction-leds direction led-forward-color led-backward-color)
+					(set-led-strip-color (if (>= direction 0) led-front-color led-rear-color) 0x0000FFFFu32)
+					(set-led-strip-color (if (< direction 0) led-front-color led-rear-color) 0x00FF00FFu32)
 				})
 				((= current-led-mode 3) {
-					(setq led-forward-color 0x000000FFu32)
-					(setq led-backward-color 0x0000FF00u32)
-					(update-direction-leds direction led-forward-color led-backward-color)
+					(set-led-strip-color (if (>= direction 0) led-front-color led-rear-color) 0x000000FFu32)
+					(set-led-strip-color (if (< direction 0) led-front-color led-rear-color) 0x0000FF00u32)
 				})
 				((= current-led-mode 4) {
-					(setq led-forward-color 0x00FFFF00u32)
-					(setq led-backward-color 0x0000FF00u32)
-					(update-direction-leds direction led-forward-color led-backward-color)
+					(set-led-strip-color (if (>= direction 0) led-front-color led-rear-color) 0x00FFFF00u32)
+					(set-led-strip-color (if (< direction 0) led-front-color led-rear-color) 0x0000FF00u32)
 				})
 				((= current-led-mode 5) {
 					(rainbow-pattern)
@@ -1152,17 +1140,8 @@
 					(felony-pattern)
 				})
 			)
-			;(setq tot-current -4.2)
-				;(print (get-config 'led-brake-light-min-amps))
 			(if (and (= (get-config 'led-brake-light-enabled) 1) (<= tot-current (get-config 'led-brake-light-min-amps))) (brake-pattern))
 		})
-    }
-    {;else
-        (if (< idle-timeout-shutoff-event 2) {
-            (clear-leds)
-            (setq idle-timeout-shutoff-event (+ idle-timeout-shutoff-event 1))
-        })
-    })
 })
 
 (defun bms-loop () {
