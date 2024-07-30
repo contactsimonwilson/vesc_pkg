@@ -219,7 +219,6 @@ Item {
                     GroupBox {
                         title: "LED General Config"
                         Layout.fillWidth: true
-                        visible: ledOn.checked
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -362,7 +361,6 @@ Item {
                         GroupBox {
                             title: "LED Status Config"
                             Layout.fillWidth: true
-                            visible: ledOn.checked
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -450,7 +448,6 @@ Item {
                         GroupBox {
                             title: "LED Front Config"
                             Layout.fillWidth: true
-                            visible: ledOn.checked
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -554,7 +551,6 @@ Item {
                         GroupBox {
                             title: "LED Rear Config"
                             Layout.fillWidth: true
-                            visible: ledOn.checked
 
                             ColumnLayout {
                                 anchors.fill: parent
