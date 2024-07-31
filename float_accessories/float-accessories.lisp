@@ -34,10 +34,10 @@
 (def discover-can-id -1)
 (def esp-now-remote-mac '())
 (def pubmote-pairing-timer 31)
-(def pubmote-last-activity-time 0)
-(def bms-last-activity-time 0)
-(def led-last-activity-time 0)
-(def can-last-activity-time 0)
+(def pubmote-last-activity-time (systime))
+(def bms-last-activity-time (systime))
+(def led-last-activity-time (systime))
+(def can-last-activity-time (systime))
 
 (def rainbow-colors '(0xFF0000u32 0xFFFF00u32 0x00FF00u32 0x00FFFFu32 0x0000FFu32 0xFF00FFu32))
 (def rave-colors '(0x00FFFF00 0x0000FF00 0x0000FFFF 0x000000FF 0x00FF00FF 0x00FF0000))
@@ -348,8 +348,8 @@
 	(var led-rear-pin (get-config 'led-rear-pin))
 	(var led-front-strip-type (get-config 'led-front-strip-type) )
 	(var led-rear-strip-type (get-config 'led-rear-strip-type) )
-    (var front-color-highbeam (if (and (> direction 0) (= led-highbeam-on 0)) (to-i(* 0xFF led-brightness-highbeam)) 0x00))
-    (var rear-color-highbeam (if (and (< direction 0) (= led-highbeam-on 0)) (to-i(* 0xFF led-brightness-highbeam)) 0x00))
+    (var front-color-highbeam (if (and (>= direction 0) (!= led-highbeam-on 0)) (to-i(* 0xFF led-brightness-highbeam)) 0x00))
+    (var rear-color-highbeam (if (and (< direction 0) (!= led-highbeam-on 0)) (to-i(* 0xFF led-brightness-highbeam)) 0x00))
     (if (or (= led-front-strip-type 2) (= led-front-strip-type 3)) {
 		(setq led-front-color (append (list front-color-highbeam) led-front-color))
     })
@@ -483,6 +483,7 @@
 						(write-val-eeprom 'crc (config-crc))
 					}{
 						(sleep2 0.01)
+						;(print "hi")
 						(rgbled-update led-rear-buffer)
 						(sleep2 0.01)
 					})
@@ -774,6 +775,7 @@
 
 
 (defun float-command-rx (data) {
+	;(print "hi")
         ;(print (map (fn (x) (bufget-u8 data x)) (range (buflen data))))
         ;Support for saving config/code exec from qml
 		(atomic {
@@ -846,7 +848,7 @@
                     (_ nil) ; Ignore other commands
                 )
         })
-		(free data)
+		(free data) 
 })
 
 (defun led-loop () {
@@ -1083,13 +1085,16 @@
         (setq led-current-brightness (get-config 'led-brightness))
 		(var idle-timeout (get-config 'idle-timeout))
 		
-		(if (>= last-activity-sec idle-timeout) {
+		(if (and (>= last-activity-sec idle-timeout) (<= can-last-activity-time-sec 1)) {
 			(setq current-led-mode (get-config 'led-mode-idle))
 			(setq led-current-brightness (get-config 'led-brightness-idle))
 		})
 		
 		(if (and (<= (secs-since 0) idle-timeout) (= direction 0)) (setq current-led-mode (get-config 'led-mode-startup)))
-		
+		;(print "hi")
+		;(print led-front-color)
+		;(print led-rear-color)
+		;(print current-led-mode)
 		(if (and (> (length led-front-color) 0) (> (length led-rear-color) 0)){
 			(cond
 				((= state 15) {
@@ -1107,6 +1112,7 @@
 				((or (= current-led-mode 0) (and (> can-last-activity-time-sec 1) (> (secs-since 0) idle-timeout))) {
 					(set-led-strip-color (if (>= direction 0) led-front-color led-rear-color) 0xFFFFFFFFu32)
 					(set-led-strip-color (if (< direction 0) led-front-color led-rear-color) 0x00FF0000u32)
+					;(print "hi")
 				})
 				((= current-led-mode 2) {
 					(set-led-strip-color (if (>= direction 0) led-front-color led-rear-color) 0x0000FFFFu32)

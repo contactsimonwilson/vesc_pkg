@@ -897,11 +897,11 @@ Item {
             case 1: // Custom
                 break
             case 2: // Avaspark Laserbeam
-                ledFrontNum.value = 13
+                ledFrontNum.value = 18
                 ledFrontType.currentIndex = 0
                 break
             case 3: // Avaspark Laserbeam Pint
-                ledFrontNum.value = 10
+                ledFrontNum.value = 16
                 ledFrontType.currentIndex = 0
                 break
             case 4: // JetFleet H4
@@ -925,11 +925,11 @@ Item {
             case 1: // Custom
                 break
             case 2: // Avaspark Laserbeam
-                ledRearNum.value = 13
+                ledRearNum.value = 19
                 ledRearType.currentIndex = 0
                 break
             case 3: // Avaspark Laserbeam Pint
-                ledRearNum.value = 10
+                ledRearNum.value = 16
                 ledRearType.currentIndex = 0
                 break
             case 4: // JetFleet H4
