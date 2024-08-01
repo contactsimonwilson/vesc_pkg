@@ -406,7 +406,7 @@
 			(write-val-eeprom 'crc (config-crc))
 		}{
 			(sleep2 0.01)
-			(rgbled-update led-front-buffer)
+			(rgbled-update led-combined-buffer)
 			(sleep2 0.01)
 		})
 		(free led-combined-buffer)
@@ -426,7 +426,7 @@
 				(write-val-eeprom 'crc (config-crc))
 			}{
 				(sleep2 0.01)
-				(rgbled-update led-front-buffer)
+				(rgbled-update led-combined-buffer)
 				(sleep2 0.01)
 			})
 			(free led-combined-buffer)
@@ -448,7 +448,7 @@
 					(write-val-eeprom 'crc (config-crc))
 				}{
 					(sleep2 0.01)
-					(rgbled-update led-status-buffer)
+					(rgbled-update led-combined-buffer)
 					(sleep2 0.01)
 				})
 				(free led-combined-buffer)
