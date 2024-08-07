@@ -941,7 +941,7 @@
 	}{
 		(cond
 			((>= pairing 0) {
-				(set-config 'esp-now-secret-code pairing)
+				(set-config 'esp-now-secret-code (to-i32 pairing))
 				(setq pubmote-pairing-timer (systime))
 				(setq pairing-state 1)
 			})
@@ -953,7 +953,7 @@
 				(write-val-eeprom 'esp-now-remote-mac-d (ix esp-now-remote-mac 3))
 				(write-val-eeprom 'esp-now-remote-mac-e (ix esp-now-remote-mac 4))
 				(write-val-eeprom 'esp-now-remote-mac-f (ix esp-now-remote-mac 5))
-				(write-val-eeprom 'esp-now-secret-code esp-now-secret-code)
+				(write-val-eeprom 'esp-now-secret-code (get-config 'esp-now-secret-code))
 				(write-val-eeprom 'crc (config-crc))
 				(setq pairing-state 0)
 			})
@@ -981,7 +981,14 @@
 			(esp-now-del-peer esp-now-remote-mac)
 			(setq esp-now-remote-mac '(255 255 255 255 255 255))
 			(esp-now-add-peer esp-now-remote-mac)
-			(esp-now-send esp-now-remote-mac "42069") ;TODO client side
+			(var data (bufcreate 6))
+			(var local-mac (get-mac-addr))
+			(looprange i 0 (buflen data) {
+				(bufset-u8 data i (ix local-mac i))
+			})
+			;(bufset-u8 data 0 69)
+			(esp-now-send esp-now-remote-mac data) ;TODO client side
+			(free data)
 			(esp-now-del-peer esp-now-remote-mac)
 			(setq pairing-state 2)
 			;(print "hi")
@@ -1051,26 +1058,36 @@
 
 (defun pubmote-rx (src des data rssi) {
 	(if (= pairing-state 2) {
+		;(print (get-mac-addr))
+		;(print src)
+		;(print (get-config 'esp-now-secret-code))
 		(setq esp-now-remote-mac src)
 		(esp-now-add-peer esp-now-remote-mac)
-		(esp-now-send esp-now-remote-mac (get-config 'esp-now-secret-code)) ;TODO client side
+		(var tmpbuf (bufcreate 4))
+		(bufset-i32 tmpbuf 0 (get-config 'esp-now-secret-code))
+		(esp-now-send esp-now-remote-mac tmpbuf) ;TODO client side
+		(free tmpbuf)
 		(esp-now-del-peer esp-now-remote-mac)
-		(setq pairing-state 3)
+		;(setq pairing-state 0)
+		(atomic (pair-pubmote -1))
 	}{
-		(if (and (= (buflen data) 15) (= (bufget-i32 data 11) (get-config 'esp-now-secret-code))) { ;TODO client side buffers changed
+		(if (and (= (buflen data) 16) (= (bufget-i32 data 0 'little-endian) (get-config 'esp-now-secret-code))) { ;TODO client side buffers changed
 			(setq pubmote-last-activity-time (systime))
-			;(print (list "Received" src des data rssi))
-			(var jsx (bufget-f32 data 0 'little-endian))
-			(var jsy (bufget-f32 data 4 'little-endian))
-			(var bt-c (bufget-u8 data 8))
-			(var bt-z (bufget-u8 data 9))
-			(var is-rev (bufget-u8 data 10))
-			;(print (list jsy jsx bt-c bt-z is-rev))
+			(print (list "Received" src des data rssi))
+			(var jsx (bufget-f32 data 4 'little-endian))
+			(var jsy (bufget-f32 data 8 'little-endian))
+			(var bt-c (bufget-u8 data 12))
+			(var bt-z (bufget-u8 data 13))
+			(var is-rev (bufget-u8 data 14))
+			(print (list jsy jsx bt-c bt-z is-rev))
 			;(rcode-run-noret (get-config 'can-id) `(set-remote-state ,jsy ,jsx ,bt-c ,bt-z ,is-rev))
-			(can-cmd (get-config 'can-id) (str-replace (to-str(list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
+			(if (>= (get-config 'can-id) 0) {
+				(can-cmd (get-config 'can-id) (str-replace (to-str(list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
+			})
 		})
 	})
 })
+
 (defun sleep2 (x) (yield (* x 1000000)))
 @const-end
 (defun update-leds (last-activity-sec direction led-mall-grab) {

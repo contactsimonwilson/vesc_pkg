@@ -8,7 +8,7 @@ preserved_names = [
     'def', 'defun', 'defunret', 'let', 'if', 'cond', 'case', 'and', 'or', 'not',
     'lambda', 'fn', 'loop', 'while', 'prog1', 'prog2', 'progn', 'eval', 'apply',
     'map', 'filter', 'reduce', 'concat', 'append', 'reverse', 'flatten', 'length',
-    'list', 'cons', 'car', 'cdr', 'setq', 'setvar', 'define', 'define-macro', 'go', 'do', 'return', 'nil', 'match', 'break', 'var', 'eq', 'value', 'little-endian', 'free', 't', 'read', 'b','i','f','not','running','on','timeout','x', 'gc', 'color-mix',
+    'list', 'cons', 'car', 'cdr', 'setq', 'setvar', 'define', 'define-macro', 'go', 'do', 'return', 'nil', 'match', 'break', 'var', 'eq', 'value', 'little-endian', 'free', 't', 'read', 'b','i','f','not','running','on','timeout','x', 'gc', 'color-mix', 'to-i32', 'str-replace', 'can-cmd',
     
     # LispBM-specific constructs
     'const-start', 'const-end', 'const-symbol-strings', 'no-gc',
@@ -16,7 +16,7 @@ preserved_names = [
     # Buffer operations
     'bufcreate', 'bufcpy', 'bufget-u8', 'bufget-u16', 'bufget-u32', 'bufget-i8', 
     'bufget-i16', 'bufget-i32', 'bufget-f32', 'bufset-u8', 'bufset-u16', 'bufset-u32', 
-    'bufset-i8', 'bufset-i16', 'bufset-i32', 'bufset-f32', 'buflen', 'move-to-flash',
+    'bufset-i8', 'bufset-i16', 'bufset-i32', 'bufset-f32', 'buflen', 'move-to-flash', 'get-mac-addr',
     
     # Math and bitwise operations
     'abs', 'min', 'max', 'floor', 'ceil', 'round', 'mod', 'clip', 'bits-enc-int',
