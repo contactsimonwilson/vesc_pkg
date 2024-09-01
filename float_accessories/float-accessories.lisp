@@ -863,7 +863,8 @@
 	    (setq loop-start-time (secs-since 0))
 		(var can-id (get-config 'can-id))
 		;"float-accessories1.0\0"
-		(float-cmd can-id (append (list (assoc float-cmds 'COMMAND_LCM_POLL)) '(102 108 111 97 116 45 97 99 99 101 115 115 111 114 105 101 115 49 46 48 0)))
+		;(float-cmd can-id (append (list (assoc float-cmds 'COMMAND_LCM_POLL)) '(102 108 111 97 116 45 97 99 99 101 115 115 111 114 105 101 115 49 46 48 0)))
+		(float-cmd can-id (list (assoc float-cmds 'COMMAND_LCM_POLL)))
 		(float-cmd can-id (list (assoc float-cmds 'COMMAND_LIGHTS_CONTROL)))
 		(float-cmd can-id (list (assoc float-cmds 'COMMAND_LCM_GET_BATTERY)))
         (if (= (get-config 'led-on) 1) {
