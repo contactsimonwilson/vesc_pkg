@@ -14,9 +14,9 @@ Beta Testers: Koddex, Pickles
 
 <H2>RELEASE NOTES</H2>
 
-Requires 6.05 firmware on VESC Express. Checkout the fancy appUI
+Requires 6.05 firmware on VESC Express and VESC ESC. Requires Refloat package. Checkout the fancy appUI
 
-The VESC Express seems to run out of memory if too many things are going on. I've tried to cut down on memory with lisbm_minimizer.py. Try disabling WiFi or removing some functionality in the script if you're having an issue. Ideally someone will look into improvements with vesc express since wifi is needed for pubmote feature.
+The VESC Express seems to run out of memory if too many things are going on original ESP32. I've tried to cut down on memory with lisbm_minimizer.py. Try disabling WiFi or removing some functionality in the script if you're having an issue. Ideally someone will look into improvements with vesc express since wifi is needed for pubmote feature.
 
 <H3>BUILD INFO</H3>
 
