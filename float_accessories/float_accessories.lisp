@@ -20,8 +20,8 @@
 (read-eval-program can)
 ;(import "lib/bms.lisp" 'bms)
 ;(read-eval-program bms)
-;(import "lib/pubmote.lisp" 'pubmote)
-;(read-eval-program pubmote)
+(import "lib/pubmote.lisp" 'pubmote)
+(read-eval-program pubmote)
 (defun main () {
     (setup)
     (init)

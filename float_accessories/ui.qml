@@ -1264,7 +1264,7 @@ Text {
                                     id: pubmoteEnabled
                                     text: "Pubmote Enabled"
                                     checked: false
-                                    enabled: false
+                                    enabled: true
                                 }
                                 CheckBox {
                                     id: bmsEnabled

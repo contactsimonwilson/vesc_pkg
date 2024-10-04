@@ -34,9 +34,9 @@
     (set-led-strip-color led-front-color color)
     (set-led-strip-color led-rear-color color)
 })
-(defun brake-pattern () {
+(defun brake-pattern (color-list) {
     (setq brake-index (mod (+ brake-index 1) 2))
-    (set-led-strip-color led-rear-color (if (= brake-index 0) 0x00FF0000 0x00000000))
+    (set-led-strip-color color-list (if (= brake-index 0) 0x00FF0000 0x00000000))
 })
 
 (defun rave-pattern (type){

@@ -220,7 +220,7 @@
         (if (= led-mall-grab-enabled 1) {
             (if (> pitch-angle 70) (setq led-mall-grab 1) (setq led-mall-grab 0))
         })
-        (if (or (and (>= state 1) (<= state 5)) (= led-mall-grab 1)) {
+        (if (or (and (>= state 1) (< state 5)) (= led-mall-grab 1)) {
             (setq led-last-activity-time (systime))
         } {
             (setq direction 1)
@@ -279,7 +279,7 @@
     (var led-dim-on-highbeam-brightness (* led-current-brightness led-dim-on-highbeam-ratio))
     (var front-color-highbeam 0x00)
     (var rear-color-highbeam 0x00)
-    (if (and (= led-on 1) (= led-highbeam-on 1) (>= state 1) (<= state 5)){
+    (if (and (= led-on 1) (= led-highbeam-on 1) (>= state 1) (< state 5)){
         (if (>= direction 0){
             (setq front-color-highbeam (to-i(* 0xFF led-brightness-highbeam)))
             (if (> led-dim-on-highbeam-brightness 0.0) (setq led-current-brightness-front led-dim-on-highbeam-brightness))
@@ -294,7 +294,7 @@
     (var led-current-rear-color '())
     (cond
         ((or (= led-front-strip-type 2) (= led-front-strip-type 3)) {
-            (if (and (<= led-dim-on-highbeam-brightness 0.0) (>= direction 0) (= led-on 1) (= led-highbeam-on 1) (>= state 1) (<= state 5)){
+            (if (and (<= led-dim-on-highbeam-brightness 0.0) (>= direction 0) (= led-on 1) (= led-highbeam-on 1) (>= state 1) (< state 5)){
                 (setq led-current-front-color (append (list front-color-highbeam) (mklist led-front-num 0)))
             }{
                 (setq led-current-front-color (append (list front-color-highbeam) (take led-front-color led-front-num)))
@@ -308,7 +308,7 @@
                 (if (or (and (= led-front-strip-type 4) (or (= k 2) (= k 7) (= k 13) (= k 18))) (and (= led-front-strip-type 5) (or (= k 1) (= k 5) (= k 10) (= k 3)))) {
                     (setix led-current-front-color k front-color-highbeam)
                 }{
-                    (if (and (<= led-dim-on-highbeam-brightness 0.0) (>= direction 0) (= led-on 1) (= led-highbeam-on 1) (>= state 1) (<= state 5)){
+                    (if (and (<= led-dim-on-highbeam-brightness 0.0) (>= direction 0) (= led-on 1) (= led-highbeam-on 1) (>= state 1) (< state 5)){
                         (setix led-current-front-color k 0)
                     }{
                         (setix led-current-front-color k (ix led-tmp led-tmp-index))
@@ -324,7 +324,7 @@
     )
     (cond
         ((or (= led-rear-strip-type 2) (= led-rear-strip-type 3)) {
-            (if (and (<= led-dim-on-highbeam-brightness 0.0) (< direction 0) (= led-on 1) (= led-highbeam-on 1) (>= state 1) (<= state 5)){
+            (if (and (<= led-dim-on-highbeam-brightness 0.0) (< direction 0) (= led-on 1) (= led-highbeam-on 1) (>= state 1) (< state 5)){
                 (setq led-current-rear-color (append (list rear-color-highbeam) (mklist led-rear-num 0)))
             }{
                 (setq led-current-rear-color (append (list rear-color-highbeam) (take led-rear-color led-rear-num)))
@@ -338,7 +338,7 @@
                 (if (or (and (= led-rear-strip-type 4) (or (= k 2) (= k 7) (= k 13) (= k 18))) (and (= led-rear-strip-type 5) (or (= k 1) (= k 5) (= k 10) (= k 3)))) {
                     (setix led-current-rear-color k rear-color-highbeam)
                 }{
-                    (if (and (<= led-dim-on-highbeam-brightness 0.0) (< direction 0) (= led-on 1) (= led-highbeam-on 1) (>= state 1) (<= state 5)){
+                    (if (and (<= led-dim-on-highbeam-brightness 0.0) (< direction 0) (= led-on 1) (= led-highbeam-on 1) (>= state 1) (< state 5)){
                         (setix led-current-rear-color k 0)
                     }{
                         (setix led-current-rear-color k (ix led-tmp led-tmp-index))
@@ -529,7 +529,13 @@
                     (felony-pattern)
                 })
             )
-        (if (and (= led-brake-light-enabled 1) (>= state 1) (<= state 5) (<= tot-current led-brake-light-min-amps)) (brake-pattern))
+        (if (and (= led-brake-light-enabled 1) (>= state 1) (< state 5) (<= tot-current led-brake-light-min-amps)){
+            (if (>= direction 0){
+                (brake-pattern led-rear-color)
+            }{
+                (brake-pattern led-front-color)
+            })
+        })
         (if bms-charger-just-plugged {
             ;do something
             (battery-pattern led-front-color)
