@@ -181,7 +181,7 @@
                 (if (= pairing-state 2) {
                     ; Bond in progress
                     (if (should-lock-channel) {
-                        (lock-channel "ESP-NOW packet received")
+                        (lock-channel "Bonding in progress")
                     })
                 })
 
