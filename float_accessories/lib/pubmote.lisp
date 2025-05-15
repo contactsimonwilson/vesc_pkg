@@ -9,6 +9,21 @@
 (def uni-mac '(255 255 255 255 255 255)) ; Universal mac (all devices)
 (def channel-locked 0)
 
+(def rem-cmds '(
+    ; Remote version commands
+    (REM_VERSION . 0)
+    ; Receiver version commands
+    (REM_RECEIVER_VERSION . 5)
+    ; Bonding commands
+    (REM_PAIR_INIT . 10)
+    (REM_PAIR_BOND . 11)
+    (REM_PAIR_COMPLETE . 12)
+    ; Remote specific commands
+    (REM_SET_CORE_DATA . 100)
+    ; Receiver specific commands
+    (REM_REC_SET_REMOTE_STATE . 150)
+))
+
 (defunret init-pubmote () {
     ; Escape without wifi
     (if (not wifi-enabled-on-boot) {
@@ -31,7 +46,6 @@
     (return true)
 })
 
-;todo more robust pairing process. Needs to keep sending packets as a missed packet can lead to invalid state machine.
 (defunret pair-pubmote (pairing) {
     (if (= (conf-get 'wifi-mode) 0) {
         (send-msg "WiFi is disabled. Please enable and reboot.")
@@ -54,8 +68,10 @@
             (write-val-eeprom 'esp-now-secret-code (get-config 'esp-now-secret-code))
             (write-val-eeprom 'crc (config-crc))
             (init-pubmote)
-            (var tmpbuf (bufcreate 4))
-            (bufset-i32 tmpbuf 0 -1)
+            (var tmpbuf (bufcreate 2))
+            (bufset-u8 tmpbuf 0 (assoc rem-cmds 'REM_PAIR_COMPLETE))
+            (bufset-u8 tmpbuf 1 1)
+            (print "Sending pairing success message")
             (esp-now-send esp-now-remote-mac tmpbuf)
             (free tmpbuf)
             (setq pairing-state 0)
@@ -66,8 +82,10 @@
             (set-config 'esp-now-remote-mac-a -1)
             (write-val-eeprom 'esp-now-remote-mac-a (get-config 'esp-now-remote-mac-a) -1)
             (write-val-eeprom 'crc (config-crc))
-            (var tmpbuf (bufcreate 4))
-            (bufset-i32 tmpbuf 0 -2)
+            (var tmpbuf (bufcreate 2))
+            (bufset-u8 tmpbuf 0 (assoc rem-cmds 'REM_PAIRING_COMPLETE))
+            (bufset-u8 tmpbuf 1 0)
+            (print "Sending pairing rejected message")
             (esp-now-send esp-now-remote-mac tmpbuf)
             (free tmpbuf)
             (setq esp-now-remote-mac '())
@@ -121,7 +139,7 @@
         (var loop-start-time 0)
         (var loop-end-time 0)
         (var pubmote-loop-delay-sec (/ 1.0 pubmote-loop-delay))
-        (var data (bufcreate 32))
+        (var data (bufcreate 33))
 
         (loopwhile t {
             (if (get-config 'pubmote-enabled) {
@@ -145,17 +163,26 @@
                         (lock-channel "ESP-NOW packet received")
                     })
 
-                    (var pairing-data (bufcreate 6))
+                    (var pairing-data (bufcreate 7))
+
+                    (bufset-u8 pairing-data 0 (assoc rem-cmds 'REM_PAIR_INIT))
                     (var local-mac (get-mac-addr))
 
-                    (looprange i 0 (buflen pairing-data) {
-                        (bufset-u8 pairing-data i (ix local-mac i))
+                    (looprange i 0 (- (buflen pairing-data) 1) {
+                        (bufset-u8 pairing-data (+ i 1) (ix local-mac i))
                     })
 
                     ; (bufset-u8 data 0 69)
-                    ; (print "sending pairing info")
+                    ; (print "Sending pairing mac address")
                     (esp-now-send uni-mac pairing-data)
                     (free pairing-data)
+                })
+
+                (if (= pairing-state 2) {
+                    ; Bond in progress
+                    (if (should-lock-channel) {
+                        (lock-channel "ESP-NOW packet received")
+                    })
                 })
 
                 (if (and (= pairing-state 0) (!= (get-config 'esp-now-remote-mac-a) -1) (>= (get-config 'can-id) 0)) {
@@ -204,33 +231,45 @@
             (lock-channel "ESP-NOW packet received")
         })
 
-        (if (and (= pairing-state 0) (eq esp-now-remote-mac src) (= (buflen data) 16) (= (bufget-i32 data 0 'little-endian) (get-config 'esp-now-secret-code))) {
-            (atomic {
-                (setq pubmote-last-activity-time (systime))
-                ; (print (list "Received" src des data rssi))
-                (var jsy (bufget-f32 data 4 'little-endian))
-                (var jsx (bufget-f32 data 8 'little-endian))
-                (var bt-c (bufget-u8 data 12))
-                (var bt-z (bufget-u8 data 13))
-                (var is-rev (bufget-u8 data 14))
-                ; (print (list jsy jsx bt-c bt-z is-rev))
-                ; (rcode-run-noret (get-config 'can-id) `(set-remote-state ,jsy ,jsx ,bt-c ,bt-z ,is-rev))
+        (var cmd (bufget-u8 data 0))
+        (match (cossa rem-cmds cmd)
+            (REM_REC_SET_REMOTE_STATE {
+                (if (and (= pairing-state 0) (eq esp-now-remote-mac src) (= (buflen data) 16) (= (bufget-i32 data 0 'little-endian) (get-config 'esp-now-secret-code))) {
+                    (atomic {
+                        (setq pubmote-last-activity-time (systime))
+                        ; (print (list "Received" src des data rssi))
+                        (var jsy (bufget-f32 data 4 'little-endian))
+                        (var jsx (bufget-f32 data 8 'little-endian))
+                        (var bt-c (bufget-u8 data 12))
+                        (var bt-z (bufget-u8 data 13))
+                        (var is-rev (bufget-u8 data 14))
+                        ; (print (list jsy jsx bt-c bt-z is-rev))
+                        ; (rcode-run-noret (get-config 'can-id) `(set-remote-state ,jsy ,jsx ,bt-c ,bt-z ,is-rev))
 
-                (if (>= (get-config 'can-id) 0) {
-                    (can-cmd (get-config 'can-id) (str-replace (to-str(list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
+                        (if (>= (get-config 'can-id) 0) {
+                            (can-cmd (get-config 'can-id) (str-replace (to-str(list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
+                        })
+                    })
                 })
             })
-        }{
-            (if (= pairing-state 1) {
-                (setq esp-now-remote-mac src)
-                (esp-now-add-peer esp-now-remote-mac)
-                (var tmpbuf (bufcreate 4))
-                (bufset-i32 tmpbuf 0 (get-config 'esp-now-secret-code))
-                (esp-now-send esp-now-remote-mac tmpbuf)
-                (free tmpbuf)
-                (esp-now-del-peer esp-now-remote-mac)
+            (REM_PAIR_BOND {
+                (if (= pairing-state 1) {
+                    (setq esp-now-remote-mac src)
+                    (esp-now-add-peer esp-now-remote-mac)
+                    (var tmpbuf (bufcreate 5))
+                    (bufset-u8 tmpbuf 0 (assoc rem-cmds 'REM_PAIR_BOND))
+                    (bufset-i32 tmpbuf 1 (get-config 'esp-now-secret-code))
+                    (print "Responding with pairing code")
+                    (esp-now-send esp-now-remote-mac tmpbuf)
+                    (free tmpbuf)
+                    (esp-now-del-peer esp-now-remote-mac)
+                    (setq pairing-state 2)
+                })
             })
-        })
+             (_ {
+                (print (str-join (list "No command found: " (to-str cmd))))
+             })
+        )
     })
 })
 @const-end
