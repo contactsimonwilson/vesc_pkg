@@ -83,7 +83,7 @@
             (write-val-eeprom 'esp-now-remote-mac-a (get-config 'esp-now-remote-mac-a) -1)
             (write-val-eeprom 'crc (config-crc))
             (var tmpbuf (bufcreate 2))
-            (bufset-u8 tmpbuf 0 (assoc rem-cmds 'REM_PAIRING_COMPLETE))
+            (bufset-u8 tmpbuf 0 (to-byte (assoc rem-cmds 'REM_PAIRING_COMPLETE)))
             (bufset-u8 tmpbuf 1 0)
             (print "Sending pairing rejected message")
             (esp-now-send esp-now-remote-mac tmpbuf)
@@ -165,7 +165,7 @@
 
                     (var pairing-data (bufcreate 7))
 
-                    (bufset-u8 pairing-data 0 (assoc rem-cmds 'REM_PAIR_INIT))
+                    (bufset-u8 pairing-data 0 (to-byte (assoc rem-cmds 'REM_PAIR_INIT)))
                     (var local-mac (get-mac-addr))
 
                     (looprange i 0 (- (buflen pairing-data) 1) {
@@ -185,8 +185,8 @@
                     })
                 })
 
-                (if (and (= pairing-state 0) (!= (get-config 'esp-now-remote-mac-a) -1) (>= (get-config 'can-id) 0)) {
-                    (bufset-u8 data 0 69) ; Mode
+                (if (and (= pairing-state 0) (!= (get-config 'esp-now-remote-mac-a) -1)) {
+                    (bufset-u8 data 0 (to-byte (assoc rem-cmds 'REM_SET_CORE_DATA)))
                     (bufset-u8 data 1 fault-code)
                     (bufset-i16 data 2 (floor (* pitch-angle 10)))
                     (bufset-i16 data 4 (floor (* roll-angle 10)))
@@ -203,6 +203,7 @@
                     (bufset-u32 data 23 odometer)
                     (bufset-u8 data 27 (floor (* battery-percent-remaining 200)))
                     (bufset-i32 data 28 (get-config 'esp-now-secret-code))
+                    ; (print "Sending board state to remote")
                     (esp-now-send esp-now-remote-mac data)
                 })
 
@@ -234,10 +235,10 @@
         (var cmd (bufget-u8 data 0))
         (match (cossa rem-cmds cmd)
             (REM_REC_SET_REMOTE_STATE {
-                (if (and (= pairing-state 0) (eq esp-now-remote-mac src) (= (buflen data) 16) (= (bufget-i32 data 0 'little-endian) (get-config 'esp-now-secret-code))) {
+                (if (and (= pairing-state 0) (eq esp-now-remote-mac src) (= (buflen data) 17) (= (bufget-i32 data 1 'little-endian) (get-config 'esp-now-secret-code))) {
                     (atomic {
                         (setq pubmote-last-activity-time (systime))
-                        ; (print (list "Received" src des data rssi))
+                        ;(print (list "Received" src des data rssi))
                         (var jsy (bufget-f32 data 4 'little-endian))
                         (var jsx (bufget-f32 data 8 'little-endian))
                         (var bt-c (bufget-u8 data 12))
@@ -250,6 +251,8 @@
                             (can-cmd (get-config 'can-id) (str-replace (to-str(list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
                         })
                     })
+                } {
+                   ;(print "Conditions not met for set remote state")
                 })
             })
             (REM_PAIR_BOND {
@@ -257,7 +260,7 @@
                     (setq esp-now-remote-mac src)
                     (esp-now-add-peer esp-now-remote-mac)
                     (var tmpbuf (bufcreate 5))
-                    (bufset-u8 tmpbuf 0 (assoc rem-cmds 'REM_PAIR_BOND))
+                    (bufset-u8 tmpbuf 0 (to-byte (assoc rem-cmds 'REM_PAIR_BOND)))
                     (bufset-i32 tmpbuf 1 (get-config 'esp-now-secret-code))
                     (print "Responding with pairing code")
                     (esp-now-send esp-now-remote-mac tmpbuf)
