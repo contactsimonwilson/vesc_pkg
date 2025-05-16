@@ -185,7 +185,7 @@
                     })
                 })
 
-                (if (and (= pairing-state 0) (!= (get-config 'esp-now-remote-mac-a) -1)) {
+                (if (and (= pairing-state 0) (!= (get-config 'esp-now-remote-mac-a) -1) (>= (get-config 'can-id) 0)) {                    (bufset-u8 data 0 (to-byte (assoc rem-cmds 'REM_SET_CORE_DATA)))
                     (bufset-u8 data 0 (to-byte (assoc rem-cmds 'REM_SET_CORE_DATA)))
                     (bufset-u8 data 1 fault-code)
                     (bufset-i16 data 2 (floor (* pitch-angle 10)))
