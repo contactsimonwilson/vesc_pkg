@@ -99,7 +99,7 @@
 (defun lock-channel (reason) {
     (print (str-merge "Channel switching disabled. Reason: " reason))
     (setq channel-locked (wifi-get-chan))
-    (wifi-auto-reconnect false)
+    (wifi-auto-reconnect nil)
     (wifi-disconnect)
 })
 
