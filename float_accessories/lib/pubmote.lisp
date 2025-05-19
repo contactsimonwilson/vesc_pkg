@@ -239,11 +239,11 @@
                     (atomic {
                         (setq pubmote-last-activity-time (systime))
                         ;(print (list "Received" src des data rssi))
-                        (var jsy (bufget-f32 data 4 'little-endian))
-                        (var jsx (bufget-f32 data 8 'little-endian))
-                        (var bt-c (bufget-u8 data 12))
-                        (var bt-z (bufget-u8 data 13))
-                        (var is-rev (bufget-u8 data 14))
+                        (var jsy (bufget-f32 data 5 'little-endian))
+                        (var jsx (bufget-f32 data 9 'little-endian))
+                        (var bt-c (bufget-u8 data 13))
+                        (var bt-z (bufget-u8 data 14))
+                        (var is-rev (bufget-u8 data 15))
                         ; (print (list jsy jsx bt-c bt-z is-rev))
                         ; (rcode-run-noret (get-config 'can-id) `(set-remote-state ,jsy ,jsx ,bt-c ,bt-z ,is-rev))
 
