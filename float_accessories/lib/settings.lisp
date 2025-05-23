@@ -92,7 +92,7 @@
 (def bms-last-activity-time (systime))
 (def pubmote-context-id -1)
 (def pubmote-exit-flag nil)
-(def pubmote-last-activity-time (systime))
+(def pubmote-last-activity-time 0)
 (def led-context-id -1)
 (def led-exit-flag nil)
 (def led-last-activity-time (systime))
