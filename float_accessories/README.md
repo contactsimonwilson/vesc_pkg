@@ -26,6 +26,6 @@ My Blog: <a href='https://sylerclayton.com'>https://sylerclayton.com</a>
 -Fix for front/rear strips of different size pattern getting cut off on the larger strip (e.g. knight rider).
 <H3>BUILD INFO</H3>
 
-Version 2.8.3
+Version 2.9
 
 Source code can be found here:  <a href='https://github.com/relys/vesc%5Fpkg'>https://github.com/relys/vesc_pkg</a>
