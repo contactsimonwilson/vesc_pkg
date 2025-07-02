@@ -20,6 +20,7 @@ Item {
     property bool acceptTOS: false
     property int lastStatusTime: 0
     property bool statusTimeout: false
+    property bool readConfig: false
 
     Component.onCompleted: {
         if (VescIf.getLastFwRxParams().hwTypeStr() !== "Custom Module") {
@@ -487,12 +488,12 @@ Item {
 
                                 ColumnLayout {
                                     id: ledStatusBrightnessLayout
-                                    visible: ledStatusStripType.currentValue > 0
+                                    visible: ledStatusStripType.currentValue > 0 || ledMallGrabEnabled.checked
                                     spacing: 10
 
                                     Text {
                                         color: Utility.getAppHexColor("lightText")
-                                        text: "Status Brightness"
+                                        text: ledMallGrabEnabled.checked && ledStatusStripType.currentValue > 0 ? "Status/Mall Grab Brightness" : ledMallGrabEnabled.checked ? "Mall Grab Brightness" : "Status Brightness"
                                     }
 
                                     Slider {
@@ -746,7 +747,8 @@ Item {
                                         {text: "Rave", value: 7},
                                         {text: "Mullet", value: 8},
                                         {text: "Knight Rider", value: 9},
-                                        {text: "Felony", value: 10}
+                                        {text: "Felony", value: 10},
+                                        {text: "Trans Pride", value: 11}
                                     ]
                                     textRole: "text"
                                     valueRole: "value"
@@ -800,6 +802,7 @@ Item {
                                     Layout.fillWidth: true
                                     model: [
                                         {text: "Green->Red Voltage, Blue Sensor, Yellow->Red Duty", value: 0},
+                                        {text: "Swap ADC1/ADC2", value: 1},
                                     ]
                                     textRole: "text"
                                     valueRole: "value"
@@ -819,6 +822,7 @@ Item {
                                     Layout.fillWidth: true
                                     model: [
                                         {text: "Rainbow Chase", value: 0},
+                                        {text: "Battery Meter", value: 1},
                                     ]
                                     textRole: "text"
                                     valueRole: "value"
@@ -1775,12 +1779,12 @@ Item {
                             "<p><b>CREDITS</b></p>" +
                             "<p>Special Thanks: Benjamin Vedder, surfdado, Mitch (NuRxG), Siwoz, lolwheel (OWIE), ThankTheMaker (rESCue), 4_fools (avaspark), auden_builds (pubmote)</p>" +
                             "<p>gr33tz: outlandnish, exphat, datboig42069</p>" +
-                            "<p>Beta Testers: Koddex, Pickles</p>" +
+                            "<p>Beta Testers: Pickles</p>" +
 
                             "<p>My Blog: <a href='https://sylerclayton.com'>https://sylerclayton.com</a></p>" +
 
                             "<p><b>BUILD INFO</b></p>" +
-                            "<p>Version 2.8</p>" +
+                            "<p>Version 2.8.3</p>" +
                             "<p>Source code can be found here: <a href='https://github.com/relys/vesc_pkg'>https://github.com/relys/vesc_pkg</a></p>"
                         Layout.fillWidth: true
                         wrapMode: Text.WordWrap
@@ -1807,6 +1811,7 @@ Item {
 
             Button {
                 text: "Save Cfg"
+                enabled: readConfig && lastStatusTime < 2
                 onClicked: {
                     if (bmsEnabled.checked && !acceptTOS) {
                         termsPopup.visible = true
@@ -1814,8 +1819,8 @@ Item {
 
                     //console.log(makeArgStr())
                     sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(recv-config " + makeArgStr() + " )")
-                    sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(save-config)")
-                    sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
+                    //sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(save-config)")
+                    //sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
                 }
             }
 
@@ -2172,6 +2177,7 @@ Item {
                 ledMaxBrightness.value = Number(tokens[78])
 
                 pubmoteMacAddress.text = "Pubmote MAC: " + ((Number(tokens[46]) == -1) ? "Not Paired" : macAddress.toUpperCase());
+                readConfig = true;
             } else if (str.startsWith("msg")) {
                 var msg = str.substring(4)
                 VescIf.emitMessageDialog("Float Accessories", msg, false, false)

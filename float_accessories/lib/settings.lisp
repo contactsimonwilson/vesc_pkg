@@ -318,6 +318,9 @@
     (if (= in-pubmote-enabled 1) {
         (if (= pubmote-context-id -1) (setq pubmote-context-id (spawn pubmote-loop)))
     })
+    (setq rear-pattern-index front-pattern-index)
+    (save-config)
+    (send-config)
 })
 
 (defun send-keys (key-list counter-list) {

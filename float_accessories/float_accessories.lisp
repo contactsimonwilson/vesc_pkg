@@ -5,7 +5,7 @@
 ; Copyright 2024 Syler Clayton <syler.clayton@gmail.com>
 ; Special Thanks: Benjamin Vedder, surfdado, NuRxG, Siwoz, lolwheel (OWIE), ThankTheMaker (rESCue), 4_fools & marcos (avaspark), auden_builds (pubmote)
 ; gr33tz: outlandnish, exphat, datboig42069
-; Beta Testers: Koddex, Pickles
+; Beta Testers: Pickles
 
 (import "lib/led.lisp" 'led)
 (read-eval-program led)

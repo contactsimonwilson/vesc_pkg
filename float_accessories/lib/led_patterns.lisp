@@ -76,6 +76,13 @@
     })
 })
 
+(defun battery-pattern-button (color-list) {
+    (let ((red-ratio (- 1 (/ battery-percent-remaining 1.0)))
+        (green-ratio (/ battery-percent-remaining 1.0))) {
+        (setix color-list 0 (color-make (* 255 red-ratio) (* 255 green-ratio) 0))
+    })
+})
+
 (defun rainbow-pattern (color-list rainbow-index) {
     (var num-colors (length rainbow-colors))
     (looprange led-index 0 (length color-list) {
@@ -84,6 +91,33 @@
         (setix color-list led-index color)
     })
     (mod (+ rainbow-index 1) num-colors)
+})
+
+(defun trans-pattern (color-list trans-index) {
+    (var pixels-per-strip (/ (length color-list) 5))
+    (looprange led-index 0 (length color-list) {
+        (var shifted-index (mod (+ led-index trans-index) (* pixels-per-strip 5)))
+        (var strip (mod (/ shifted-index pixels-per-strip) 5))
+        (var color 0x0)
+        (cond
+            ((= strip 0) {
+                (setq color 0x0000FF)
+            })
+            ((= strip 1) {
+                (setq color 0xFF69B4)
+            })
+            ((= strip 2) {
+                (setq color 0xFFFFFF)
+            })
+            ((= strip 3) {
+                (setq color 0xFF69B4)
+            })
+            ((= strip 4) {
+                (setq color 0x0000FF)
+            }))
+        (setix color-list led-index color)
+    })
+    (setq trans-index (mod (+ trans-index 1) (* pixels-per-strip 5)))
 })
 
 (defun felony-pattern (color-list felony-index) {
@@ -143,11 +177,11 @@
     })
 })
 
-(defun footpad-pattern (color-list switch-state){
+(defun footpad-pattern (color-list switch-state led-mode-status){
     (var color-status-half1 (if (or (= switch-state 1) (= switch-state 3)) 0xFF 0x00))
     (var color-status-half2 (if (or (= switch-state 2) (= switch-state 3)) 0xFF 0x00))
     (looprange led-index 0 (length color-list) {
-        (setix color-list led-index (if (< led-index (/ (length color-list) 2)) color-status-half1 color-status-half2))
+        (setix color-list led-index (if (< led-index (/ (length color-list) 2)) (if (= led-mode-status 0) color-status-half1 color-status-half2) (if (= led-mode-status 0) color-status-half2 color-status-half1)))
     })
 })
 
