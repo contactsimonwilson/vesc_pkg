@@ -404,7 +404,7 @@
             (var led-tmp-index 0)
             (setq led-current-brightness-front (+ 0.4 (* 0.6 led-current-brightness-front))); Maps 0-1 to 0.40-1.0
             (looprange k 0 (length led-current-front-color){
-                (if (or (= k 1) (= k 4) (= k 9) (= k 12)) {
+                (if (or (= k 3) (= k 6) (= k 9) (= k 13)) {
                     (setix led-current-front-color k (color-scale front-color-highbeam led-current-brightness-front)) ; We scale the color to apply the brightness here and not when the rgbled-color is called. We use the mapped brightness.
                 }{
                     (if (and (<= led-dim-on-highbeam-brightness 0.0) (>= direction 0) (= led-on 1) (= led-highbeam-on 1) (running-state) (!= state 5)){
@@ -463,7 +463,7 @@
             (var led-tmp-index 0)
             (setq led-current-brightness-rear (+ 0.4 (* 0.6 led-current-brightness-rear))); Maps 0-1 to 0.40-1.0
             (looprange k 0 (length led-current-rear-color){
-                (if (or (= k 1) (= k 4) (= k 9) (= k 12)) {
+                (if (or (= k 3) (= k 6) (= k 9) (= k 13)) {
                     (setix led-current-rear-color k (color-scale rear-color-highbeam led-current-brightness-)) ; We scale the color to apply the brightness here and not when the rgbled-color is called. We use the mapped brightness.
                 }{
                     (if (and (<= led-dim-on-highbeam-brightness 0.0) (< direction 0) (= led-on 1) (= led-highbeam-on 1) (running-state) (!= state 5)){
