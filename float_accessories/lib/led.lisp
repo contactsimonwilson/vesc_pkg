@@ -186,10 +186,10 @@
         ((or (= led-rear-strip-type 2) (= led-rear-strip-type 3) (= led-rear-strip-type 8) (= led-rear-strip-type 9) (= led-rear-strip-type 10)) {
              (setq rear-highbeam-leds (+ rear-highbeam-leds 1))
         })
-        ((or (= led-front-strip-type 4) (= led-front-strip-type 5) (= led-front-strip-type 6)) {
+        ((or (= led-front-strip-type 4) (= led-front-strip-type 5) (= led-front-strip-type 6) (= led-front-strip-type 11)) {
              (setq front-highbeam-leds (+ front-highbeam-leds 4))
         })
-        ((or (= led-rear-strip-type 4) (= led-rear-strip-type 5) (= led-rear-strip-type 6)) {
+        ((or (= led-rear-strip-type 4) (= led-rear-strip-type 5) (= led-rear-strip-type 6) (= led-rear-strip-type 11)) {
              (setq rear-highbeam-leds (+ rear-highbeam-leds 4))
         })
     )
@@ -380,19 +380,37 @@
                 (setq led-current-front-color (append (list front-color-highbeam) (take led-front-color led-front-num)))
             })
         })
-        ((or (= led-front-strip-type 4) (= led-front-strip-type 5) (= led-front-strip-type 6)) {
+        ((or (= led-front-strip-type 4) (= led-front-strip-type 5) (= led-front-strip-type 6)) { ; JetFleet H4, JetFleet H4 (no limit), JetFleet GT
             (var led-tmp (take led-front-color (length led-front-color)))
             (setq led-current-front-color (mklist (+ (length led-front-color) 4) 0))
             (var led-tmp-index 0)
             (setq led-current-brightness-front (+ 0.6 (* (if (= led-front-strip-type 4) 0.2 0.4) led-current-brightness-front))); Maps 0-1 to 0.60-1.0
             (looprange k 0 (length led-current-front-color){
                 (if (or (and (or (= led-front-strip-type 4) (= led-front-strip-type 5)) (or (= k 3) (= k 8) (= k 14) (= k 19))) (and (= led-front-strip-type 6) (or (= k 1) (= k 4) (= k 10) (= k 13)))) {
-                    (setix led-current-front-color k front-color-highbeam)
+                    (setix led-current-front-color k (color-scale front-color-highbeam led-current-brightness-front)) ; We scale the color to apply the brightness here and not when the rgbled-color is called. We use the mapped brightness.
                 }{
                     (if (and (<= led-dim-on-highbeam-brightness 0.0) (>= direction 0) (= led-on 1) (= led-highbeam-on 1) (running-state) (!= state 5)){
                         (setix led-current-front-color k 0)
                     }{
-                        (setix led-current-front-color k (ix led-tmp led-tmp-index))
+                        (setix led-current-front-color k (color-scale (ix led-tmp led-tmp-index) led-current-brightness)) ; We scale the color to apply the brightness here and not when the rgbled-color is called
+                    })
+                    (setq led-tmp-index (+ led-tmp-index 1))
+                })
+            })
+        })
+        ((= led-front-strip-type 11) { ; Fungineers GTFO
+            (var led-tmp (take led-front-color (length led-front-color)))
+            (setq led-current-front-color (mklist (+ (length led-front-color) 4) 0))
+            (var led-tmp-index 0)
+            (setq led-current-brightness-front (+ 0.4 (* 0.6 led-current-brightness-front))); Maps 0-1 to 0.40-1.0
+            (looprange k 0 (length led-current-front-color){
+                (if (or (= k 3) (= k 6) (= k 9) (= k 13)) {
+                    (setix led-current-front-color k (color-scale front-color-highbeam led-current-brightness-front)) ; We scale the color to apply the brightness here and not when the rgbled-color is called. We use the mapped brightness.
+                }{
+                    (if (and (<= led-dim-on-highbeam-brightness 0.0) (>= direction 0) (= led-on 1) (= led-highbeam-on 1) (running-state) (!= state 5)){
+                        (setix led-current-front-color k 0)
+                    }{
+                        (setix led-current-front-color k (color-scale (ix led-tmp led-tmp-index) led-current-brightness)) ; We scale the color to apply the brightness here and not when the rgbled-color is called
                     })
                     (setq led-tmp-index (+ led-tmp-index 1))
                 })
@@ -421,19 +439,37 @@
                 (setq led-current-rear-color (append (list rear-color-highbeam) (take led-rear-color led-rear-num)))
             })
         })
-        ((or (= led-rear-strip-type 4) (= led-rear-strip-type 5) (= led-rear-strip-type 6)) {
+        ((or (= led-rear-strip-type 4) (= led-rear-strip-type 5) (= led-rear-strip-type 6)) { ; JetFleet H4, JetFleet H4 (no limit), JetFleet GT
             (var led-tmp (take led-rear-color (length led-rear-color)))
             (setq led-current-rear-color (mklist (+ (length led-rear-color) 4) 0))
             (var led-tmp-index 0)
             (setq led-current-brightness-rear (+ 0.6 (* (if (= led-rear-strip-type 4) 0.2 0.4) led-current-brightness-rear))) ; Maps 0-1 to 0.60-1.0
             (looprange k 0 (length led-current-rear-color){
                 (if (or (and (or (= led-rear-strip-type 4) (= led-rear-strip-type 5)) (or (= k 3) (= k 8) (= k 14) (= k 19))) (and (= led-rear-strip-type 6) (or (= k 1) (= k 4) (= k 10) (= k 13) ))) {
-                    (setix led-current-rear-color k rear-color-highbeam)
+                    (setix led-current-rear-color k (color-scale rear-color-highbeam led-current-brightness-)) ; We scale the color to apply the brightness here and not when the rgbled-color is called. We use the mapped brightness.
                 }{
                     (if (and (<= led-dim-on-highbeam-brightness 0.0) (< direction 0) (= led-on 1) (= led-highbeam-on 1) (running-state) (!= state 5)){
                         (setix led-current-rear-color k 0)
                     }{
-                        (setix led-current-rear-color k (ix led-tmp led-tmp-index))
+                        (setix led-current-rear-color k (color-scale (ix led-tmp led-tmp-index) led-current-brightness)) ; We scale the color to apply the brightness here and not when the rgbled-color is called
+                    })
+                    (setq led-tmp-index (+ led-tmp-index 1))
+                })
+            })
+        })
+        ((= led-rear-strip-type 11) { ; Fungineers GTFO
+            (var led-tmp (take led-rear-color (length led-rear-color)))
+            (setq led-current-rear-color (mklist (+ (length led-rear-color) 4) 0))
+            (var led-tmp-index 0)
+            (setq led-current-brightness-rear (+ 0.4 (* 0.6 led-current-brightness-rear))); Maps 0-1 to 0.40-1.0
+            (looprange k 0 (length led-current-rear-color){
+                (if (or (= k 3) (= k 6) (= k 9) (= k 13)) {
+                    (setix led-current-rear-color k (color-scale rear-color-highbeam led-current-brightness-)) ; We scale the color to apply the brightness here and not when the rgbled-color is called. We use the mapped brightness.
+                }{
+                    (if (and (<= led-dim-on-highbeam-brightness 0.0) (< direction 0) (= led-on 1) (= led-highbeam-on 1) (running-state) (!= state 5)){
+                        (setix led-current-rear-color k 0)
+                    }{
+                        (setix led-current-rear-color k (color-scale (ix led-tmp led-tmp-index) led-current-brightness)) ; We scale the color to apply the brightness here and not when the rgbled-color is called
                     })
                     (setq led-tmp-index (+ led-tmp-index 1))
                 })
@@ -505,14 +541,22 @@
                     (rgbled-update led-status-buffer)
                 })
                 (if (and (> led-rear-strip-type 0) (>= led-rear-pin 0)) {
-                    (rgbled-color led-rear-buffer 0 led-current-rear-color led-current-brightness-rear)
+                    ; If it's a JetFleet H4, JetFleet H4 (no limit), JetFleet GT or Fungineers GTFO we do not pass brighness as the buffer already has brighness applied to each color to account for the special mapping of the high beams.
+                    (if (or (= led-rear-strip-type 4) (= led-rear-strip-type 5) (= led-rear-strip-type 6) (= led-rear-strip-type 11)) 
+                        (rgbled-color led-rear-buffer 0 led-current-rear-color)
+                        (rgbled-color led-rear-buffer 0 led-current-rear-color led-current-brightness-rear)
+                    )
                     (rgbled-init led-rear-pin led-rear-type)
                     (yield led-fix)
                     (rgbled-update led-rear-buffer)
                 })
             })
             (if (and (> led-front-strip-type 0) (>= led-front-pin 0)) {
-                (rgbled-color led-front-buffer 0 led-current-front-color led-current-brightness-front)
+                ; If it's a JetFleet H4, JetFleet H4 (no limit), JetFleet GT or Fungineers GTFO we do not pass brighness as the buffer already has brighness applied to each color to account for the special mapping of the high beams.
+                (if (or (= led-front-strip-type 4) (= led-front-strip-type 5) (= led-front-strip-type 6) (= led-front-strip-type 11)) 
+                    (rgbled-color led-front-buffer 0 led-current-front-color)
+                    (rgbled-color led-front-buffer 0 led-current-front-color led-current-brightness-front)
+                )
                 (rgbled-init led-front-pin led-front-type)
                 (yield led-fix)
                 (rgbled-update led-front-buffer)

@@ -1049,6 +1049,7 @@ Item {
                                         {text: "Avaspark Laserbeam V2", value: 8},
                                         {text: "Avaspark Laserbeam V2 Pint", value: 9},
                                         {text: "Light-shutka Flashfires", value: 10},
+                                        {text: "Fungineers GTFO", value: 11},
                                     ]
                                     textRole: "text"
                                     valueRole: "value"
@@ -1181,6 +1182,7 @@ Item {
                                         {text: "Avaspark Laserbeam V2", value: 8},
                                         {text: "Avaspark Laserbeam V2 Pint", value: 9},
                                         {text: "Light-shutka Flashfires", value: 10},
+                                        {text: "Fungineers GTFO", value: 11},
                                     ]
                                     textRole: "text"
                                     valueRole: "value"
@@ -1887,6 +1889,10 @@ Item {
                 ledFrontNum.value = 20;
                 ledFrontType.currentIndex = 0
                 break
+            case 11: // Fungineers GTFO
+                ledFrontNum.value = 10
+                ledFrontType.currentIndex = 0
+                break
             default:
                 // Do nothing, keep user-defined values
         }
@@ -1933,6 +1939,10 @@ Item {
             case 10: // Light-shutka Flashfires
                 ledRearNum.value = 20
                 ledRearType.currentIndex = 0
+                break
+            case 11: // Fungineers GTFO
+                ledFrontNum.value = 10
+                ledFrontType.currentIndex = 0
                 break
             default:
                 // Do nothing, keep user-defined values
