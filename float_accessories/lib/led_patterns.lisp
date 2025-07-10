@@ -59,7 +59,7 @@
         )
     })
 
-    (mod (+ index 0.25) led-num)
+    (mod (+ index 0.25) (+ led-num 1))
 })
 
 (defun strobe-pattern (color-list strobe-index color) {
