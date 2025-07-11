@@ -567,7 +567,17 @@
 
 (defun update-status-leds (can-last-activity-time-sec) {
     (if (or (= state 15) handtest-mode (>= can-last-activity-time-sec 1) (< can-id 0)) {
-        (led-float-disabled led-status-color)
+        (cond 
+            (handtest-mode {
+                (setq status-pattern-index (led-handtest led-status-color switch-state 1 status-pattern-index 5))
+            })
+            ((= state 15) {
+                (led-float-disabled led-status-color)
+            })
+            ((>= can-last-activity-time-sec 1) {
+                (setq status-pattern-index (led-connecting led-status-color status-pattern-index))
+            })
+        )    
     }{
         (if (> rpm 250.0){
             (if (> sat-t 2) {
@@ -617,15 +627,15 @@
 
     (if (and (<= (secs-since 0) led-startup-timeout) (not (running-state) )) { (setq current-led-mode led-mode-startup)})
     (var blend-ratio (/ blend-count led-max-blend-count))
-        (looprange i 0 (length led-front-color) {
-            (setix led-front-color i (color-mix (ix prev-led-front-color i) (ix target-led-front-color i)  blend-ratio))
-        })
-        (looprange i 0 (length led-rear-color) {
-            (setix led-rear-color i (color-mix (ix prev-led-rear-color i) (ix target-led-rear-color i)  blend-ratio))
-        })
-        (looprange i 0 (length led-footpad-color) {
-            (setix led-footpad-color i (color-mix (ix prev-led-footpad-color i) (ix target-led-footpad-color i)  blend-ratio))
-        })
+    (looprange i 0 (length led-front-color) {
+        (setix led-front-color i (color-mix (ix prev-led-front-color i) (ix target-led-front-color i)  blend-ratio))
+    })
+    (looprange i 0 (length led-rear-color) {
+        (setix led-rear-color i (color-mix (ix prev-led-rear-color i) (ix target-led-rear-color i)  blend-ratio))
+    })
+    (looprange i 0 (length led-footpad-color) {
+        (setix led-footpad-color i (color-mix (ix prev-led-footpad-color i) (ix target-led-footpad-color i)  blend-ratio))
+    })
     (setix led-button-color 0 (color-mix (ix prev-led-button-color 0) (ix target-led-button-color 0)  blend-ratio))
     (setq blend-count (+ blend-count 1.0))
     ; Reset blend count and update colors when max count is reached
@@ -645,10 +655,14 @@
             })
             (if (and (> (length led-front-color) 0) (> (length led-rear-color) 0)){
                 (cond
-                    ((or (= state 15) handtest-mode) {
+                    ((= state 15) {
                         (clear-leds)
-                        (led-float-disabled led-status-color)
+                        (led-float-disabled led-rear-color)
                         (led-float-disabled led-front-color)
+                    })
+                    (handtest-mode {
+                        (setq front-pattern-index (led-handtest led-front-color switch-state 2 front-pattern-index (* 5 led-max-blend-count)))
+                        (setq rear-pattern-index (led-handtest led-rear-color switch-state 2 rear-pattern-index (* 5 led-max-blend-count)))
                     })
                     ((and (> last-activity-sec idle-timeout-shutoff) (< can-last-activity-time-sec 1) (!= state 5)){;make sure we dont' clear if we loose can bus
                         (clear-leds)
@@ -726,16 +740,15 @@
         (setq blend-count 1.0)  ; Reset blend count for new transition
         ; Blend colors
         (var blend-ratio (if (> blend-count 0) (/ blend-count led-max-blend-count) 0.0))
-            (looprange i 0 (length led-front-color) {
-                (setix led-front-color i (color-mix (ix prev-led-front-color i) (ix target-led-front-color i)  blend-ratio))
-            })
-            (looprange i 0 (length led-rear-color) {
-                (setix led-rear-color i (color-mix (ix prev-led-rear-color i) (ix target-led-rear-color i)  blend-ratio))
-            })
-            (looprange i 0 (length led-footpad-color) {
-                (setix led-footpad-color i (color-mix (ix prev-led-footpad-color i) (ix target-led-footpad-color i)  blend-ratio))
-            })
-
+        (looprange i 0 (length led-front-color) {
+            (setix led-front-color i (color-mix (ix prev-led-front-color i) (ix target-led-front-color i)  blend-ratio))
+        })
+        (looprange i 0 (length led-rear-color) {
+            (setix led-rear-color i (color-mix (ix prev-led-rear-color i) (ix target-led-rear-color i)  blend-ratio))
+        })
+        (looprange i 0 (length led-footpad-color) {
+            (setix led-footpad-color i (color-mix (ix prev-led-footpad-color i) (ix target-led-footpad-color i)  blend-ratio))
+        })
         (setix led-button-color 0 (color-mix (ix prev-led-button-color 0) (ix target-led-button-color 0)  blend-ratio))
     })
 })

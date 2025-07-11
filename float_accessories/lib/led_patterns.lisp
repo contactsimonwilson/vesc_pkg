@@ -21,6 +21,47 @@
     })
 })
 
+(defun led-handtest (color-list switch-state switch-led-count index step) {
+    (var led-num (length color-list))
+    (var color-status-half1 (if (or (= switch-state 1) (= switch-state 3)) 0xFF 0x00) )
+    (var color-status-half2 (if (or (= switch-state 2) (= switch-state 3)) 0xFF 0x00) )
+
+    ; Single loop for LEDs
+    (looprange i 0 led-num {
+        (cond
+            ((< i switch-led-count)
+                (setix color-list i color-status-half1)
+            )
+            ((= i switch-led-count)
+                (setix color-list i 0)
+            )
+            ( (and (> i switch-led-count) (< i (- led-num switch-led-count 1)))
+                (setix color-list i (color-make 255 index 0))
+            )
+            ((= i (- led-num switch-led-count 1))
+                (setix color-list i 0)
+            )
+            ((>= i (- led-num switch-led-count))
+                (setix color-list i color-status-half2)
+            )
+        )
+    })
+    (mod (+ index step) 255)
+})
+
+(defun led-connecting (color-list index) {
+    (var led-num (length color-list))
+
+    (looprange i 0 led-num {
+        (if (< i (- index 1))
+            (setix color-list i (color-make 255 0 0))
+            (setix color-list i 0)
+        )
+    })
+
+    (mod (+ index 0.25) (+ led-num 1))
+})
+
 (defun strobe-pattern (color-list strobe-index color) {
     (set-led-strip-color color-list (if (= strobe-index 0) color 0x00000000))
     (mod (+ strobe-index 1) 2)

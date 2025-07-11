@@ -161,7 +161,7 @@
                                 (setq state (bitwise-and state-byte 0x0F))
                                 (setq sat-t (shr state-byte 4))
                                 (var switch-state-byte (bufget-u8 data 10))
-                                (setq switch-state (bitwise-and switch-state-byte 0x0F))
+                                (setq switch-state (bitwise-and switch-state-byte 0x07))
                                 ;(var beep-reason-t (shr switch-state-byte 4))
                                 (setq handtest-mode (= (bitwise-and switch-state-byte 0x08) 0x08))
                                 (var footpad-adc1-t (/ (to-float (bufget-u8 data 11)) 50))
