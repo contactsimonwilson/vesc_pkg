@@ -71,7 +71,7 @@
     (led-loop-delay            . (62 i 20 -1))
     (bms-loop-delay            . (63 i 8 -1))
     (pubmote-loop-delay        . (64 i 8 -1))
-    (can-loop-delay            . (65 i 8 -1))
+    (can-loop-delay            . (65 i 2 -1))
     (led-max-blend-count       . (66 i 4 -1))
     (led-startup-timeout       . (67 i 20 -1))
     (led-dim-on-highbeam-ratio . (68 f 0.0 -1))
