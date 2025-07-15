@@ -28,6 +28,7 @@ Item {
         }
 
         sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
+        sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-vbms-config)")
     }
 
     Timer {
@@ -1685,6 +1686,90 @@ Item {
                     }
 
                     GroupBox {
+                        title: "State of Charge Reporting"
+                        Layout.fillWidth: true
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            width: stackLayout.width
+                            spacing: 10
+
+                            RadioButton {
+                                id: floatPkgSoc
+                                checked: true
+                                text: qsTr("Float Package (from VESC firmware)")
+                            }
+                            RadioButton {
+                                id: voltageCurveSoc
+                                text: qsTr("Voltage Curve Based")
+                            }
+
+                            Text {
+                                color: Utility.getAppHexColor("lightText")
+                                text: "Cell Type"
+                                visible: voltageCurveSoc.checked
+                            }
+
+                            ComboBox {
+                                id: cellType
+                                visible: voltageCurveSoc.checked
+                                Layout.fillWidth: true
+                                    model: [
+                                        {text: "Linear", value: 0},
+                                        {text: "P28A", value: 1},
+                                        {text: "P30B", value: 2},
+                                        {text: "P42A", value: 3},
+                                        {text: "P45B", value: 4},
+                                        {text: "P50B", value: 5},
+                                        {text: "DG40", value: 6},
+                                        {text: "50S", value: 7},
+                                        {text: "VTC6", value: 8},
+                                    ]
+                                textRole: "text"
+                                valueRole: "value"
+                                onCurrentIndexChanged: {
+                                   value = model[currentIndex].value
+                                }
+                                property int value: 0
+                            }
+
+                            Text {
+                                    color: Utility.getAppHexColor("lightText")
+                                    text: "Cells in Series"
+                                    visible: voltageCurveSoc.checked
+                            }
+
+                            RowLayout {
+                                spacing: 10
+
+                                SpinBox {
+                                    id: seriesCells
+                                    from: 1
+                                    to: 64
+                                    value: 20
+                                    stepSize: 1
+                                    visible: voltageCurveSoc.checked
+                                    editable: true
+                                }
+
+                                Text {
+                                    id: seriesFromVESCBMS
+                                    color: Utility.getAppHexColor("lightText")
+                                    text: "(loaded from VESC BMS config)"
+                                    visible: false
+                                }       
+
+                                // Button {
+                                //     text: "Load from VESC BMS"
+                                //     onClicked: {
+                                //         sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(read-vbms-config)")
+                                //     }
+                                // }
+                            }
+                        }
+                    }
+
+                    GroupBox {
                         title: "Loop Settings"
                         Layout.fillWidth: true
 
@@ -1808,6 +1893,7 @@ Item {
                 text: "Read Cfg"
                 onClicked: {
                     sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
+                    sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-vbms-config)")
                 }
             }
 
@@ -1819,7 +1905,7 @@ Item {
                         termsPopup.visible = true
                     }
 
-                    //console.log(makeArgStr())
+                    console.log(makeArgStr())
                     sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(recv-config " + makeArgStr() + " )")
                     //sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(save-config)")
                     //sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
@@ -1831,6 +1917,7 @@ Item {
                 onClicked: {
                     sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(restore-config)")
                     sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
+                    sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-vbms-config)")
                 }
             }
         }
@@ -2049,7 +2136,10 @@ Item {
             ledFrontHighbeamPin.value,
             ledRearHighbeamPin.value,
             bmsBuffSize.value,
-            parseFloat(ledMaxBrightness.value).toFixed(2)
+            parseFloat(ledMaxBrightness.value).toFixed(2),
+            voltageCurveSoc.checked * 1,
+            cellType.value,
+            seriesCells.value
         ].join(" ");
     }
 
@@ -2185,6 +2275,10 @@ Item {
                 ledRearHighbeamPin.value = Number(tokens[76])
                 bmsBuffSize.value = Number(tokens[77])
                 ledMaxBrightness.value = Number(tokens[78])
+                floatPkgSoc.checked = Number(tokens[79]) == 0
+                voltageCurveSoc.checked = Number(tokens[79]) == 1
+                cellType.currentIndex = Number(tokens[80])
+                seriesCells.value = Number(tokens[81])
 
                 pubmoteMacAddress.text = "Pubmote MAC: " + ((Number(tokens[46]) == -1) ? "Not Paired" : macAddress.toUpperCase());
                 readConfig = true;
@@ -2249,6 +2343,19 @@ Item {
                 sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-control)")
                 var msg = str.substring(7)
                 VescIf.emitStatusMessage(msg, true)
+            } else if (str.startsWith("vesc-bms-settings")) {
+                var msg = str.substring(7)
+                var tokens = str.split(" ")
+                var series = Number(tokens[1])
+                if (series != 0) {
+                    seriesCells.value = series
+                    seriesCells.enabled = false
+                    seriesFromVESCBMS.visible = true
+                } else {
+                    seriesCells.enabled = true
+                    seriesFromVESCBMS.visible = false
+                }
+                
             } else if (str.startsWith("status")) {
                 var msg = str.substring(7)
                 VescIf.emitStatusMessage(msg, true)

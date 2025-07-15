@@ -88,21 +88,22 @@
 
 (defun battery-pattern (color-list) {
     (var led-num (length color-list))
-    (var num-lit-leds (floor (* led-num battery-percent-remaining)))
+    (var soc (if (= soc-type 0) battery-percent-remaining (/ (estimate-soc (/ vin series-cells) voltage-curve) 100)))
+    (var num-lit-leds (floor (* led-num soc)))
 
     (looprange led-index 0 led-num {
         (var color
             (if (or (< led-index num-lit-leds)
                    (and (= led-index 0) (<= num-lit-leds 1))) {
                 ; LED should be lit
-                (if (or (< battery-percent-remaining 0.2)
+                (if (or (< soc 0.2)
                        (and (= led-index 0) (<= num-lit-leds 1))) {
                     ; Low battery - red color
                     (color-make 255 0 0)
                 } {
                     ; Normal battery - gradient from green to yellow to red
-                    (let ((red-ratio (- 1 (/ battery-percent-remaining 0.8)))
-                          (green-ratio (/ battery-percent-remaining 0.8))) {
+                    (let ((red-ratio (- 1 (/ soc 0.8)))
+                          (green-ratio (/ soc 0.8))) {
                         (color-make
                             (* 255 red-ratio)
                             (* 255 green-ratio)
@@ -118,8 +119,9 @@
 })
 
 (defun battery-pattern-button (color-list) {
-    (let ((red-ratio (- 1 (/ battery-percent-remaining 1.0)))
-        (green-ratio (/ battery-percent-remaining 1.0))) {
+    (var soc (if (= soc-type 0) battery-percent-remaining (/ (estimate-soc (/ vin series-cells) voltage-curve) 100)))
+    (let ((red-ratio (- 1 (/ soc 1.0)))
+        (green-ratio (/ soc 1.0))) {
         (setix color-list 0 (color-make (* 255 red-ratio) (* 255 green-ratio) 0))
     })
 })

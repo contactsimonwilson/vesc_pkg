@@ -1,13 +1,13 @@
 ;@const-symbol-strings
 
 ; Settings version
-(def config-version 445i32)
+(def config-version 447i32)
 ; Persistent settings
 
 ; Format: (label . (offset type default-value current-value))
 (def eeprom-addrs '(
     (ver-code                  . (0 i config-version -1))
-    (crc                       . (1 i 20492 -1))
+    (crc                       . (1 i 61381 -1))
     (can-id                    . (2  i -1 -1))  ; if can-id < 0 then it will scan for one and pick the first.
     (accept-tos                . (3 b 0 -1))
     (led-enabled               . (4 b 1 -1))
@@ -84,6 +84,9 @@
     (led-rear-highbeam-pin     . (75 i -1 -1))
     (bms-buff-size             . (76 i 128 -1))
     (led-max-brightness        . (77 f 0.8 -1))
+    (soc-type                  . (78 i 0 -1))
+    (cell-type                 . (79 i 0 -1))
+    (series-cells              . (80 i 20 -1))
 ))
 
 @const-start
@@ -157,7 +160,7 @@
     in-led-footpad-strip-type in-bms-rs485-di-pin in-bms-rs485-ro-pin in-bms-rs485-dere-pin in-bms-wakeup-pin in-bms-override-soc in-bms-rs485-chip
     in-led-loop-delay in-bms-loop-delay in-pubmote-loop-delay in-can-loop-delay in-led-max-blend-count in-led-startup-timeout
     in-led-dim-on-highbeam-ratio in-bms-type in-led-status-strip-type in-bms-charge-only in-led-fix in-led-show-battery-charging
-    in-led-front-highbeam-pin in-led-rear-highbeam-pin in-bms-buff-size in-led-max-brightness
+    in-led-front-highbeam-pin in-led-rear-highbeam-pin in-bms-buff-size in-led-max-brightness in-soc-type in-cell-type in-series-cells
 ) {
     (if (>= led-context-id 0) {
         (let
@@ -252,6 +255,9 @@
         (set-config 'led-show-battery-charging (to-i in-led-show-battery-charging))
         (set-config 'bms-buff-size (to-i in-bms-buff-size))
         (set-config 'led-max-brightness (to-float in-led-max-brightness))
+        (set-config 'soc-type (to-i in-soc-type))
+        (set-config 'cell-type (to-i in-cell-type))
+        (set-config 'series-cells  (to-i in-series-cells))
     })
 
     (if (= in-led-enabled 1) {
@@ -394,6 +400,18 @@
 
         (send-data config-string)
         (send-status "Settings Read!")
+    })
+})
+
+(defun send-vbms-config () {
+    (atomic {
+        (var config-string       
+            (str-merge "vesc-bms-settings " 
+                        (str-from-n (get-bms-val 'bms-cell-num) "%d ")
+            )
+        )            
+        (send-data config-string)
+        (send-status "VESC BMS Settings Read!")
     })
 })
 
