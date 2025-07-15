@@ -37,11 +37,30 @@
 
     (if (< fw-num 6.05) (exit-error "hw-express needs to be running 6.05"))
 
-    ; Restore settings if version number does not match
+    ; Restore settings if magic header does not match
     ; as that probably means something else is in eeprom
-    (if (not-eq (read-val-eeprom 'ver-code) config-version) (restore-config) (load-config))
-    (var crc (config-crc))
-    (if (!= crc (to-i (read-val-eeprom 'crc)) ){ (send-msg  (str-merge "Error: crc corrupt. Got " (str-from-n (read-val-eeprom 'crc)) ". Expected " (str-from-n crc))) (restore-config) })
+    (if (not-eq (read-val-eeprom 'magic) magic-header) (restore-config) (load-config))
+    (var crc (config-crc read-cfg-len))
+    (if (!= crc (to-i (read-val-eeprom 'crc)) ) {
+        (send-msg  (str-merge "Error: crc corrupt. Got " (str-from-n (read-val-eeprom 'crc)) ". Expected " (str-from-n crc)))
+        (restore-config)
+    } {
+        (if (> cfg-len read-cfg-len) {
+            ;check if crcs match and update default params only for new ones. Make sure they get updated in eeprom, and active variables and then save the crc
+            ; Initialize only the new parameters (those beyond read-cfg-len)
+            (var count 0)
+            (loopforeach setting eeprom-addrs {
+                (if (and (>= count read-cfg-len) (< count cfg-len)) {
+                    (var name (first setting))
+                    (var default-value (ix setting 3))
+                    ;(write-val-eeprom name default-value)
+                    (set-config name default-value)
+                })
+                (setq count (+ count 1))
+            })
+            (save-config)
+        })
+    })
 })
 
 (defun init (){

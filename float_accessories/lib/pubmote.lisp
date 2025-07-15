@@ -52,7 +52,7 @@
             (write-val-eeprom 'esp-now-remote-mac-a (get-config 'esp-now-remote-mac-a))
             (write-val-eeprom 'esp-now-remote-mac-b (get-config 'esp-now-remote-mac-b))
             (write-val-eeprom 'esp-now-secret-code (get-config 'esp-now-secret-code))
-            (write-val-eeprom 'crc (config-crc))
+            (write-val-eeprom 'crc (config-crc cfg-len))
             (init-pubmote)
             (var tmpbuf (bufcreate 4))
             (bufset-i32 tmpbuf 0 -1)
@@ -65,7 +65,7 @@
         ((= pairing -2) {
             (set-config 'esp-now-remote-mac-a -1)
             (write-val-eeprom 'esp-now-remote-mac-a (get-config 'esp-now-remote-mac-a) -1)
-            (write-val-eeprom 'crc (config-crc))
+            (write-val-eeprom 'crc (config-crc cfg-len))
             (var tmpbuf (bufcreate 4))
             (bufset-i32 tmpbuf 0 -2)
             (esp-now-send esp-now-remote-mac tmpbuf)

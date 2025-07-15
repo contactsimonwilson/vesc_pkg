@@ -1,12 +1,12 @@
 ;@const-symbol-strings
 
-; Settings version
-(def config-version 447i32)
+; Magic header
+(def magic-header 445i32)
 ; Persistent settings
 
 ; Format: (label . (offset type default-value current-value))
 (def eeprom-addrs '(
-    (ver-code                  . (0 i config-version -1))
+    (magic                     . (0 i magic-header -1))
     (crc                       . (1 i 61381 -1))
     (can-id                    . (2  i -1 -1))  ; if can-id < 0 then it will scan for one and pick the first.
     (accept-tos                . (3 b 0 -1))
@@ -90,6 +90,8 @@
 ))
 
 @const-start
+(def cfg-len (length eeprom-addrs)) 
+(def read-cfg-len 0)
 (def bms-context-id -1)
 (def bms-exit-flag nil)
 (def bms-last-activity-time (systime))
@@ -351,7 +353,7 @@
     (atomic {
         (set-config 'accept-tos 1)
         (write-val-eeprom 'accept-tos 1)
-        (write-val-eeprom 'crc (config-crc))
+        (write-val-eeprom 'crc (config-crc cfg-len))
     })
 })
 
@@ -433,35 +435,38 @@
             })
         })
 
-        (write-val-eeprom 'crc (config-crc))
+        (write-val-eeprom 'crc (config-crc cfg-len))
         (send-status "Settings Saved!")
     })
 })
 
-(defunret config-crc () {
+(defunret config-crc (len) {
     (var i 0)
-	(var crclen (* (- (length eeprom-addrs) 1) 4))
+	(var crclen (* (- len 1) 4))
 	(var crcbuf (bufcreate crclen))
-
+    (var j 0)
 	(loopforeach setting eeprom-addrs {
+        (if (>= j len) {(break)})
         (var name (first setting))
 
         (if (not-eq name 'crc) {
             (bufset-i32 crcbuf (* i 4) (get-config name))
             (setq i (+ i 1))
         })
+        (setq j (+ j 1))
 	})
-
     (var crc (crc16 crcbuf))
     (free crcbuf)
     (return crc)
 })
 
 (defun load-config () {
+    (setq read-cfg-len 0)
     (loopforeach setting eeprom-addrs {
         (var name (first setting))
         (var val (read-val-eeprom name))
         (set-config name val)
+        (if val (setq read-cfg-len (+ read-cfg-len 1)) {(break)})
     })
 })
 
@@ -469,10 +474,10 @@
     (atomic {
         (loopforeach setting eeprom-addrs {
             (var name (first setting))
-            (var default-value (if (eq name 'ver-code) config-version (ix setting 3)))
+            (var default-value (if (eq name 'magic) magic-header (ix setting 3)))
             (write-val-eeprom name default-value)
         })
-
+        (write-val-eeprom 'crc (config-crc cfg-len))
         (load-config)
         (send-status "Settings Restored!")
     })
