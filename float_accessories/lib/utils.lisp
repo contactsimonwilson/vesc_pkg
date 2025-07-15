@@ -100,3 +100,23 @@
         })
     })
 })
+
+(defun estimate-soc (v voltage-curve) {
+    (var n (length voltage-curve))
+    (var socs (list 100 90 80 70 60 50 40 30 20 10 0))
+    (cond
+        ((>= v (ix voltage-curve 0)) 100.0)
+        ((<= v (ix voltage-curve (- n 1))) 0.0)
+        (true
+            (looprange i 1 (- n 1)
+                (if (and (>= v (ix voltage-curve i)) (<= v (ix voltage-curve (- i 1))))
+                    (break (let ((v1 (ix voltage-curve (- i 1)))
+                    (v2 (ix voltage-curve i))
+                    (s1 (ix socs (- i 1)))
+                    (s2 (ix socs i)))
+                    (+ s1 (* (/ (- v v1) (- v2 v1)) (- s2 s1)))))
+                )
+            )
+         )
+     )
+})
