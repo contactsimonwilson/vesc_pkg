@@ -489,7 +489,7 @@
             (setq led-current-brightness-rear (+ 0.6 (* (if (= led-rear-strip-type 4) 0.2 0.4) led-current-brightness-rear))) ; Maps 0-1 to 0.60-1.0
             (looprange k 0 (length led-current-rear-color){
                 (if (or (and (or (= led-rear-strip-type 4) (= led-rear-strip-type 5)) (or (= k 3) (= k 8) (= k 14) (= k 19))) (and (= led-rear-strip-type 6) (or (= k 1) (= k 4) (= k 10) (= k 13) ))) {
-                    (setix led-current-rear-color k (color-scale rear-color-highbeam led-current-brightness-)) ; We scale the color to apply the brightness here and not when the rgbled-color is called. We use the mapped brightness.
+                    (setix led-current-rear-color k (color-scale rear-color-highbeam led-current-brightness-rear)) ; We scale the color to apply the brightness here and not when the rgbled-color is called. We use the mapped brightness.
                 }{
                     (if (and (<= led-dim-on-highbeam-brightness 0.0) (< direction 0) (= led-on 1) (= led-highbeam-on 1) (running-state) (!= state 5)){
                         (setix led-current-rear-color k 0)
@@ -507,7 +507,7 @@
             (setq led-current-brightness-rear (+ 0.4 (* 0.6 led-current-brightness-rear))); Maps 0-1 to 0.40-1.0
             (looprange k 0 (length led-current-rear-color){
                 (if (or (= k 3) (= k 6) (= k 9) (= k 13)) {
-                    (setix led-current-rear-color k (color-scale rear-color-highbeam led-current-brightness-)) ; We scale the color to apply the brightness here and not when the rgbled-color is called. We use the mapped brightness.
+                    (setix led-current-rear-color k (color-scale rear-color-highbeam led-current-brightness-rear)) ; We scale the color to apply the brightness here and not when the rgbled-color is called. We use the mapped brightness.
                 }{
                     (if (and (<= led-dim-on-highbeam-brightness 0.0) (< direction 0) (= led-on 1) (= led-highbeam-on 1) (running-state) (!= state 5)){
                         (setix led-current-rear-color k 0)
