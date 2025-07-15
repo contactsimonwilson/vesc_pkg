@@ -101,7 +101,7 @@
             (if (>= (get-config 'can-id ) 0) {
                 (if (not-eq (get-config 'can-id ) original-can-id) {
                     (write-val-eeprom 'can-id (get-config 'can-id ))
-                    (write-val-eeprom 'crc (config-crc))
+                    (write-val-eeprom 'crc (config-crc cfg-len))
                 })
                 (return 1)
             })
