@@ -731,35 +731,41 @@
                         (set-led-strip-color (if (< direction 0) led-front-color led-rear-color) 0x0000FF00u32)
                     })
                     ((= current-led-mode 5) {
-                        ;(setq rear-pattern-index front-pattern-index)
+                        (setq rear-pattern-index front-pattern-index)
                         (setq front-pattern-index (rainbow-pattern led-front-color front-pattern-index))
                         (setq rear-pattern-index (rainbow-pattern led-rear-color rear-pattern-index))
                     })
                     ((= current-led-mode 6) {
-                        ;(setq rear-pattern-index front-pattern-index)
+                        (setq rear-pattern-index front-pattern-index)
                         (setq front-pattern-index (strobe-pattern led-front-color front-pattern-index 0xFFFFFFFF))
                         (setq rear-pattern-index (strobe-pattern led-rear-color rear-pattern-index 0xFFFFFFFF))
                     })
                     ((= current-led-mode 7) {
-                        ;(setq rear-pattern-index front-pattern-index)
+                        (setq rear-pattern-index front-pattern-index)
                         (setq front-pattern-index (rave-pattern led-front-color front-pattern-index))
                         (setq rear-pattern-index (rave-pattern led-rear-color rear-pattern-index))
                     })
                     ((= current-led-mode 8) {
-                        (set-led-strip-color led-front-color 0xFFFFFFFF)
-                        (setq rear-pattern-index (rave-pattern led-rear-color rear-pattern-index))
+                        (if (>= direction 0) {
+                            (set-led-strip-color led-front-color 0xFFFFFFFF)
+                            (setq rear-pattern-index (rave-pattern led-rear-color rear-pattern-index))
+                        }{
+                            (set-led-strip-color led-rear-color 0xFFFFFFFF)
+                            (setq front-pattern-index (rave-pattern led-front-color front-pattern-index))
+                        })
                     })
                     ((= current-led-mode 9) {
-                        ;(setq rear-pattern-index front-pattern-index)
+                        (setq rear-pattern-index front-pattern-index)
                         (setq front-pattern-index (knight-rider-pattern led-front-color front-pattern-index))
                         (setq rear-pattern-index (knight-rider-pattern led-rear-color rear-pattern-index))
                     })
                     ((= current-led-mode 10) {
-                        ;(setq rear-pattern-index front-pattern-index)
+                        (setq rear-pattern-index front-pattern-index)
                         (setq front-pattern-index (felony-pattern led-front-color front-pattern-index))
                         (setq rear-pattern-index (felony-pattern led-rear-color rear-pattern-index))
                     })
                     ((= current-led-mode 11) {
+                        (setq rear-pattern-index front-pattern-index)
                         (setq front-pattern-index (trans-pattern led-front-color front-pattern-index))
                         (setq rear-pattern-index (trans-pattern led-rear-color rear-pattern-index))
                     })
