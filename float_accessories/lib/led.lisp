@@ -85,12 +85,6 @@
 (def mall-grab-start t)
 (def mall-grab-button-timer 0)
 (def mall-grab-event t)
-(def front-pattern-index)
-(def rear-pattern-index)
-(def button-pattern-index)
-(def footpad-pattern-index)
-(def status-pattern-index)
-(def brake-pattern-index)
 
 (defun load-led-settings () {
     (setq led-enabled (get-config 'led-enabled))
@@ -184,12 +178,6 @@
 )
 
 (defun init-led-vars () {
-    (setq front-pattern-index 0)
-    (setq rear-pattern-index 0)
-    (setq button-pattern-index 0)
-    (setq footpad-pattern-index 0)
-    (setq status-pattern-index 0)
-    (setq brake-pattern-index 0)
     (def blend-count led-max-blend-count)
     (setq combined-pins nil)
     (setq led-current-brightness 0.0)
@@ -281,9 +269,11 @@
     (var prev-direction 1)
     (var direction-change-start-time 0)
     (var direction-change-window 0.5)
+    (var anim-time 0)
     (loopwhile t {
         (setq loop-start-time (secs-since 0))
-
+        (setq anim-time (+ anim-time led-loop-delay-sec))
+        (if (> anim-time 100.0) (setq anim-time 0.0)) ; prevent overflow
         (if led-exit-flag {
             (break)
         })
@@ -343,7 +333,7 @@
             (setq direction 1)
         })
 
-        (update-leds (secs-since led-last-activity-time))
+        (update-leds (secs-since led-last-activity-time) anim-time)
         (led-flush-buffers)
 
         (setq loop-end-time (secs-since 0))
@@ -585,7 +575,7 @@
                 })
                 (if (and (> led-rear-strip-type 0) (>= led-rear-pin 0)) {
                     ; If it's a JetFleet H4, JetFleet H4 (no limit), JetFleet GT or Fungineers GTFO we do not pass brighness as the buffer already has brighness applied to each color to account for the special mapping of the high beams.
-                    (if (or (= led-rear-strip-type 4) (= led-rear-strip-type 5) (= led-rear-strip-type 6) (= led-rear-strip-type 11)) 
+                    (if (or (= led-rear-strip-type 4) (= led-rear-strip-type 5) (= led-rear-strip-type 6) (= led-rear-strip-type 11))
                         (rgbled-color led-rear-buffer 0 led-current-rear-color)
                         (rgbled-color led-rear-buffer 0 led-current-rear-color led-current-brightness-rear)
                     )
@@ -596,7 +586,7 @@
             })
             (if (and (> led-front-strip-type 0) (>= led-front-pin 0)) {
                 ; If it's a JetFleet H4, JetFleet H4 (no limit), JetFleet GT or Fungineers GTFO we do not pass brighness as the buffer already has brighness applied to each color to account for the special mapping of the high beams.
-                (if (or (= led-front-strip-type 4) (= led-front-strip-type 5) (= led-front-strip-type 6) (= led-front-strip-type 11)) 
+                (if (or (= led-front-strip-type 4) (= led-front-strip-type 5) (= led-front-strip-type 6) (= led-front-strip-type 11))
                     (rgbled-color led-front-buffer 0 led-current-front-color)
                     (rgbled-color led-front-buffer 0 led-current-front-color led-current-brightness-front)
                 )
@@ -608,23 +598,23 @@
     })
 })
 
-(defun update-status-leds (can-last-activity-time-sec) {
+(defun update-status-leds (can-last-activity-time-sec anim-time) {
     (if (or (= state 15) handtest-mode (>= can-last-activity-time-sec 1) (< can-id 0)) {
-        (cond 
+        (cond
             (handtest-mode {
-                (setq status-pattern-index (led-handtest led-status-color switch-state 1 status-pattern-index 5))
+                (led-handtest led-status-color switch-state 1 anim-time led-mode-status)
             })
             ((= state 15) {
                 (led-float-disabled led-status-color)
             })
             ((>= can-last-activity-time-sec 1) {
-                (setq status-pattern-index (led-connecting led-status-color status-pattern-index))
+                (led-connecting led-status-color anim-time)
             })
-        )    
+        )
     }{
         (if (> rpm 250.0){
             (if (> sat-t 2) {
-                (setq status-pattern-index (strobe-pattern led-status-color status-pattern-index 0x00FF0000))
+                (strobe-pattern led-status-color 0x00FF0000 anim-time)
             }{
                 (duty-cycle-pattern led-status-color)
             })
@@ -642,10 +632,10 @@
     })
 })
 
-(defun update-button-led () {
+(defun update-button-led (anim-time) {
     (cond
         ((= led-mode-button 0) {
-            (setq button-pattern-index (rainbow-pattern led-button-color button-pattern-index))
+            (rainbow-pattern led-button-color anim-time)
         })
         ((= led-mode-button 1) {
             (battery-pattern-button led-button-color)
@@ -653,10 +643,10 @@
     )
 })
 
-(defun update-leds (last-activity-sec) {
+(defun update-leds (last-activity-sec anim-time) {
     (var can-last-activity-time-sec (secs-since can-last-activity-time))
     (if (> (length led-status-color) 0){
-        (if (or (= led-mode-status 0) (= led-mode-status 1)) (update-status-leds can-last-activity-time-sec))
+        (if (or (= led-mode-status 0) (= led-mode-status 1)) (update-status-leds can-last-activity-time-sec anim-time))
     })
     (var current-led-mode led-mode)
     (setq led-current-brightness (min led-brightness led-brightness led-max-brightness))
@@ -692,7 +682,7 @@
             (if (> (length led-footpad-color) 0){
                 (cond
                     ((= led-mode-footpad 0) {
-                        (setq footpad-pattern-index (rainbow-pattern led-footpad-color footpad-pattern-index))
+                        (rainbow-pattern led-footpad-color anim-time)
                     })
                 )
             })
@@ -704,8 +694,8 @@
                         (led-float-disabled led-front-color)
                     })
                     (handtest-mode {
-                        (setq front-pattern-index (led-handtest led-front-color switch-state 2 front-pattern-index (* 5 led-max-blend-count)))
-                        (setq rear-pattern-index (led-handtest led-rear-color switch-state 2 rear-pattern-index (* 5 led-max-blend-count)))
+                        (led-handtest led-front-color switch-state 2 anim-time led-mode-status)
+                        (led-handtest led-rear-color switch-state 2 anim-time led-mode-status)
                     })
                     ((and (> last-activity-sec idle-timeout-shutoff) (< can-last-activity-time-sec 1) (!= state 5)){;make sure we dont' clear if we loose can bus
                         (clear-leds)
@@ -731,47 +721,41 @@
                         (set-led-strip-color (if (< direction 0) led-front-color led-rear-color) 0x0000FF00u32)
                     })
                     ((= current-led-mode 5) {
-                        (setq rear-pattern-index front-pattern-index)
-                        (setq front-pattern-index (rainbow-pattern led-front-color front-pattern-index))
-                        (setq rear-pattern-index (rainbow-pattern led-rear-color rear-pattern-index))
+                        (rainbow-pattern led-front-color anim-time)
+                        (rainbow-pattern led-rear-color anim-time)
                     })
                     ((= current-led-mode 6) {
-                        (setq rear-pattern-index front-pattern-index)
-                        (setq front-pattern-index (strobe-pattern led-front-color front-pattern-index 0xFFFFFFFF))
-                        (setq rear-pattern-index (strobe-pattern led-rear-color rear-pattern-index 0xFFFFFFFF))
+                        (strobe-pattern led-front-color 0xFFFFFFFF anim-time)
+                        (strobe-pattern led-rear-color 0xFFFFFFFF anim-time)
                     })
                     ((= current-led-mode 7) {
-                        (setq rear-pattern-index front-pattern-index)
-                        (setq front-pattern-index (rave-pattern led-front-color front-pattern-index))
-                        (setq rear-pattern-index (rave-pattern led-rear-color rear-pattern-index))
+                        (rave-pattern led-front-color anim-time)
+                        (rave-pattern led-rear-color anim-time)
                     })
                     ((= current-led-mode 8) {
                         (if (>= direction 0) {
                             (set-led-strip-color led-front-color 0xFFFFFFFF)
-                            (setq rear-pattern-index (rave-pattern led-rear-color rear-pattern-index))
+                            (rave-pattern led-rear-color anim-time)
                         }{
                             (set-led-strip-color led-rear-color 0xFFFFFFFF)
-                            (setq front-pattern-index (rave-pattern led-front-color front-pattern-index))
+                            (rave-pattern led-front-color anim-time)
                         })
                     })
                     ((= current-led-mode 9) {
-                        (setq rear-pattern-index front-pattern-index)
-                        (setq front-pattern-index (knight-rider-pattern led-front-color front-pattern-index))
-                        (setq rear-pattern-index (knight-rider-pattern led-rear-color rear-pattern-index))
+                        (knight-rider-pattern led-front-color anim-time)
+                        (knight-rider-pattern led-rear-color anim-time)
                     })
                     ((= current-led-mode 10) {
-                        (setq rear-pattern-index front-pattern-index)
-                        (setq front-pattern-index (felony-pattern led-front-color front-pattern-index))
-                        (setq rear-pattern-index (felony-pattern led-rear-color rear-pattern-index))
+                        (felony-pattern led-front-color anim-time)
+                        (felony-pattern led-rear-color anim-time)
                     })
                     ((= current-led-mode 11) {
-                        (setq rear-pattern-index front-pattern-index)
-                        (setq front-pattern-index (trans-pattern led-front-color front-pattern-index))
-                        (setq rear-pattern-index (trans-pattern led-rear-color rear-pattern-index))
+                        (trans-pattern led-front-color anim-time)
+                        (trans-pattern led-rear-color anim-time)
                     })
                 )
                 (if (and (= led-brake-light-enabled 1) (running-state) (!= state 5) (<= tot-current led-brake-light-min-amps)){
-                    (setq brake-pattern-index (strobe-pattern (if (>= direction 0) led-rear-color led-front-color) brake-pattern-index 0x00FF0000))
+                    (strobe-pattern (if (>= direction 0) led-rear-color led-front-color) 0x00FF0000 anim-time)
                 })
 
                 (if (display-battery-charging) {
@@ -782,7 +766,7 @@
         }{
             (clear-leds)
         })
-        (update-button-led)
+        (update-button-led anim-time)
         (setq target-led-front-color (take led-front-color (length led-front-color)))
         (setq target-led-rear-color (take led-rear-color (length led-rear-color)))
         (setq target-led-button-color (take led-button-color (length led-button-color)))
