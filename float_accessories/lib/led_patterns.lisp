@@ -111,10 +111,15 @@
     })
 })
 
-(defun battery-pattern (color-list) {
+(defun battery-pattern (color-list charging time) {
     (var led-num (length color-list))
     (var soc (if (= soc-type 0) battery-percent-remaining (/ (estimate-soc (/ vin series-cells) voltage-curve) 100)))
     (var num-lit-leds (floor (* led-num soc)))
+
+    ; Optional pulse factor if charging
+    (var pulse-factor (if charging
+       (+ 0.5 (* 0.5 (+ 1.0 (cos (* time 3.14159))))) ; Pulses between 0.0 and 1.0
+        1.0))
 
     (looprange led-index 0 led-num {
         (var color
@@ -124,14 +129,14 @@
                 (if (or (< soc 0.2)
                        (and (= led-index 0) (<= num-lit-leds 1))) {
                     ; Low battery - red color
-                    (color-make 255 0 0)
+                    (color-make (floor (* 255 pulse-factor)) 0 0)
                 } {
                     ; Normal battery - gradient from green to yellow to red
                     (let ((red-ratio (- 1 (/ soc 0.8)))
                           (green-ratio (/ soc 0.8))) {
                         (color-make
-                            (* 255 red-ratio)
-                            (* 255 green-ratio)
+                            (floor (* 255 red-ratio pulse-factor))
+                            (floor (* 255 green-ratio pulse-factor))
                             0)
                     })
                 })
@@ -143,11 +148,17 @@
     })
 })
 
-(defun battery-pattern-button (color-list) {
+(defun battery-pattern-button (color-list charging time) {
     (var soc (if (= soc-type 0) battery-percent-remaining (/ (estimate-soc (/ vin series-cells) voltage-curve) 100)))
+    (var pulse-factor (if charging
+        (+ 0.5 (* 0.5 (+ 1.0 (cos (* time 3.14159))))) ; Half speed pulse
+        1.0))
     (let ((red-ratio (- 1 (/ soc 1.0)))
-        (green-ratio (/ soc 1.0))) {
-        (setix color-list 0 (color-make (* 255 red-ratio) (* 255 green-ratio) 0))
+          (green-ratio (/ soc 1.0))) {
+        (setix color-list 0 (color-make
+            (floor (* 255 red-ratio pulse-factor))
+            (floor (* 255 green-ratio pulse-factor))
+            0))
     })
 })
 
