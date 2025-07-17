@@ -58,7 +58,7 @@
 
         (if (or (>= bms-can-id 0) (< (secs-since bms-last-activity-time) 1)){
             (var prev-charging-state bms-is-charging)
-            (setq bms-is-charging (and (> (get-bms-val 'bms-v-charge) 10.0) (< (get-bms-val 'bms-i-in-ic) 0.1)))
+            (setq bms-is-charging (and (> (get-bms-val 'bms-v-charge) 10.0) (> (get-bms-val 'bms-i-in-ic) 0.1)))
 
             (if (and bms-is-charging (not prev-charging-state)){
                     (setq bms-charger-just-plugged t)
