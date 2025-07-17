@@ -56,7 +56,7 @@
 
 (defun led-connecting (color-list time) {
     (var led-num (length color-list))
-    (var speed 2.0)
+    (var speed 4.0)
     (var index (floor (mod (* time speed) (+ led-num 1))))
     (looprange i 0 led-num {
         (if (< i index)
