@@ -375,7 +375,7 @@
 })
 
 (defun display-battery-charging () {
-    (let ret (or bms-charger-just-plugged (and (= led-show-battery-charging 1) bms-is-charging)))
+    (let ret (or bms-charger-just-plugged (and (= led-show-battery-charging 1) bms-is-charging (not (running-state) ))))
 })
 
 (defun led-flush-buffers () {
