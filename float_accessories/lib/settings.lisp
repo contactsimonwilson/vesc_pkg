@@ -87,6 +87,7 @@
     (soc-type                  . (78 i 0 -1))
     (cell-type                 . (79 i 0 -1))
     (series-cells              . (80 i 20 -1))
+    (led-update-not-running    . (81 b 0 -1))
 ))
 
 @const-start
@@ -162,7 +163,7 @@
     in-led-footpad-strip-type in-bms-rs485-di-pin in-bms-rs485-ro-pin in-bms-rs485-dere-pin in-bms-wakeup-pin in-bms-override-soc in-bms-rs485-chip
     in-led-loop-delay in-bms-loop-delay in-pubmote-loop-delay in-can-loop-delay in-led-max-blend-count in-led-startup-timeout
     in-led-dim-on-highbeam-ratio in-bms-type in-led-status-strip-type in-bms-charge-only in-led-fix in-led-show-battery-charging
-    in-led-front-highbeam-pin in-led-rear-highbeam-pin in-bms-buff-size in-led-max-brightness in-soc-type in-cell-type in-series-cells
+    in-led-front-highbeam-pin in-led-rear-highbeam-pin in-bms-buff-size in-led-max-brightness in-soc-type in-cell-type in-series-cells in-led-update-not-running
 ) {
     (if (>= led-context-id 0) {
         (let ((start-time (systime)) (timeout-val 2000000)) ; 2 sec timeout
@@ -268,6 +269,7 @@
     (set-config 'soc-type (to-i in-soc-type))
     (set-config 'cell-type (to-i in-cell-type))
     (set-config 'series-cells  (to-i in-series-cells))
+    (set-config 'led-update-not-running  (to-i in-led-update-not-running))
 
 
     (if (= in-led-enabled 1) {

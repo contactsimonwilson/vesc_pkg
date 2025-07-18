@@ -703,6 +703,12 @@ Item {
                                     editable: true
                                 }
 
+                                CheckBox {
+                                    id: ledUpdateNotRunning
+                                    text: "Don't update front/rear LED while running (seperate pins req)"
+                                    checked: false
+                                }
+
                                 Text {
                                     color: Utility.getAppHexColor("lightText")
                                     text: "LED Max Brightness (80% by default to prevent LED burnout)"
@@ -714,7 +720,7 @@ Item {
                                     to: 1.0
                                     value: 0.8
                                     stepSize: 0.01
-                                    }
+                                }
 
                                 Text {
                                     color: Utility.getAppHexColor("lightText")
@@ -2139,7 +2145,8 @@ Item {
             parseFloat(ledMaxBrightness.value).toFixed(2),
             voltageCurveSoc.checked * 1,
             cellType.value,
-            seriesCells.value
+            seriesCells.value,
+            ledUpdateNotRunning.checked * 1
         ].join(" ");
     }
 
@@ -2279,6 +2286,7 @@ Item {
                 voltageCurveSoc.checked = Number(tokens[79]) == 1
                 cellType.currentIndex = Number(tokens[80])
                 seriesCells.value = Number(tokens[81])
+                ledUpdateNotRunning.checked = Number(tokens[82])
 
                 pubmoteMacAddress.text = "Pubmote MAC: " + ((Number(tokens[46]) == -1) ? "Not Paired" : macAddress.toUpperCase());
                 readConfig = true;

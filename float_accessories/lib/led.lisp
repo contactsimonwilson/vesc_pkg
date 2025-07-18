@@ -54,6 +54,7 @@
 (def cell-type)
 (def series-cells)
 (def voltage-curve)
+(def led-update-not-running)
 
 (def led-max-blend-count 0.0)  ; how many times to blend before new led buffer
 (def led-startup-timeout)
@@ -140,6 +141,7 @@
     (setq cell-type (get-config 'cell-type))
     (setq series-cells (get-config 'series-cells))
     (setq voltage-curve (get-voltage-curve cell-type))
+    (setq led-update-not-running (get-config 'led-update-not-running))
 })
 
 (defun get-voltage-curve (cell-type)
@@ -270,6 +272,8 @@
     (var direction-change-start-time 0)
     (var direction-change-window 0.5)
     (var anim-time 0)
+    (var prev-run-state 0)
+    (var led-run-start-time 0)
     (loopwhile t {
         (setq loop-start-time (secs-since 0))
         (setq anim-time (+ anim-time led-loop-delay-sec))
@@ -333,8 +337,18 @@
             (setq direction 1)
         })
 
+        (if (running-state) {
+            (if (= prev-run-state 0) {
+                ;; Just transitioned from idle → running
+                (setq led-run-start-time (systime))
+            })
+            (setq prev-run-state 1)
+        }{
+            (setq prev-run-state 0)
+        })
+        (var dont-freeze-update (not (and (running-state) (= led-update-not-running 1) (> (secs-since led-run-start-time) 1))))
         (update-leds (secs-since led-last-activity-time) anim-time)
-        (led-flush-buffers)
+        (led-flush-buffers dont-freeze-update)
 
         (setq loop-end-time (secs-since 0))
         (var actual-loop-time (- loop-end-time loop-start-time))
@@ -352,7 +366,7 @@
     (clear-leds)
     (set-led-strip-color led-button-color 0x00)
     (set-led-strip-color led-status-color 0x00)
-    (led-flush-buffers)
+    (led-flush-buffers t)
     (rgbled-deinit)
     (if (and (= led-front-strip-type 7) (>= led-front-highbeam-pin 0)) (pwm-stop 0))
     (if (and (= led-rear-strip-type 7) (>= led-rear-highbeam-pin 0)) (pwm-stop 1))
@@ -378,7 +392,7 @@
     (let ret (or bms-charger-just-plugged (and (= led-show-battery-charging 1) bms-is-charging (not (running-state) ))))
 })
 
-(defun led-flush-buffers () {
+(defun led-flush-buffers (dont-freeze-update) {
     (reverse-led-strips)
     ;Enable/disable high beams and lets dim the rest of the leds if the high beams are on to help temps if on seperate pins
 
@@ -573,7 +587,7 @@
                     (yield led-fix)
                     (rgbled-update led-status-buffer)
                 })
-                (if (and (> led-rear-strip-type 0) (>= led-rear-pin 0)) {
+                (if (and (> led-rear-strip-type 0) (>= led-rear-pin 0) dont-freeze-update) {
                     ; If it's a JetFleet H4, JetFleet H4 (no limit), JetFleet GT or Fungineers GTFO we do not pass brighness as the buffer already has brighness applied to each color to account for the special mapping of the high beams.
                     (if (or (= led-rear-strip-type 4) (= led-rear-strip-type 5) (= led-rear-strip-type 6) (= led-rear-strip-type 11))
                         (rgbled-color led-rear-buffer 0 led-current-rear-color)
@@ -584,7 +598,7 @@
                     (rgbled-update led-rear-buffer)
                 })
             })
-            (if (and (> led-front-strip-type 0) (>= led-front-pin 0)) {
+            (if (and (> led-front-strip-type 0) (>= led-front-pin 0) dont-freeze-update) {
                 ; If it's a JetFleet H4, JetFleet H4 (no limit), JetFleet GT or Fungineers GTFO we do not pass brighness as the buffer already has brighness applied to each color to account for the special mapping of the high beams.
                 (if (or (= led-front-strip-type 4) (= led-front-strip-type 5) (= led-front-strip-type 6) (= led-front-strip-type 11))
                     (rgbled-color led-front-buffer 0 led-current-front-color)
@@ -704,7 +718,7 @@
                         (battery-pattern led-front-color bms-is-charging anim-time)
                         (battery-pattern led-rear-color bms-is-charging anim-time)
                     })
-                    ((or (= current-led-mode 0) (and (> can-last-activity-time-sec 1) (> (secs-since 0) led-startup-timeout))) {
+                    ((or (= current-led-mode 0) (and (> can-last-activity-time-sec 1) (> (secs-since 0) led-startup-timeout)) (and (running-state) (= led-update-not-running 1))) {
                         (set-led-strip-color (if (> direction 0) led-front-color led-rear-color) 0xFFFFFFFFu32);todo add led-front-rgb-val
                         (set-led-strip-color (if (< direction 0) led-front-color led-rear-color) 0x00FF0000u32)
                     })
@@ -754,7 +768,7 @@
                         (trans-pattern led-rear-color anim-time)
                     })
                 )
-                (if (and (= led-brake-light-enabled 1) (running-state) (!= state 5) (<= tot-current led-brake-light-min-amps)){
+                (if (and (= led-brake-light-enabled 1) (running-state) (!= state 5) (<= tot-current led-brake-light-min-amps) (= led-update-not-running 0) ){
                     (strobe-pattern (if (>= direction 0) led-rear-color led-front-color) 0x00FF0000 anim-time)
                 })
 
