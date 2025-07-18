@@ -1624,7 +1624,7 @@ Item {
 
                                     CheckBox {
                                         id: bmsOverrideSOC
-                                        text: "Override SOC (Voltage)"
+                                        text: "Override SOC (Choose cell type in Settings)"
                                         checked: false
                                     }
 
