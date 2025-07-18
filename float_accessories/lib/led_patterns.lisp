@@ -118,7 +118,7 @@
 
     ; Optional pulse factor if charging
     (var pulse-factor (if charging
-       (+ 0.5 (* 0.5 (+ 1.0 (cos (* time 3.14159))))) ; Pulses between 0.0 and 1.0
+       (+ 0.55 (* 0.45 (cos (* time 3.14159)))) ; Pulses between 0.0 and 1.0
         1.0))
 
     (looprange led-index 0 led-num {
@@ -151,7 +151,7 @@
 (defun battery-pattern-button (color-list charging time) {
     (var soc (if (= soc-type 0) battery-percent-remaining (/ (estimate-soc (/ vin series-cells) voltage-curve) 100)))
     (var pulse-factor (if charging
-        (+ 0.5 (* 0.5 (+ 1.0 (cos (* time 3.14159))))) ; Half speed pulse
+        (+ 0.55 (* 0.45 (cos (* time 3.14159)))) ; Half speed pulse
         1.0))
     (let ((red-ratio (- 1 (/ soc 1.0)))
           (green-ratio (/ soc 1.0))) {
