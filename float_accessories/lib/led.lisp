@@ -623,7 +623,7 @@
                 ;(if (display-battery-charging) { TODO
                 ;    ;Do something
                 ;}{
-                    (battery-pattern led-status-color)
+                    (battery-pattern led-status-color bms-is-charging anim-time)
                 ;})
             }{
                 (footpad-pattern led-status-color switch-state led-mode-status)
@@ -638,7 +638,7 @@
             (rainbow-pattern led-button-color anim-time)
         })
         ((= led-mode-button 1) {
-            (battery-pattern-button led-button-color)
+            (battery-pattern-button led-button-color bms-is-charging anim-time)
         })
     )
 })
@@ -701,8 +701,8 @@
                         (clear-leds)
                     })
                     ((and (or (= current-led-mode 1) (= led-mall-grab 1)) (< can-last-activity-time-sec 1)) {
-                        (battery-pattern led-front-color)
-                        (battery-pattern led-rear-color)
+                        (battery-pattern led-front-color bms-is-charging anim-time)
+                        (battery-pattern led-rear-color bms-is-charging anim-time)
                     })
                     ((or (= current-led-mode 0) (and (> can-last-activity-time-sec 1) (> (secs-since 0) led-startup-timeout))) {
                         (set-led-strip-color (if (> direction 0) led-front-color led-rear-color) 0xFFFFFFFFu32);todo add led-front-rgb-val
@@ -759,8 +759,8 @@
                 })
 
                 (if (display-battery-charging) {
-                    (battery-pattern led-front-color)
-                    (battery-pattern led-rear-color)
+                    (battery-pattern led-front-color bms-is-charging anim-time)
+                    (battery-pattern led-rear-color bms-is-charging anim-time)
                 })
             })
         }{
