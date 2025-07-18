@@ -165,102 +165,110 @@
     in-led-front-highbeam-pin in-led-rear-highbeam-pin in-bms-buff-size in-led-max-brightness in-soc-type in-cell-type in-series-cells
 ) {
     (if (>= led-context-id 0) {
-        (let
-            ((start-time (systime)) (timeout-val 100000))
-            (setq led-exit-flag t)
+        (let ((start-time (systime)) (timeout-val 2000000)) ; 2 sec timeout
+        
+        (setq led-exit-flag t)
 
-            (loopwhile (and led-exit-flag (< (- (systime) start-time) timeout-val)) (yield 10000))
+            (loopwhile (and led-exit-flag (< (- (systime) start-time) timeout-val))
+                (yield 10000)) ; 10 ms wait
 
             ; Check if exited due to timeout
-            (if (>= (- (systime) start-time) timeout-val) (setq led-exit-flag nil))
+            (if led-exit-flag {
+                (send-msg "ERROR: LED loop did not exit in time. Rebooting...")
+                (reboot)
+            })
         )
     })
 
     (if (>= bms-context-id 0) {
-        (let
-            ((start-time (systime)) (timeout-val 100000))
+        (let ((start-time (systime)) (timeout-val 2000000)) ; 2 sec timeout
+
             (setq bms-exit-flag t)
 
-            (loopwhile (and bms-exit-flag (< (- (systime) start-time) timeout-val)) (yield 10000))
+            (loopwhile (and bms-exit-flag (< (- (systime) start-time) timeout-val))
+                (yield 10000))
 
             ; Check if exited due to timeout
-            (if (>= (- (systime) start-time) timeout-val) (setq bms-exit-flag nil))
+            (if bms-exit-flag {
+                (send-msg "ERROR: BMS loop did not exit in time. Rebooting...")
+                (reboot)
+            })
         )
     })
 
-    (atomic {
-        (set-config 'led-enabled (to-i in-led-enabled))
-        (set-config 'bms-enabled (to-i in-bms-enabled))
-        (set-config 'pubmote-enabled (to-i in-pubmote-enabled))
-        (set-config 'led-on (to-i in-led-on))
-        (set-config 'led-highbeam-on (to-i in-led-highbeam-on))
-        (set-config 'led-mode (to-i in-led-mode))
-        (set-config 'led-mode-idle (to-i in-led-mode-idle))
-        (set-config 'led-mode-status (to-i in-led-mode-status))
-        (set-config 'led-mode-startup (to-i in-led-mode-startup))
-        (set-config 'led-mode-button (to-i in-led-mode-button))
-        (set-config 'led-mode-footpad (to-i in-led-mode-footpad))
-        (set-config 'led-mall-grab-enabled (to-i in-led-mall-grab-enabled))
-        (set-config 'led-brake-light-enabled (to-i in-led-brake-light-enabled))
-        (set-config 'led-brake-light-min-amps (to-float in-led-brake-light-min-amps))
-        (set-config 'idle-timeout (to-i in-idle-timeout))
-        (set-config 'idle-timeout-shutoff (to-i in-idle-timeout-shutoff))
-        (set-config 'led-brightness (to-float in-led-brightness))
-        (set-config 'led-brightness-highbeam (to-float in-led-brightness-highbeam))
-        (set-config 'led-brightness-idle (to-float in-led-brightness-idle))
-        (set-config 'led-brightness-status (to-float in-led-brightness-status))
 
-        (set-config 'led-status-num (to-i in-led-status-num))
-        (set-config 'led-status-type (to-i in-led-status-type))
-        (set-config 'led-status-reversed (to-i in-led-status-reversed))
+    (set-config 'led-enabled (to-i in-led-enabled))
+    (set-config 'bms-enabled (to-i in-bms-enabled))
+    (set-config 'pubmote-enabled (to-i in-pubmote-enabled))
+    (set-config 'led-on (to-i in-led-on))
+    (set-config 'led-highbeam-on (to-i in-led-highbeam-on))
+    (set-config 'led-mode (to-i in-led-mode))
+    (set-config 'led-mode-idle (to-i in-led-mode-idle))
+    (set-config 'led-mode-status (to-i in-led-mode-status))
+    (set-config 'led-mode-startup (to-i in-led-mode-startup))
+    (set-config 'led-mode-button (to-i in-led-mode-button))
+    (set-config 'led-mode-footpad (to-i in-led-mode-footpad))
+    (set-config 'led-mall-grab-enabled (to-i in-led-mall-grab-enabled))
+    (set-config 'led-brake-light-enabled (to-i in-led-brake-light-enabled))
+    (set-config 'led-brake-light-min-amps (to-float in-led-brake-light-min-amps))
+    (set-config 'idle-timeout (to-i in-idle-timeout))
+    (set-config 'idle-timeout-shutoff (to-i in-idle-timeout-shutoff))
+    (set-config 'led-brightness (to-float in-led-brightness))
+    (set-config 'led-brightness-highbeam (to-float in-led-brightness-highbeam))
+    (set-config 'led-brightness-idle (to-float in-led-brightness-idle))
+    (set-config 'led-brightness-status (to-float in-led-brightness-status))
 
-        (set-config 'led-front-num (to-i in-led-front-num))
-        (set-config 'led-front-type (to-i in-led-front-type))
-        (set-config 'led-front-reversed (to-i in-led-front-reversed))
-        (set-config 'led-front-strip-type (to-i in-led-front-strip-type))
+    (set-config 'led-status-num (to-i in-led-status-num))
+    (set-config 'led-status-type (to-i in-led-status-type))
+    (set-config 'led-status-reversed (to-i in-led-status-reversed))
 
-        (set-config 'led-rear-num (to-i in-led-rear-num))
-        (set-config 'led-rear-type (to-i in-led-rear-type))
-        (set-config 'led-rear-reversed (to-i in-led-rear-reversed))
-        (set-config 'led-rear-strip-type (to-i in-led-rear-strip-type))
+    (set-config 'led-front-num (to-i in-led-front-num))
+    (set-config 'led-front-type (to-i in-led-front-type))
+    (set-config 'led-front-reversed (to-i in-led-front-reversed))
+    (set-config 'led-front-strip-type (to-i in-led-front-strip-type))
 
-        (set-config 'led-button-strip-type (to-i in-led-button-strip-type))
+    (set-config 'led-rear-num (to-i in-led-rear-num))
+    (set-config 'led-rear-type (to-i in-led-rear-type))
+    (set-config 'led-rear-reversed (to-i in-led-rear-reversed))
+    (set-config 'led-rear-strip-type (to-i in-led-rear-strip-type))
 
-        (set-config 'led-footpad-num (to-i in-led-footpad-num))
-        (set-config 'led-footpad-type (to-i in-led-footpad-type))
-        (set-config 'led-footpad-reversed (to-i in-led-footpad-reversed))
-        (set-config 'led-footpad-strip-type (to-i in-led-footpad-strip-type))
-        (var bms-rs485-di-pin-prev (get-config 'bms-rs485-di-pin))
-        (var bms-rs485-ro-pin-prev (get-config 'bms-rs485-ro-pin))
-        (var bms-rs485-dere-pin-prev (get-config 'bms-rs485-dere-pin))
-        (var bms-wakeup-pin-prev (get-config 'bms-wakeup-pin))
+    (set-config 'led-button-strip-type (to-i in-led-button-strip-type))
 
-        (set-config 'bms-rs485-di-pin (to-i in-bms-rs485-di-pin))
-        (set-config 'bms-rs485-ro-pin (to-i in-bms-rs485-ro-pin))
-        (set-config 'bms-rs485-dere-pin (to-i in-bms-rs485-dere-pin))
-        (set-config 'bms-wakeup-pin (to-i in-bms-wakeup-pin))
-        (set-config 'bms-override-soc (to-i in-bms-override-soc))
-        (set-config 'bms-rs485-chip (to-i in-bms-rs485-chip))
+    (set-config 'led-footpad-num (to-i in-led-footpad-num))
+    (set-config 'led-footpad-type (to-i in-led-footpad-type))
+    (set-config 'led-footpad-reversed (to-i in-led-footpad-reversed))
+    (set-config 'led-footpad-strip-type (to-i in-led-footpad-strip-type))
+    (var bms-rs485-di-pin-prev (get-config 'bms-rs485-di-pin))
+    (var bms-rs485-ro-pin-prev (get-config 'bms-rs485-ro-pin))
+    (var bms-rs485-dere-pin-prev (get-config 'bms-rs485-dere-pin))
+    (var bms-wakeup-pin-prev (get-config 'bms-wakeup-pin))
+ 
+    (set-config 'bms-rs485-di-pin (to-i in-bms-rs485-di-pin))
+    (set-config 'bms-rs485-ro-pin (to-i in-bms-rs485-ro-pin))
+    (set-config 'bms-rs485-dere-pin (to-i in-bms-rs485-dere-pin))
+    (set-config 'bms-wakeup-pin (to-i in-bms-wakeup-pin))
+    (set-config 'bms-override-soc (to-i in-bms-override-soc))
+    (set-config 'bms-rs485-chip (to-i in-bms-rs485-chip))
 
-        (set-config 'led-loop-delay (to-i in-led-loop-delay))
-        (set-config 'bms-loop-delay (to-i in-bms-loop-delay))
-        (set-config 'pubmote-loop-delay (to-i in-pubmote-loop-delay))
-        (set-config 'can-loop-delay (to-i in-can-loop-delay))
-        (set-config 'led-max-blend-count (to-i in-led-max-blend-count))
-        (set-config 'led-startup-timeout (to-i in-led-startup-timeout))
-        (set-config 'led-dim-on-highbeam-ratio (to-float in-led-dim-on-highbeam-ratio))
+    (set-config 'led-loop-delay (to-i in-led-loop-delay))
+    (set-config 'bms-loop-delay (to-i in-bms-loop-delay))
+    (set-config 'pubmote-loop-delay (to-i in-pubmote-loop-delay))
+    (set-config 'can-loop-delay (to-i in-can-loop-delay))
+    (set-config 'led-max-blend-count (to-i in-led-max-blend-count))
+    (set-config 'led-startup-timeout (to-i in-led-startup-timeout))
+    (set-config 'led-dim-on-highbeam-ratio (to-float in-led-dim-on-highbeam-ratio))
 
-        (set-config 'bms-type (to-i in-bms-type))
-        (set-config 'led-status-strip-type (to-i in-led-status-strip-type))
-        (set-config 'bms-charge-only (to-i in-bms-charge-only))
-        (set-config 'led-fix (to-i in-led-fix))
-        (set-config 'led-show-battery-charging (to-i in-led-show-battery-charging))
-        (set-config 'bms-buff-size (to-i in-bms-buff-size))
-        (set-config 'led-max-brightness (to-float in-led-max-brightness))
-        (set-config 'soc-type (to-i in-soc-type))
-        (set-config 'cell-type (to-i in-cell-type))
-        (set-config 'series-cells  (to-i in-series-cells))
-    })
+    (set-config 'bms-type (to-i in-bms-type))
+    (set-config 'led-status-strip-type (to-i in-led-status-strip-type))
+    (set-config 'bms-charge-only (to-i in-bms-charge-only))
+    (set-config 'led-fix (to-i in-led-fix))
+    (set-config 'led-show-battery-charging (to-i in-led-show-battery-charging))
+    (set-config 'bms-buff-size (to-i in-bms-buff-size))
+    (set-config 'led-max-brightness (to-float in-led-max-brightness))
+    (set-config 'soc-type (to-i in-soc-type))
+    (set-config 'cell-type (to-i in-cell-type))
+    (set-config 'series-cells  (to-i in-series-cells))
+
 
     (if (= in-led-enabled 1) {
         (if (and (> in-led-front-strip-type 0) (>= in-led-front-pin 0)) {
@@ -378,42 +386,39 @@
 })
 
 (defun send-config () {
-    (atomic {
-        (var config-string "settings ")
 
-        (loopforeach setting eeprom-addrs {
-            (let
-                ((name (first setting)) (type (third setting))) {
-                    (var value (read-val-eeprom name))
+    (var config-string "settings ")
 
-                    (setq config-string
-                        (str-merge config-string
-                            (cond
-                                ((eq type 'b) (str-from-n value "%d "))
-                                ((eq type 'i) (str-from-n value "%d "))
-                                ((eq type 'f) (str-from-n value "%.2f "))
-                            )
+    (loopforeach setting eeprom-addrs {
+        (let
+            ((name (first setting)) (type (third setting))) {
+                (var value (read-val-eeprom name))
+
+                (setq config-string
+                    (str-merge config-string
+                        (cond
+                            ((eq type 'b) (str-from-n value "%d "))
+                            ((eq type 'i) (str-from-n value "%d "))
+                            ((eq type 'f) (str-from-n value "%.2f "))
                         )
                     )
-                }
-            )
-        })
+                )
+            }
+        )
+    })
 
         (send-data config-string)
         (send-status "Settings Read!")
-    })
 })
 
 (defun send-vbms-config () {
-    (atomic {
-        (var config-string       
-            (str-merge "vesc-bms-settings " 
-                        (str-from-n (get-bms-val 'bms-cell-num) "%d ")
-            )
-        )            
-        (send-data config-string)
-        (send-status "VESC BMS Settings Read!")
-    })
+    (var config-string       
+        (str-merge "vesc-bms-settings " 
+                    (str-from-n (get-bms-val 'bms-cell-num) "%d ")
+        )
+    )            
+    (send-data config-string)
+    (send-status "VESC BMS Settings Read!")
 })
 
 (defunret get-config (name) {
