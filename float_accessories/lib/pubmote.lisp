@@ -49,10 +49,12 @@
         ((= pairing -1) {
             (set-config 'esp-now-remote-mac-a (pack-bytes-to-uint32 (take esp-now-remote-mac 4)))
             (set-config 'esp-now-remote-mac-b (pack-bytes-to-uint32 (append (drop esp-now-remote-mac 4) '(0 0))))
-            (write-val-eeprom 'esp-now-remote-mac-a (get-config 'esp-now-remote-mac-a))
-            (write-val-eeprom 'esp-now-remote-mac-b (get-config 'esp-now-remote-mac-b))
-            (write-val-eeprom 'esp-now-secret-code (get-config 'esp-now-secret-code))
-            (write-val-eeprom 'crc (config-crc cfg-len))
+            (atomic {
+                (write-val-eeprom 'esp-now-remote-mac-a (get-config 'esp-now-remote-mac-a))
+                (write-val-eeprom 'esp-now-remote-mac-b (get-config 'esp-now-remote-mac-b))
+                (write-val-eeprom 'esp-now-secret-code (get-config 'esp-now-secret-code))
+                (write-val-eeprom 'crc (config-crc cfg-len))
+            })
             (init-pubmote)
             (var tmpbuf (bufcreate 4))
             (bufset-i32 tmpbuf 0 -1)
@@ -64,8 +66,10 @@
         ; Pairing rejected
         ((= pairing -2) {
             (set-config 'esp-now-remote-mac-a -1)
-            (write-val-eeprom 'esp-now-remote-mac-a (get-config 'esp-now-remote-mac-a) -1)
-            (write-val-eeprom 'crc (config-crc cfg-len))
+            (atomic {
+                (write-val-eeprom 'esp-now-remote-mac-a (get-config 'esp-now-remote-mac-a) -1)
+                (write-val-eeprom 'crc (config-crc cfg-len))
+            })
             (var tmpbuf (bufcreate 4))
             (bufset-i32 tmpbuf 0 -2)
             (esp-now-send esp-now-remote-mac tmpbuf)
@@ -205,20 +209,18 @@
         })
 
         (if (and (= pairing-state 0) (eq esp-now-remote-mac src) (= (buflen data) 16) (= (bufget-i32 data 0 'little-endian) (get-config 'esp-now-secret-code))) {
-            (atomic {
-                (setq pubmote-last-activity-time (systime))
-                ; (print (list "Received" src des data rssi))
-                (var jsy (bufget-f32 data 4 'little-endian))
-                (var jsx (bufget-f32 data 8 'little-endian))
-                (var bt-c (bufget-u8 data 12))
-                (var bt-z (bufget-u8 data 13))
-                (var is-rev (bufget-u8 data 14))
-                ; (print (list jsy jsx bt-c bt-z is-rev))
-                ; (rcode-run-noret (get-config 'can-id) `(set-remote-state ,jsy ,jsx ,bt-c ,bt-z ,is-rev))
+            (setq pubmote-last-activity-time (systime))
+            ; (print (list "Received" src des data rssi))
+            (var jsy (bufget-f32 data 4 'little-endian))
+            (var jsx (bufget-f32 data 8 'little-endian))
+            (var bt-c (bufget-u8 data 12))
+            (var bt-z (bufget-u8 data 13))
+            (var is-rev (bufget-u8 data 14))
+            ; (print (list jsy jsx bt-c bt-z is-rev))
+            ; (rcode-run-noret (get-config 'can-id) `(set-remote-state ,jsy ,jsx ,bt-c ,bt-z ,is-rev))
 
-                (if (>= (get-config 'can-id) 0) {
-                    (can-cmd (get-config 'can-id) (str-replace (to-str(list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
-                })
+            (if (>= (get-config 'can-id) 0) {
+                (can-cmd (get-config 'can-id) (str-replace (to-str(list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
             })
         }{
             (if (= pairing-state 1) {
