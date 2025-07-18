@@ -18,7 +18,7 @@
     (led-mode                  . (9 i 0 -1))
     (led-mode-idle             . (10 i 5 -1))
     (led-mode-status           . (11 i 0 -1))
-    (led-mode-startup          . (12 i 5 -1))
+    (led-mode-startup          . (12 i 9 -1))
     (led-mode-button           . (13 i 0 -1))
     (led-mode-footpad          . (14 i 0 -1))
     (led-mall-grab-enabled     . (15 b 1 -1))
@@ -30,19 +30,19 @@
     (led-brightness-highbeam   . (21 f 0.8 -1))
     (led-brightness-idle       . (22 f 0.5 -1))
     (led-brightness-status     . (23 f 0.6 -1))
-    (led-status-pin            . (24 i 9 -1))
+    (led-status-pin            . (24 i 7 -1))
     (led-status-num            . (25 i 10 -1))
     (led-status-type           . (26 i 0 -1))
     (led-status-reversed       . (27 b 1 -1))
-    (led-front-pin             . (28 i 15 -1))
+    (led-front-pin             . (28 i 8 -1))
     (led-front-num             . (29 i 11 -1))
     (led-front-type            . (30 i 2 -1))
     (led-front-reversed        . (31 b 1 -1))
     (led-front-strip-type      . (32 b 7 -1))
-    (led-rear-pin              . (33 i 12 -1))
+    (led-rear-pin              . (33 i 9 -1))
     (led-rear-num              . (34 i 11 -1))
     (led-rear-type             . (35 i 2 -1))
-    (led-rear-reversed         . (36 b 0 -1))
+    (led-rear-reversed         . (36 b 1 -1))
     (led-rear-strip-type       . (37 b 7 -1))
     (led-button-pin            . (38 b -1 -1))
     (led-button-strip-type     . (39 b 0 -1))
@@ -59,7 +59,7 @@
     (bms-rs485-dere-pin        . (50 i 17 -1))
     (bms-wakeup-pin            . (51 i -1 -1))
     (bms-override-soc          . (52 i 0 -1))
-    (bms-rs485-chip            . (53 b 0 -1))
+    (bms-rs485-chip            . (53 b 1 -1))
     (bms-key-a                 . (54 i -1 -1))
     (bms-key-b                 . (55 i -1 -1))
     (bms-key-c                 . (56 i -1 -1))
@@ -79,7 +79,7 @@
     (led-status-strip-type     . (70 i 1 -1))
     (bms-charge-only           . (71 b 0 -1))
     (led-fix                   . (72 i 100 -1))
-    (led-show-battery-charging . (73 b 0 -1))
+    (led-show-battery-charging . (73 b 1 -1))
     (led-front-highbeam-pin    . (74 i -1 -1))
     (led-rear-highbeam-pin     . (75 i -1 -1))
     (bms-buff-size             . (76 i 128 -1))
@@ -90,7 +90,7 @@
 ))
 
 @const-start
-(def cfg-len (length eeprom-addrs)) 
+(def cfg-len (length eeprom-addrs))
 (def read-cfg-len 0)
 (def bms-context-id -1)
 (def bms-exit-flag nil)
@@ -166,7 +166,7 @@
 ) {
     (if (>= led-context-id 0) {
         (let ((start-time (systime)) (timeout-val 2000000)) ; 2 sec timeout
-        
+
         (setq led-exit-flag t)
 
             (loopwhile (and led-exit-flag (< (- (systime) start-time) timeout-val))
@@ -242,7 +242,7 @@
     (var bms-rs485-ro-pin-prev (get-config 'bms-rs485-ro-pin))
     (var bms-rs485-dere-pin-prev (get-config 'bms-rs485-dere-pin))
     (var bms-wakeup-pin-prev (get-config 'bms-wakeup-pin))
- 
+
     (set-config 'bms-rs485-di-pin (to-i in-bms-rs485-di-pin))
     (set-config 'bms-rs485-ro-pin (to-i in-bms-rs485-ro-pin))
     (set-config 'bms-rs485-dere-pin (to-i in-bms-rs485-dere-pin))
@@ -412,11 +412,11 @@
 })
 
 (defun send-vbms-config () {
-    (var config-string       
-        (str-merge "vesc-bms-settings " 
+    (var config-string
+        (str-merge "vesc-bms-settings "
                     (str-from-n (get-bms-val 'bms-cell-num) "%d ")
         )
-    )            
+    )
     (send-data config-string)
     (send-status "VESC BMS Settings Read!")
 })
@@ -475,16 +475,28 @@
 })
 
 (defun restore-config () {
+    (var is-s3-hw (if (str-cmp (sysinfo 'hw-name) "Avaspark RGB S3") t nil))
     (atomic {
         (loopforeach setting eeprom-addrs {
             (var name (first setting))
             (var default-value (if (eq name 'magic) magic-header (ix setting 3)))
+            (match name
+                (magic (setq default-value magic-header))
+                (led-status-pin (setq default-value (if is-s3-hw 9 7)))
+                (led-front-pin (setq default-value (if is-s3-hw 15 8)))
+                (led-front-highbeam-pin (setq default-value (if is-s3-hw 14 -1)))
+                (led-front-strip-type (setq default-value (if is-s3-hw 7 1)))
+                (led-rear-pin (setq default-value (if is-s3-hw 12 9)))
+                (led-rear-highbeam-pin (setq default-value (if is-s3-hw 13 -1)))
+                (led-rear-strip-type (setq default-value (if is-s3-hw 7 1)))
+                (_ (setq default-value (ix setting 3)))
+            )
             (write-val-eeprom name default-value)
         })
         (write-val-eeprom 'crc (config-crc cfg-len))
+    })
         (load-config)
         (send-status "Settings Restored!")
-    })
 })
 
 (defun print-config ()
