@@ -63,6 +63,23 @@ Item {
             }
         }
     }
+    Dialog {
+        id: commDialog
+        title: "Processing..."
+        closePolicy: Popup.NoAutoClose
+        modal: true
+        focus: true
+        
+        width: parent.width - 20
+        x: 10
+        y: parent.height / 2 - height / 2
+        parent: container
+        
+        ProgressBar {
+            anchors.fill: parent
+            indeterminate: visible
+        }
+    }
 
     // Popup for Pubmote pairing confirmation
     Popup {
@@ -360,6 +377,10 @@ Item {
                 text: qsTr("BMS")
                 enabled: bmsEnabled.checked
             }
+            TabButton {
+                text: qsTr("SD")
+                enabled: logEnabled.checked
+            }
         }
 
         // Stack Layout
@@ -619,6 +640,12 @@ Item {
                                 Layout.fillWidth: true
                                 color: Utility.getAppHexColor("lightText")
                                 text: "BMS Temp: Unknown"
+                            }
+                            Text {
+                                id: loggerStatus
+                                Layout.fillWidth: true
+                                color: Utility.getAppHexColor("lightText")
+                                text: "Logger Status: Unknown"
                             }
                         }
                     }
@@ -1650,6 +1677,74 @@ Item {
                             }
                         }
                     }
+                    ColumnLayout {
+                        width: stackLayout.width
+                        spacing: 10
+                        GroupBox {
+                            title: "SD Card Config"
+                            Layout.fillWidth: true
+                            visible: logEnabled.checked && tabBar2.currentIndex === 3
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: 5
+                                RowLayout {
+                                    spacing: 5
+                                    id: sdLayout
+                                }
+                                Button {
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 500
+                                    text: "Test SD-card"
+                                    visible: logEnabled.checked
+                                
+                                    onClicked: {
+                                        commDialog.open()
+                                        var ok = mCommands.fileBlockWrite("test.txt", "TestTxt")
+                                        commDialog.close()
+                                    
+                                        VescIf.emitMessageDialog(
+                                                "Express SD-Card Test",
+                                            ok ?
+                                                "Writing to the SD-card works!" :
+                                            
+                                                "Could not write to the SD-card. Make sure " +
+                                                "that it is formatted to FAT32. Also make sure " +
+                                                "that the logger CAN ID is correct. Note that not " +
+                                                "all SD-cards work even if they are formatted " +
+                                                "correctly.",
+                                            ok, false)
+                                    }
+                                }
+                                Button {
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 500
+                                    text: "Start Logger"
+                                    visible: logEnabled.checked
+                                
+                                    onClicked: {
+                                        sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(start-log (get-config 'log-append-gnss) (get-config 'log-rate))");
+                                    }
+                                }
+                                Button {
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 500
+                                    text: "Stop Logger"
+                                    visible: logEnabled.checked
+                                
+                                    onClicked: {
+                                        sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(stop-log)");
+                                    }
+                                }
+                                CheckBox {
+                                    id: logAppendGnss
+                                    text: "GNSS Logging Enabled"
+                                    checked: false
+                                    visible: logEnabled.checked
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1685,6 +1780,12 @@ Item {
                             CheckBox {
                                 id: bmsEnabled
                                 text: "BMS Enabled"
+                                checked: false
+                                enabled: true
+                            }
+                            CheckBox {
+                                id: logEnabled
+                                text: "SD Card Logging Enabled"
                                 checked: false
                                 enabled: true
                             }
@@ -1842,6 +1943,22 @@ Item {
                                 value: 8
                                 stepSize: 1
                                 visible: bmsEnabled.checked
+                                editable: true
+                            }
+
+                            Text {
+                                color: Utility.getAppHexColor("lightText")
+                                text: "Logging Delay (hz): "
+                                visible: logEnabled.checked
+                            }
+
+                            SpinBox {
+                                id: logRate
+                                from: 1
+                                to: 1000
+                                value: 2
+                                stepSize: 1
+                                visible: logEnabled.checked
                                 editable: true
                             }
                         }
@@ -2146,7 +2263,10 @@ Item {
             voltageCurveSoc.checked * 1,
             cellType.value,
             seriesCells.value,
-            ledUpdateNotRunning.checked * 1
+            ledUpdateNotRunning.checked * 1,
+            logEnabled.checked * 1,
+            logRate.value,
+            logAppendGnss.checked * 1
         ].join(" ");
     }
 
@@ -2287,6 +2407,9 @@ Item {
                 cellType.currentIndex = Number(tokens[80])
                 seriesCells.value = Number(tokens[81])
                 ledUpdateNotRunning.checked = Number(tokens[82])
+                logEnabled.checked = Number(tokens[83])
+                logRate.value = Number(tokens[84])
+                logAppendGnss.checked = Number(tokens[85])
 
                 pubmoteMacAddress.text = "Pubmote MAC: " + ((Number(tokens[46]) == -1) ? "Not Paired" : macAddress.toUpperCase());
                 readConfig = true;
@@ -2335,6 +2458,9 @@ Item {
                 bmsHumTempStatus.text = "BMS Temp: " + (bmsHumTemp ? Math.floor((bmsHumTemp * 1.8 + 32) * 100)/100 +"F " + bmsHumTemp + "C" : "Unknown")
                 bmsHumTempStatus.color = bmsHumTemp ? "green" : "grey"
 
+                var loggerRunning = parseFloat(tokens[12])
+                loggerStatus.text = "Logger Status: " + (loggerRunning ? "Running" : "Not Running")
+                loggerStatus.color = loggerRunning ? "green" : "red"
                 // Update status flags
                 lastStatusTime = 0  // Reset the timer when status is received
                 statusTimeout = false

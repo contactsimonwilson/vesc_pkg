@@ -1,7 +1,7 @@
 ;@const-symbol-strings
 
 @const-start
-(def wifi-enabled-on-boot nil)
+
 (def pubmote-loop-delay)  ; Loop delay in microseconds (100ms)
 (def pairing-state 0)
 (def esp-now-remote-mac '())

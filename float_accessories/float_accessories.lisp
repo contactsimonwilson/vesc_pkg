@@ -6,7 +6,7 @@
 ; Special Thanks: Benjamin Vedder, surfdado, NuRxG, Siwoz, lolwheel (OWIE), ThankTheMaker (rESCue), 4_fools & marcos (avaspark), auden_builds (pubmote)
 ; gr33tz: outlandnish, exphat, datboig42069
 ; Beta Testers: Pickles
-
+@const-start
 (import "lib/led.lisp" 'led)
 (read-eval-program led)
 (import "lib/led_patterns.lisp" 'led-patterns)
@@ -21,6 +21,8 @@
 (read-eval-program bms)
 (import "lib/pubmote.lisp" 'pubmote)
 (read-eval-program pubmote)
+(import "lib/logger.lisp" 'logger)
+(read-eval-program logger)
 
 (def fw-num (+ (first (sysinfo 'fw-ver)) (* (second (sysinfo 'fw-ver)) 0.01)))
 (defun main () {
@@ -73,7 +75,10 @@
     })
     (if (= (get-config 'bms-enabled) 1) (setq bms-context-id (spawn bms-loop)))
 
-    (if (str-cmp (sysinfo 'hw-name) "Twilight Lord LCM") (spawn humidity-loop))
+    (if (= (str-cmp (sysinfo 'hw-name) "Twilight Lord LCM") 0) (spawn 30 humidity-loop))
+
+    (if (= (get-config 'log-enabled) 1) (setq log-context-id (spawn 50 log-loop)))
 })
 ; Start the main
 (main)
+@const-end

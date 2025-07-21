@@ -120,3 +120,5 @@
          )
      )
 })
+
+(defun get-var (i) i)

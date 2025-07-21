@@ -24,9 +24,6 @@
 ;vars
 (def cell-count-uninit t)
 (def factory -1);TODO Check if bms is in factory mode somehow and init if is. Probably have a timer at boot looking for packets to determine valid state when connected.
-(def bms-status -1)
-(def bms-battery-type -1)
-(def bms-battery-cycles -1)
 (def is-charging -1)
 (def is-current-over-limit -1)
 (def is-battery-empty -1)

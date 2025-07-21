@@ -88,6 +88,9 @@
     (cell-type                 . (79 i 0 -1))
     (series-cells              . (80 i 20 -1))
     (led-update-not-running    . (81 b 0 -1))
+    (log-enabled               . (82 b 0 -1))
+    (log-rate                  . (83 f 2 -1))
+    (log-append-gnss           . (84 b 0 -1))
 ))
 
 @const-start
@@ -99,12 +102,21 @@
 (def pubmote-context-id -1)
 (def pubmote-exit-flag nil)
 (def pubmote-last-activity-time (systime))
+(def wifi-enabled-on-boot nil)
 (def led-context-id -1)
 (def led-exit-flag nil)
 (def led-last-activity-time (systime))
 (def can-context-id -1)
 (def can-last-activity-time (systime))
 (def bms-charge-state 0) ;0 if 100, 1 if 90
+(def log-context-id -1)
+
+(def bms-status -1)
+(def bms-battery-type -1)
+(def bms-battery-cycles -1)
+
+; State
+(def log-running false)
 
 (def hum -100)
 (def hum-temp -100)
@@ -164,6 +176,7 @@
     in-led-loop-delay in-bms-loop-delay in-pubmote-loop-delay in-can-loop-delay in-led-max-blend-count in-led-startup-timeout
     in-led-dim-on-highbeam-ratio in-bms-type in-led-status-strip-type in-bms-charge-only in-led-fix in-led-show-battery-charging
     in-led-front-highbeam-pin in-led-rear-highbeam-pin in-bms-buff-size in-led-max-brightness in-soc-type in-cell-type in-series-cells in-led-update-not-running
+    in-log-enabled in-log-rate in-log-append-gnss
 ) {
     (if (>= led-context-id 0) {
         (let ((start-time (systime)) (timeout-val 2000000)) ; 2 sec timeout
@@ -271,6 +284,10 @@
     (set-config 'series-cells  (to-i in-series-cells))
     (set-config 'led-update-not-running  (to-i in-led-update-not-running))
 
+    (set-config 'log-enabled  (to-i in-log-enabled))
+    (set-config 'log-rate  (to-i in-log-rate))
+    (set-config 'log-append-gnss  (to-i in-log-append-gnss))
+
 
     (if (= in-led-enabled 1) {
         (if (and (> in-led-front-strip-type 0) (>= in-led-front-pin 0)) {
@@ -336,6 +353,17 @@
     (if (= in-pubmote-enabled 1) {
         (if (= pubmote-context-id -1) (setq pubmote-context-id (spawn pubmote-loop)))
     })
+
+    (if (= in-log-enabled 1) {
+        (if (= log-context-id -1) {
+            (setq log-context-id (spawn log-loop))
+        }{
+            (start-log (get-config 'log-append-gnss) (get-config 'log-rate))
+        })
+    }{
+        (stop-log)
+    })
+    
     (save-config)
     (send-config)
 })
@@ -546,6 +574,7 @@
     (setq status-string (str-merge status-string (str-from-n hum-temp "%.2f ")))
     (setq status-string (str-merge status-string (str-from-n (get-bms-val 'bms-hum) "%.0f ")))
     (setq status-string (str-merge status-string (str-from-n (get-bms-val 'bms-temp-hum) "%.0f ")))
+    (setq status-string (str-merge status-string (str-from-n (if log-running 1 0) "%d ")))
     (send-data status-string)
 })
 

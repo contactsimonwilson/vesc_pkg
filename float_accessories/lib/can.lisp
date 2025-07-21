@@ -11,6 +11,7 @@
 (def rpm 0)
 (def speed 0)
 (def tot-current 0)
+(def bat-current 0)
 (def duty-cycle-now 0)
 (def distance-abs -1)
 (def fet-temp-filtered 0)
@@ -24,6 +25,8 @@
 (def vin -1)
 (def last-running-state-time 0)
 (def battery-percent-remaining 0.0)
+(def footpad-adc1-t 0.0)
+(def footpad-adc2-t 0.0)
 
 (def FLOAT_MAGIC 101)
 (def FLOAT_ACCESSORIES_MAGIC 102)
@@ -164,8 +167,8 @@
                                 (setq switch-state (bitwise-and switch-state-byte 0x07))
                                 ;(var beep-reason-t (shr switch-state-byte 4))
                                 (setq handtest-mode (= (bitwise-and switch-state-byte 0x08) 0x08))
-                                (var footpad-adc1-t (/ (to-float (bufget-u8 data 11)) 50))
-                                (var footpad-adc2-t (/ (to-float (bufget-u8 data 12)) 50))
+                                (setq footpad-adc1-t (/ (to-float (bufget-u8 data 11)) 50))
+                                (setq footpad-adc2-t (/ (to-float (bufget-u8 data 12)) 50))
                                 (if (= switch-state 2) {
                                     (setq switch-state 3)
                                 })
@@ -179,6 +182,7 @@
                                 (setq rpm (/ (to-float  (bufget-i16 data 24)) 10))
                                 (setq speed (/ (to-float (bufget-i16 data 26)) 10))
                                 (setq tot-current (/ (to-float (bufget-i16 data 28)) 10))
+                                (setq bat-current (/ (to-float (bufget-i16 data 30)) 10))
                                 (setq duty-cycle-now (/ (to-float (- (bufget-u8 data 32) 128)) 100))
                                 (if (>= mode 2) {
                                     (setq distance-abs (bufget-f32 data 34))
