@@ -477,7 +477,7 @@
 })
 
 (defun restore-config () {
-    (var is-s3-hw (if (str-cmp (sysinfo 'hw-name) "Avaspark RGB S3") t nil))
+    (var is-s3-hw (if (= (str-cmp (sysinfo 'hw-name) "Avaspark RGB S3") 0) t nil))
     (atomic {
         (loopforeach setting eeprom-addrs {
             (var name (first setting))
