@@ -83,9 +83,6 @@
 (def led-show-battery-charging 0)
 (def led-front-highbeam-pin)
 (def led-rear-highbeam-pin)
-(def mall-grab-start t)
-(def mall-grab-button-timer 0)
-(def mall-grab-event t)
 
 (defun load-led-settings () {
     (setq led-enabled (get-config 'led-enabled))
@@ -274,6 +271,8 @@
     (var anim-time 0)
     (var prev-run-state 0)
     (var led-run-start-time 0)
+    (var mall-grab-press-start 0)
+    (var mall-grab-press-active nil)
     (loopwhile t {
         (setq loop-start-time (secs-since 0))
         (setq anim-time (+ anim-time led-loop-delay-sec))
@@ -310,25 +309,30 @@
             })
         })
 
-        (if (and (not (running-state)) (> pitch-angle 70)){
-            (if (= led-mall-grab-enabled 1) (setq led-mall-grab 1) (setq led-mall-grab 0))
-            (if (= switch-state 3){
-                (if mall-grab-start {
-                    (setq mall-grab-button-timer (systime))
-                    (setq mall-grab-start nil)
-                    (setq mall-grab-event t)
-                })
-                (if (>= (secs-since mall-grab-button-timer) 1) {
-                    (if mall-grab-event {
-                        (setq led-on (if (= led-on 1) 0 1))
-                        (setq mall-grab-event nil)
-                    })
+        (if (and (not (running-state)) (> pitch-angle 70)) {
+            (setq led-mall-grab (if (= led-mall-grab-enabled 1) 1 0))
+            (if (= switch-state 3) {
+
+                (if (not mall-grab-press-active) {
+                    (setq mall-grab-press-start (systime))
+                    (setq mall-grab-press-active t)
                 })
             }{
-                (setq mall-grab-start t)
+                (if mall-grab-press-active {
+                    (var press-duration (secs-since mall-grab-press-start))
+                    (if (< press-duration 1) {
+                        ;; SHORT press → toggle LED ON/OFF
+                        (setq led-on (if (= led-on 1) 0 1))
+                    }{
+                        ;; LONG press → toggle HIGHBEAM ON/OFF
+                        (setq led-highbeam-on (if (= led-highbeam-on 1) 0 1))
+                    })
+            (setq mall-grab-press-active nil)
+                })
             })
         }{
             (setq led-mall-grab 0)
+            (setq mall-grab-press-active nil)
         })
 
         (if (or (running-state) (= led-mall-grab 1) (display-battery-charging)) {
