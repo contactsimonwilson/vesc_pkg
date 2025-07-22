@@ -289,7 +289,7 @@
 
     (if (= in-led-enabled 1) {
         (if (and (> in-led-front-strip-type 0) (>= in-led-front-pin 0)) {
-            (if (not-eq (first (trap (rgbled-init in-led-front-pin in-led-front-type))) 'exit-ok) {
+            (if (not-eq (first (trap (rgbled-init in-led-front-pin))) 'exit-ok) {
                 (send-msg "Invalid Pin: led-front-pin")
             }{
                 (set-config 'led-front-pin (to-i in-led-front-pin))
@@ -297,7 +297,7 @@
         })
 
         (if (and (> in-led-rear-strip-type 0) (>= in-led-rear-pin 0)) {
-            (if (not-eq (first (trap (rgbled-init in-led-rear-pin in-led-rear-type))) 'exit-ok) {
+            (if (not-eq (first (trap (rgbled-init in-led-rear-pin))) 'exit-ok) {
                 (send-msg "Invalid Pin: led-rear-pin")
             }{
                 (set-config 'led-rear-pin (to-i in-led-rear-pin))
@@ -305,7 +305,7 @@
         })
 
         (if (and (> in-led-status-strip-type 0) (>= in-led-status-pin 0)) {
-            (if (not-eq (first (trap (rgbled-init in-led-status-pin in-led-status-type))) 'exit-ok) {
+            (if (not-eq (first (trap (rgbled-init in-led-status-pin))) 'exit-ok) {
                 (send-msg "Invalid Pin: led-status-pin")
             }{
                 (set-config 'led-status-pin (to-i in-led-status-pin))
@@ -313,7 +313,7 @@
         })
 
         (if (and (> in-led-button-strip-type 0) (>= in-led-button-pin 0)) {
-            (if (not-eq (first (trap (rgbled-init in-led-button-pin 0))) 'exit-ok) {
+            (if (not-eq (first (trap (rgbled-init in-led-button-pin))) 'exit-ok) {
                 (send-msg "Invalid Pin: led-button-pin")
             }{
                 (set-config 'led-button-pin (to-i in-led-button-pin))
@@ -321,7 +321,7 @@
         })
 
         (if (and (> in-led-footpad-strip-type 0) (>= in-led-footpad-pin 0)) {
-            (if (not-eq (first (trap (rgbled-init in-led-footpad-pin in-led-footpad-type))) 'exit-ok) {
+            (if (not-eq (first (trap (rgbled-init in-led-footpad-pin))) 'exit-ok) {
                 (send-msg "Invalid Pin: led-footpad-pin")
             }{
                 (set-config 'led-footpad-pin (to-i in-led-footpad-pin))

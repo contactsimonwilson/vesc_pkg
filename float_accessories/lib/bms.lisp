@@ -347,7 +347,8 @@
         1.0  ; 1 second for factory init
         0.5)) ; 500ms for other commands like charge state
     (var bytes-read (uart-read bms-buf (buflen bms-buf) nil nil read-timeout))
-(var found-packet nil)
+    ;(print bms-buf)
+    (var found-packet nil)
     (var start 0)
     (loopwhile (>= (- bytes-read start) (if bms-use-crypto 12 10)) {  ; Check against minimum packet size
         ; Look for magic bytes
@@ -377,7 +378,8 @@
             ; Process the packet
             (if (process-packet packet) {
                 (var command (bufget-u8 packet (if bms-use-crypto 5 3))) ; Adjust for crypto/non-crypto
-                ;(print (str-from-n command "Command: %0x"))
+
+                (print (str-from-n command "Command: %0x"))
                 (if (and (>= cmd-ack 0) (= command cmd-ack)) {
                     (var result (process-cmd command packet t handshake))
                     (free packet)

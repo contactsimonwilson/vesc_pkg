@@ -18,14 +18,23 @@ My Blog: <a href='https://sylerclayton.com'>https://sylerclayton.com</a>
 
 <H2>RELEASE NOTES</H2>
 
--New led mode Trans Pride flag. Happy Pride month!
--Attempt at settings save fix (by ensuring that settings are read first before being allowed to click the save cfg button)
--Mall Grab battery meter brightness is now the same as status brightness
--New option for rgb power button to display battery (green to red)
--New mode for status bar to Swap ADC1/ADC2
--Fix for front/rear strips of different size pattern getting cut off on the larger strip (e.g. knight rider).
+<ul>
+  <li>Setting save fix</li>
+  <li>Motor Config fix</li>
+  <li>SD card logging support</li>
+  <li>Mall Grab short press LED on/off. Long press highbeams.</li>
+  <li>Different default pins for Avaspark RGB S3 than C3.</li>
+  <li>Option to disable updates for front/rear LED bars (white/red hardcoded) while motor is running to prevent flicker on PCBs prone to EMF.</li>
+  <li>Pulse pattern while charging</li>
+  <li>Overhaul of LED patterns to use time instead of indexes (fixes Knight Rider and makes animation smoother)</li>
+  <li>Dynamic way of adding new settings to EEPROM. No more resetting config while upgrading to new version with new params.</li>
+  <li>Support for battery cell type-specific discharge curves for battery meter pattern (stock BMS will also use now).</li>
+  <li>Add handtest and connecting LED patterns.</li>
+  <li>Fix for GTFO strips.</li>
+</ul>
+
 <H3>BUILD INFO</H3>
 
-Version 2.9
+Version 3.0
 
 Source code can be found here:  <a href='https://github.com/relys/vesc%5Fpkg'>https://github.com/relys/vesc_pkg</a>
