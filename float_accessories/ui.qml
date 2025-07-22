@@ -1782,11 +1782,54 @@ Item {
                                 checked: false
                                 enabled: true
                             }
+
                             CheckBox {
                                 id: logEnabled
                                 text: "SD Card Logging Enabled"
                                 checked: false
                                 enabled: true
+                            }
+
+                            CheckBox {
+                                id: humidityEnabled
+                                text: "Humidity Sensor Enabled"
+                                checked: false
+                                enabled: true
+                            }
+                        }
+                    }
+
+                GroupBox {
+                    title: "Humidity Sensor"
+                    Layout.fillWidth: true
+                    visible: humidityEnabled.checked
+                        ColumnLayout {
+                            anchors.fill: parent
+                            width: stackLayout.width
+                            spacing: 10
+                            Text {
+                                color: Utility.getAppHexColor("lightText")
+                                text: "SDA Pin"
+                            }
+
+                            SpinBox {
+                                id: humiditySdaPin
+                                from: -1
+                                to: 100
+                                value: 7
+                                editable: true
+                            }
+                            Text {
+                                color: Utility.getAppHexColor("lightText")
+                                text: "SLC Pin"
+                            }
+
+                            SpinBox {
+                                id: humiditySlcPin
+                                from: -1
+                                to: 100
+                                value: 7
+                                editable: true
                             }
                         }
                     }
@@ -2228,7 +2271,10 @@ Item {
             ledUpdateNotRunning.checked * 1,
             logEnabled.checked * 1,
             logRate.value,
-            logAppendGnss.checked * 1
+            logAppendGnss.checked * 1,
+            humidityEnabled.checked * 1,
+            humiditySdaPin.value,
+            humiditySlcPin.value
         ].join(" ");
     }
 
@@ -2371,6 +2417,9 @@ Item {
                 logEnabled.checked = Number(tokens[82])
                 logRate.value = Number(tokens[83])
                 logAppendGnss.checked = Number(tokens[84])
+                humidityEnabled.checked = Number(tokens[85])
+                humiditySdaPin.value = Number(tokens[86])
+                humiditySlcPin.value = Number(tokens[87])
 
                 pubmoteMacAddress.text = "Pubmote MAC: " + ((Number(tokens[46]) == -1) ? "Not Paired" : macAddress.toUpperCase());
                 readConfig = true;

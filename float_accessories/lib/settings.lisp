@@ -90,6 +90,9 @@
     (log-enabled               . (81 b 0 -1))
     (log-rate                  . (82 f 2 -1))
     (log-append-gnss           . (83 b 0 -1))
+    (humidity-enabled          . (84 b 0 -1))
+    (humidity-sda-pin          . (85 i -1 -1))
+    (humidity-slc-pin          . (86 i -1 -1))
 ))
 
 @const-start
@@ -113,6 +116,8 @@
 (def bms-status -1)
 (def bms-battery-type -1)
 (def bms-battery-cycles -1)
+
+(def humidity-context-id -1)
 
 ; State
 (def log-running false)
@@ -175,8 +180,10 @@
     in-led-loop-delay in-bms-loop-delay in-pubmote-loop-delay in-can-loop-delay in-led-max-blend-count in-led-startup-timeout
     in-led-dim-on-highbeam-ratio in-bms-type in-led-status-strip-type in-bms-charge-only in-led-fix in-led-show-battery-charging
     in-led-front-highbeam-pin in-led-rear-highbeam-pin in-bms-buff-size in-led-max-brightness in-soc-type in-cell-type in-led-update-not-running
-    in-log-enabled in-log-rate in-log-append-gnss
+    in-log-enabled in-log-rate in-log-append-gnss in-humidity-enabled in-humidity-sda-pin in-humidity-slc-pin
 ) {
+    
+    (var reboot-now nil)
     (if (>= led-context-id 0) {
         (let ((start-time (systime)) (timeout-val 2000000)) ; 2 sec timeout
 
@@ -188,7 +195,7 @@
             ; Check if exited due to timeout
             (if led-exit-flag {
                 (send-msg "ERROR: LED loop did not exit in time. Rebooting...")
-                (reboot)
+                (setq reboot-now t)
             })
         )
     })
@@ -204,7 +211,7 @@
             ; Check if exited due to timeout
             (if bms-exit-flag {
                 (send-msg "ERROR: BMS loop did not exit in time. Rebooting...")
-                (reboot)
+                (setq reboot-now t)
             })
         )
     })
@@ -285,6 +292,10 @@
     (set-config 'log-enabled  (to-i in-log-enabled))
     (set-config 'log-rate  (to-i in-log-rate))
     (set-config 'log-append-gnss  (to-i in-log-append-gnss))
+    (set-config 'humidity-enabled (to-i in-humidity-enabled))
+    (if (or (!= (get-config 'humidity-sda-pin) (to-i in-humidity-sda-pin)) (!= (get-config 'humidity-slc-pin) (to-i in-humidity-slc-pin))) (setq reboot-now t) )
+    (set-config 'humidity-sda-pin (to-i in-humidity-sda-pin))
+    (set-config 'humidity-slc-pin (to-i in-humidity-slc-pin))
 
 
     (if (= in-led-enabled 1) {
@@ -345,8 +356,12 @@
         })
     })
 
-    (setq led-context-id (if (= (get-config 'led-enabled) 1) (spawn led-loop) -1))
-    (setq bms-context-id (if (= (get-config 'bms-enabled) 1) (spawn bms-loop) -1))
+    (if (not reboot-now) (setq led-context-id (if (= (get-config 'led-enabled) 1) (spawn led-loop) -1)))
+    (if (not reboot-now) (setq bms-context-id (if (= (get-config 'bms-enabled) 1) (spawn bms-loop) -1)))
+
+    (if (= in-humidity-enabled 1) {
+        (if (= humidity-context-id -1) (setq humidity-context-id (spawn humidity-loop)))
+    })
 
     (if (= in-pubmote-enabled 1) {
         (if (= pubmote-context-id -1) (setq pubmote-context-id (spawn pubmote-loop)))
@@ -364,6 +379,7 @@
     
     (save-config)
     (send-config)
+    (if reboot-now {(send-msg "Rebooting") (reboot)})
 })
 
 (defun send-keys (key-list counter-list) {
@@ -494,6 +510,8 @@
 
 (defun restore-config () {
     (var is-s3-hw (if (= (str-cmp (sysinfo 'hw-name) "Avaspark RGB S3") 0) t nil))
+    (var is-tw (= (str-cmp (sysinfo 'hw-name) "Twilight Lord LCM") 0))
+
     (atomic {
         (loopforeach setting eeprom-addrs {
             (var name (first setting))
@@ -507,6 +525,9 @@
                 (led-rear-pin (setq default-value (if is-s3-hw 12 9)))
                 (led-rear-highbeam-pin (setq default-value (if is-s3-hw 13 -1)))
                 (led-rear-strip-type (setq default-value (if is-s3-hw 7 1)))
+                (humidity-enabled (setq default-value (if is-tw 1 0)))
+                (humidity-sda-pin (setq default-value (if is-tw 10 -1)))
+                (humidity-slc-pin (setq default-value (if is-tw 8 -1)))
                 (_ (setq default-value (ix setting 3)))
             )
             (write-val-eeprom name default-value)

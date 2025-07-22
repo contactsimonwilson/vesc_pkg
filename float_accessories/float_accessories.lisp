@@ -75,7 +75,7 @@
     })
     (if (= (get-config 'bms-enabled) 1) (setq bms-context-id (spawn bms-loop)))
 
-    (if (= (str-cmp (sysinfo 'hw-name) "Twilight Lord LCM") 0) (spawn 30 humidity-loop))
+    (if (= (get-config 'humidity-enabled) 1) (setq humidity-context-id (spawn humidity-loop)))
 
     (if (= (get-config 'log-enabled) 1) (setq log-context-id (spawn 50 log-loop)))
 })

@@ -22,15 +22,16 @@ My Blog: <a href='https://sylerclayton.com'>https://sylerclayton.com</a>
   <li>Setting save fix</li>
   <li>Motor Config fix</li>
   <li>SD card logging support</li>
-  <li>Mall Grab short press LED on/off. Long press highbeams.</li>
-  <li>Different default pins for Avaspark RGB S3 than C3.</li>
-  <li>Option to disable updates for front/rear LED bars (white/red hardcoded) while motor is running to prevent flicker on PCBs prone to EMF.</li>
+  <li>Mall Grab short press LED on/off. Long press highbeams</li>
+  <li>Different default pins for Avaspark RGB S3 than C3</li>
+  <li>Option to disable updates for front/rear LED bars (white/red hardcoded) while motor is running to prevent flicker on PCBs prone to EMF</li>
   <li>Pulse pattern while charging</li>
   <li>Overhaul of LED patterns to use time instead of indexes (fixes Knight Rider and makes animation smoother)</li>
-  <li>Dynamic way of adding new settings to EEPROM. No more resetting config while upgrading to new version with new params.</li>
-  <li>Support for battery cell type-specific discharge curves for battery meter pattern (stock BMS will also use now).</li>
-  <li>Add handtest and connecting LED patterns.</li>
-  <li>Fix for GTFO strips.</li>
+  <li>Dynamic way of adding new settings to EEPROM. No more resetting config while upgrading to new version with new params</li>
+  <li>Support for battery cell type-specific discharge curves for battery meter pattern (stock BMS will also use now)</li>
+  <li>Add handtest and connecting LED patterns</li>
+  <li>Fix for GTFO strips</li>
+  <li>Humidity Sensor Support</li>
 </ul>
 
 <H3>BUILD INFO</H3>
