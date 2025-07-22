@@ -27,6 +27,7 @@
 (def battery-percent-remaining 0.0)
 (def footpad-adc1-t 0.0)
 (def footpad-adc2-t 0.0)
+(def series-cells -1)
 
 (def FLOAT_MAGIC 101)
 (def FLOAT_ACCESSORIES_MAGIC 102)
@@ -106,11 +107,53 @@
                     (write-val-eeprom 'can-id (get-config 'can-id ))
                     (write-val-eeprom 'crc (config-crc cfg-len))
                 })
+                (fetch-series-cells)
                 (return 1)
             })
         })
     })
     (return 0)
+})
+
+(defun fetch-series-cells () {
+    (if (>= can-id 0) {
+        (var cells 0)
+        (if (> (get-bms-val 'bms-can-id) -1) (setq cells (get-bms-val 'bms-cell-num)))
+        (if (= cells 0) {
+            (print "No BMS info; querying ESC for series cells...")
+            (var response)
+            
+            ; Spawn thread to receive CAN response
+            (loopwhile-thd 35 (eq response nil) {
+                (setq response (canmsg-recv 0 5)) ; Blocks until message or 'timeout
+            })
+
+            ; Send ESC query
+            (can-cmd can-id (str-merge
+                "(progn "
+                "(var resp (array-create 4)) "
+                "(bufset-i32 resp 0 (conf-get 'si-battery-cells)) "
+                "(canmsg-send " (str-from-n (can-local-id)) " 0 resp) "
+                "(free resp))"
+            ))
+
+            ; Busy wait until thread updates response
+            (loopwhile (eq response nil) {
+                (sleep 0.01) ; Light spin, prevent CPU hammering
+            })
+
+            ; Evaluate the response
+            (if (not (eq response 'timeout)) {
+                (setq series-cells (bufget-i32 response 0))
+                (print (str-merge "Battery cells (from ESC): " (str-from-n series-cells)))
+            } {
+                (print "ESC query for series cells timed out")
+            })
+        } {
+            (setq series-cells cells)
+            (print (str-merge "Battery cells (from BMS): " (str-from-n series-cells)))
+        })
+    })
 })
 
 (defun float-cmd (can-id cmd) {

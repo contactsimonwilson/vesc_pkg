@@ -28,7 +28,6 @@ Item {
         }
 
         sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
-        sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-vbms-config)")
     }
 
     Timer {
@@ -732,13 +731,13 @@ Item {
 
                                 CheckBox {
                                     id: ledUpdateNotRunning
-                                    text: "Don't update front/rear LED while running (seperate pins req)"
+                                    text: "Don't update LEDs while running"
                                     checked: false
                                 }
 
                                 Text {
                                     color: Utility.getAppHexColor("lightText")
-                                    text: "LED Max Brightness (80% by default to prevent LED burnout)"
+                                    text: "LED Max Brightness (80% by default)"
                                 }
 
                                 Slider {
@@ -1839,40 +1838,6 @@ Item {
                                 }
                                 property int value: 0
                             }
-
-                            Text {
-                                    color: Utility.getAppHexColor("lightText")
-                                    text: "Cells in Series"
-                                    visible: voltageCurveSoc.checked
-                            }
-
-                            RowLayout {
-                                spacing: 10
-
-                                SpinBox {
-                                    id: seriesCells
-                                    from: 1
-                                    to: 64
-                                    value: 20
-                                    stepSize: 1
-                                    visible: voltageCurveSoc.checked
-                                    editable: true
-                                }
-
-                                Text {
-                                    id: seriesFromVESCBMS
-                                    color: Utility.getAppHexColor("lightText")
-                                    text: "(loaded from VESC BMS config)"
-                                    visible: false
-                                }       
-
-                                // Button {
-                                //     text: "Load from VESC BMS"
-                                //     onClicked: {
-                                //         sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(read-vbms-config)")
-                                //     }
-                                // }
-                            }
                         }
                     }
 
@@ -2016,7 +1981,6 @@ Item {
                 text: "Read Cfg"
                 onClicked: {
                     sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
-                    sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-vbms-config)")
                 }
             }
 
@@ -2040,7 +2004,6 @@ Item {
                 onClicked: {
                     sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(restore-config)")
                     sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
-                    sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-vbms-config)")
                 }
             }
         }
@@ -2262,7 +2225,6 @@ Item {
             parseFloat(ledMaxBrightness.value).toFixed(2),
             voltageCurveSoc.checked * 1,
             cellType.value,
-            seriesCells.value,
             ledUpdateNotRunning.checked * 1,
             logEnabled.checked * 1,
             logRate.value,
@@ -2405,11 +2367,10 @@ Item {
                 floatPkgSoc.checked = Number(tokens[79]) == 0
                 voltageCurveSoc.checked = Number(tokens[79]) == 1
                 cellType.currentIndex = Number(tokens[80])
-                seriesCells.value = Number(tokens[81])
-                ledUpdateNotRunning.checked = Number(tokens[82])
-                logEnabled.checked = Number(tokens[83])
-                logRate.value = Number(tokens[84])
-                logAppendGnss.checked = Number(tokens[85])
+                ledUpdateNotRunning.checked = Number(tokens[81])
+                logEnabled.checked = Number(tokens[82])
+                logRate.value = Number(tokens[83])
+                logAppendGnss.checked = Number(tokens[84])
 
                 pubmoteMacAddress.text = "Pubmote MAC: " + ((Number(tokens[46]) == -1) ? "Not Paired" : macAddress.toUpperCase());
                 readConfig = true;
@@ -2477,19 +2438,6 @@ Item {
                 sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-control)")
                 var msg = str.substring(7)
                 VescIf.emitStatusMessage(msg, true)
-            } else if (str.startsWith("vesc-bms-settings")) {
-                var msg = str.substring(7)
-                var tokens = str.split(" ")
-                var series = Number(tokens[1])
-                if (series != 0) {
-                    seriesCells.value = series
-                    seriesCells.enabled = false
-                    seriesFromVESCBMS.visible = true
-                } else {
-                    seriesCells.enabled = true
-                    seriesFromVESCBMS.visible = false
-                }
-                
             } else if (str.startsWith("status")) {
                 var msg = str.substring(7)
                 VescIf.emitStatusMessage(msg, true)

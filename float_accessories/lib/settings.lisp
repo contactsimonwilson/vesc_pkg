@@ -29,7 +29,7 @@
     (led-brightness            . (20 f 0.8 -1))
     (led-brightness-highbeam   . (21 f 0.8 -1))
     (led-brightness-idle       . (22 f 0.5 -1))
-    (led-brightness-status     . (23 f 0.6 -1))
+    (led-brightness-status     . (23 f 0.2 -1))
     (led-status-pin            . (24 i 7 -1))
     (led-status-num            . (25 i 10 -1))
     (led-status-type           . (26 i 0 -1))
@@ -74,7 +74,7 @@
     (can-loop-delay            . (65 i 2 -1))
     (led-max-blend-count       . (66 i 4 -1))
     (led-startup-timeout       . (67 i 20 -1))
-    (led-dim-on-highbeam-ratio . (68 f 0.0 -1))
+    (led-dim-on-highbeam-ratio . (68 f 0.2 -1))
     (bms-type                  . (69 i 0 -1))
     (led-status-strip-type     . (70 i 1 -1))
     (bms-charge-only           . (71 b 0 -1))
@@ -86,11 +86,10 @@
     (led-max-brightness        . (77 f 0.8 -1))
     (soc-type                  . (78 i 0 -1))
     (cell-type                 . (79 i 0 -1))
-    (series-cells              . (80 i 20 -1))
-    (led-update-not-running    . (81 b 0 -1))
-    (log-enabled               . (82 b 0 -1))
-    (log-rate                  . (83 f 2 -1))
-    (log-append-gnss           . (84 b 0 -1))
+    (led-update-not-running    . (80 b 0 -1))
+    (log-enabled               . (81 b 0 -1))
+    (log-rate                  . (82 f 2 -1))
+    (log-append-gnss           . (83 b 0 -1))
 ))
 
 @const-start
@@ -175,7 +174,7 @@
     in-led-footpad-strip-type in-bms-rs485-di-pin in-bms-rs485-ro-pin in-bms-rs485-dere-pin in-bms-wakeup-pin in-bms-override-soc in-bms-rs485-chip
     in-led-loop-delay in-bms-loop-delay in-pubmote-loop-delay in-can-loop-delay in-led-max-blend-count in-led-startup-timeout
     in-led-dim-on-highbeam-ratio in-bms-type in-led-status-strip-type in-bms-charge-only in-led-fix in-led-show-battery-charging
-    in-led-front-highbeam-pin in-led-rear-highbeam-pin in-bms-buff-size in-led-max-brightness in-soc-type in-cell-type in-series-cells in-led-update-not-running
+    in-led-front-highbeam-pin in-led-rear-highbeam-pin in-bms-buff-size in-led-max-brightness in-soc-type in-cell-type in-led-update-not-running
     in-log-enabled in-log-rate in-log-append-gnss
 ) {
     (if (>= led-context-id 0) {
@@ -281,7 +280,6 @@
     (set-config 'led-max-brightness (to-float in-led-max-brightness))
     (set-config 'soc-type (to-i in-soc-type))
     (set-config 'cell-type (to-i in-cell-type))
-    (set-config 'series-cells  (to-i in-series-cells))
     (set-config 'led-update-not-running  (to-i in-led-update-not-running))
 
     (set-config 'log-enabled  (to-i in-log-enabled))
@@ -439,16 +437,6 @@
 
         (send-data config-string)
         (send-status "Settings Read!")
-})
-
-(defun send-vbms-config () {
-    (var config-string
-        (str-merge "vesc-bms-settings "
-                    (str-from-n (get-bms-val 'bms-cell-num) "%d ")
-        )
-    )
-    (send-data config-string)
-    (send-status "VESC BMS Settings Read!")
 })
 
 (defunret get-config (name) {

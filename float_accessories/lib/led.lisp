@@ -52,7 +52,6 @@
 (def led-max-brightness)
 (def soc-type)
 (def cell-type)
-(def series-cells)
 (def voltage-curve)
 (def led-update-not-running)
 
@@ -136,7 +135,7 @@
     (setq led-max-brightness (get-config 'led-max-brightness))
     (setq soc-type (get-config 'soc-type))
     (setq cell-type (get-config 'cell-type))
-    (setq series-cells (get-config 'series-cells))
+    ;(setq series-cells (get-config 'series-cells))
     (setq voltage-curve (get-voltage-curve cell-type))
     (setq led-update-not-running (get-config 'led-update-not-running))
 })
