@@ -1894,7 +1894,7 @@ Item {
 
                             Text {
                                 color: Utility.getAppHexColor("lightText")
-                                text: "CAN Delay (hz)"
+                                text: "CAN Frequency (Hz)"
                             }
 
                             SpinBox {
@@ -1908,7 +1908,7 @@ Item {
 
                             Text {
                                 color: Utility.getAppHexColor("lightText")
-                                text: "LED Delay (hz) "
+                                text: "LED Frequency (Hz) "
                                 visible: ledEnabled.checked
                             }
 
@@ -1924,7 +1924,7 @@ Item {
 
                             Text {
                                 color: Utility.getAppHexColor("lightText")
-                                text: "Pubmote Delay (hz)"
+                                text: "Pubmote Frequency (Hz)"
                                 visible: pubmoteEnabled.checked
                             }
 
@@ -1940,7 +1940,7 @@ Item {
 
                             Text {
                                 color: Utility.getAppHexColor("lightText")
-                                text: "BMS Delay (hz): "
+                                text: "BMS Frequency (Hz): "
                                 visible: bmsEnabled.checked
                             }
 
@@ -1956,7 +1956,7 @@ Item {
 
                             Text {
                                 color: Utility.getAppHexColor("lightText")
-                                text: "Logging Delay (hz): "
+                                text: "Logging Frequency (Hz): "
                                 visible: logEnabled.checked
                             }
 
