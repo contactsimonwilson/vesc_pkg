@@ -6,7 +6,6 @@
 
 (def key (bufcreate 16))
 (def counter (bufcreate 16))
-(def lut [0 0 0 0 1 2 3 4 5 7 8 11 14 16 18 19 25 30 33 37 43 48 53 60 67 71 76 82 92 97 100]);Update for battery curve
 (def magic [0xff 0x55 0x00])
 
 @const-start
@@ -25,9 +24,6 @@
 ;vars
 (def cell-count-uninit t)
 (def factory -1);TODO Check if bms is in factory mode somehow and init if is. Probably have a timer at boot looking for packets to determine valid state when connected.
-(def bms-status -1)
-(def bms-battery-type -1)
-(def bms-battery-cycles -1)
 (def is-charging -1)
 (def is-current-over-limit -1)
 (def is-battery-empty -1)
@@ -150,12 +146,10 @@
 
     (looprange k (if bms-use-crypto 6 4) (- (buflen data) (+ (if bms-use-crypto 0 2) 3)) { ;Need to leave off end 16th cell for 15s BMS
         (if (eq (mod k 2) 0) {
-            ;calculate voltage based soc based on first cell mv
-            (if (and (= cell-index 0) (= bms-override-soc 1)) {
-                (var soc (/ (* (soc (bufget-u16 data k) (if bms-use-crypto 1 10))) 100.0))
-                (set-bms-val 'bms-soc soc)
-            })
             (var current-cell (/ (bufget-u16 data k) (if bms-use-crypto 10000.0 1000.0)))
+            (if (and (= cell-index 0) (= bms-override-soc 1)) {
+                (set-bms-val 'bms-soc (/ (estimate-soc current-cell voltage-curve) 100))
+            })
             (set-bms-val 'bms-v-cell cell-index current-cell)
             (setq cell-index (+ cell-index 1))
             (setq total-voltage (+ total-voltage current-cell))
@@ -353,7 +347,8 @@
         1.0  ; 1 second for factory init
         0.5)) ; 500ms for other commands like charge state
     (var bytes-read (uart-read bms-buf (buflen bms-buf) nil nil read-timeout))
-(var found-packet nil)
+    ;(print bms-buf)
+    (var found-packet nil)
     (var start 0)
     (loopwhile (>= (- bytes-read start) (if bms-use-crypto 12 10)) {  ; Check against minimum packet size
         ; Look for magic bytes
@@ -383,7 +378,8 @@
             ; Process the packet
             (if (process-packet packet) {
                 (var command (bufget-u8 packet (if bms-use-crypto 5 3))) ; Adjust for crypto/non-crypto
-                ;(print (str-from-n command "Command: %0x"))
+
+                (print (str-from-n command "Command: %0x"))
                 (if (and (>= cmd-ack 0) (= command cmd-ack)) {
                     (var result (process-cmd command packet t handshake))
                     (free packet)
@@ -400,15 +396,6 @@
     (if found-packet (send-bms-can))
     (return (< cmd-ack 0));if we're looking for an ack we failed to find one
 })
-
-(defun soc (mv)
-  (let ((v (max 0 (min (- mv 2700) (- 1500 1)))))
-    (let ((i (* v (/ 30.0 1500))))
-      (let ((l (floor i)))
-        (let ((f (- i l)))
-          (let ((a (bufget-u8 lut l))
-                (b (bufget-u8 lut (+ l 1))))
-            (max 0 (min (round (+ a (* f (- b a)))) 100))))))))
 
 (defunret init-bms () {
     (uart-stop)

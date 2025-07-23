@@ -5,8 +5,8 @@
 ; Copyright 2024 Syler Clayton <syler.clayton@gmail.com>
 ; Special Thanks: Benjamin Vedder, surfdado, NuRxG, Siwoz, lolwheel (OWIE), ThankTheMaker (rESCue), 4_fools & marcos (avaspark), auden_builds (pubmote)
 ; gr33tz: outlandnish, exphat, datboig42069
-; Beta Testers: Koddex, Pickles
-
+; Beta Testers: Pickles
+@const-start
 (import "lib/led.lisp" 'led)
 (read-eval-program led)
 (import "lib/led_patterns.lisp" 'led-patterns)
@@ -21,6 +21,8 @@
 (read-eval-program bms)
 (import "lib/pubmote.lisp" 'pubmote)
 (read-eval-program pubmote)
+(import "lib/logger.lisp" 'logger)
+(read-eval-program logger)
 
 (def fw-num (+ (first (sysinfo 'fw-ver)) (* (second (sysinfo 'fw-ver)) 0.01)))
 (defun main () {
@@ -37,11 +39,30 @@
 
     (if (< fw-num 6.05) (exit-error "hw-express needs to be running 6.05"))
 
-    ; Restore settings if version number does not match
+    ; Restore settings if magic header does not match
     ; as that probably means something else is in eeprom
-    (if (not-eq (read-val-eeprom 'ver-code) config-version) (restore-config) (load-config))
-    (var crc (config-crc))
-    (if (!= crc (to-i (read-val-eeprom 'crc)) ){ (send-msg  (str-merge "Error: crc corrupt. Got " (str-from-n (read-val-eeprom 'crc)) ". Expected " (str-from-n crc))) (restore-config) })
+    (if (not-eq (read-val-eeprom 'magic) magic-header) (restore-config) (load-config))
+    (var crc (config-crc read-cfg-len))
+    (if (!= crc (to-i (read-val-eeprom 'crc)) ) {
+        (send-msg  (str-merge "Error: crc corrupt. Got " (str-from-n (read-val-eeprom 'crc)) ". Expected " (str-from-n crc)))
+        (restore-config)
+    } {
+        (if (> cfg-len read-cfg-len) {
+            ;check if crcs match and update default params only for new ones. Make sure they get updated in eeprom, and active variables and then save the crc
+            ; Initialize only the new parameters (those beyond read-cfg-len)
+            (var count 0)
+            (loopforeach setting eeprom-addrs {
+                (if (and (>= count read-cfg-len) (< count cfg-len)) {
+                    (var name (first setting))
+                    (var default-value (ix setting 3))
+                    ;(write-val-eeprom name default-value)
+                    (set-config name default-value)
+                })
+                (setq count (+ count 1))
+            })
+            (save-config)
+        })
+    })
 })
 
 (defun init (){
@@ -54,7 +75,10 @@
     })
     (if (= (get-config 'bms-enabled) 1) (setq bms-context-id (spawn bms-loop)))
 
-    (if (str-cmp (sysinfo 'hw-name) "Twilight Lord LCM") (spawn humidity-loop))
+    (if (= (get-config 'humidity-enabled) 1) (setq humidity-context-id (spawn humidity-loop)))
+
+    (if (= (get-config 'log-enabled) 1) (setq log-context-id (spawn 50 log-loop)))
 })
 ; Start the main
 (main)
+@const-end

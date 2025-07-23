@@ -77,26 +77,94 @@
     })
 })
 
+(def has-si7021 nil)
+(def has-aht20 nil)
+
 (defunret init-humidity () {
-    (i2c-start 'rate-400k '10 '8)
-    (if (i2c-detect-addr 0x40) {
-        (i2c-tx-rx 0x40 '(2 0x10 0))
-        (i2c-tx-rx 0x40 '(0))
+    (i2c-start 'rate-400k (get-config 'humidity-sda-pin) (get-config 'humidity-slc-pin))
+    (setq has-si7021 (i2c-detect-addr 0x40))
+    (setq has-aht20 (i2c-detect-addr 0x38))
+
+    (if (or has-si7021 has-aht20) {
+        (print "Sensors detected:")
+        (if has-si7021 { (print "- Using Si7021 logic at 0x40") })
+        (if has-aht20  { (print "- Using AHT20 logic at 0x38") })
+
+        (if has-aht20 {
+            (sleep 0.04)
+            (i2c-tx-rx 0x38 '(0xBE 0x08 0x00))
+        })
+        (if has-si7021 {
+            (i2c-tx-rx 0x40 '(2 0x10 0))
+            (i2c-tx-rx 0x40 '(0))
+        })
         (return true)
     })
+    (send-msg "No humidity sensor detected.")
     (return false)
 })
 
 (defun humidity-loop () {
     (if (init-humidity) {
-        (var rx (bufcreate 4))
-        (loopwhile t{
-            (sleep 5)
-            (i2c-tx-rx 0x40 '() rx)
-            (i2c-tx-rx 0x40 (list 0x0F 0x01))
-            (i2c-tx-rx 0x40 '(0)) ;
-            (setq hum (* (/ (bufget-u16 rx 2 'little-endian) 65536.0) 100.0))
-            (setq hum-temp (- (* (/ (bufget-u16 rx 0 'little-endian) 65536.0) 165.0) 40.5))
+        (var rx-si7021 (bufcreate 4))
+        (var rx-aht20 (bufcreate 6))
+        (loopwhile t {
+            (if has-si7021 {
+                (i2c-tx-rx 0x40 '() rx-si7021)
+                (i2c-tx-rx 0x40 (list 0x0F 0x01))
+                (i2c-tx-rx 0x40 '(0))
+
+                (setq hum (* (/ (bufget-u16 rx-si7021 2 'little-endian) 65536.0) 100.0))
+                (setq hum-temp (- (* (/ (bufget-u16 rx-si7021 0 'little-endian) 65536.0) 165.0) 40.5))
+
+                ;(print (str-merge "[Si7021] Humidity: " (str-from-n hum "%.2f%%")
+                ;                   ", Temp: " (str-from-n (+ (* hum-temp 1.8) 32) "%.2fF")
+                ;                   " / " (str-from-n hum-temp "%.2fC")))
+            })
+
+            (if has-aht20 {
+                (i2c-tx-rx 0x38 '(0xAC 0x33 0x00))
+                (sleep 0.075)
+                (i2c-tx-rx 0x38 '() rx-aht20)
+
+                (var hum-raw (+ (shl (bufget-u8 rx-aht20 1) 12)
+                                (shl (bufget-u8 rx-aht20 2) 4)
+                                (shr (bufget-u8 rx-aht20 3) 4)))
+                (var temp-raw (+ (shl (bitwise-and (bufget-u8 rx-aht20 3) 0x0F) 16)
+                                 (shl (bufget-u8 rx-aht20 4) 8)
+                                 (bufget-u8 rx-aht20 5)))
+
+                (setq hum (* (/ hum-raw 1048576.0) 100.0))
+                (setq hum-temp (- (* (/ temp-raw 1048576.0) 200.0) 50.0))
+                ;(print (str-merge "[AHT20] Humidity: " (str-from-n hum "%.2f%%")
+                ;                   ", Temp: " (str-from-n (+ (* hum-temp 1.8) 32) "%.2fF")
+                ;                   " / " (str-from-n hum-temp "%.2fC")))
+            })
+            (sleep 1)
         })
+        (free rx-si7021)
+        (free rx-aht20)
     })
 })
+
+(defun estimate-soc (v voltage-curve) {
+    (var n (length voltage-curve))
+    (var socs (list 100 90 80 70 60 50 40 30 20 10 0))
+    (cond
+        ((>= v (ix voltage-curve 0)) 100.0)
+        ((<= v (ix voltage-curve (- n 1))) 0.0)
+        (true
+            (looprange i 1 (- n 1)
+                (if (and (>= v (ix voltage-curve i)) (<= v (ix voltage-curve (- i 1))))
+                    (break (let ((v1 (ix voltage-curve (- i 1)))
+                    (v2 (ix voltage-curve i))
+                    (s1 (ix socs (- i 1)))
+                    (s2 (ix socs i)))
+                    (+ s1 (* (/ (- v v1) (- v2 v1)) (- s2 s1)))))
+                )
+            )
+         )
+     )
+})
+
+(defun get-var (i) i)

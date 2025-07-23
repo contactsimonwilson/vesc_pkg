@@ -20,6 +20,7 @@ Item {
     property bool acceptTOS: false
     property int lastStatusTime: 0
     property bool statusTimeout: false
+    property bool readConfig: false
 
     Component.onCompleted: {
         if (VescIf.getLastFwRxParams().hwTypeStr() !== "Custom Module") {
@@ -59,6 +60,23 @@ Item {
                 sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pair-pubmote -2)");  // Automatically reject if time runs out
                 pubmotePairPopup.close();
             }
+        }
+    }
+    Dialog {
+        id: commDialog
+        title: "Processing..."
+        closePolicy: Popup.NoAutoClose
+        modal: true
+        focus: true
+        
+        width: parent.width - 20
+        x: 10
+        y: parent.height / 2 - height / 2
+        parent: container
+        
+        ProgressBar {
+            anchors.fill: parent
+            indeterminate: visible
         }
     }
 
@@ -358,6 +376,10 @@ Item {
                 text: qsTr("BMS")
                 enabled: bmsEnabled.checked
             }
+            TabButton {
+                text: qsTr("SD")
+                enabled: logEnabled.checked
+            }
         }
 
         // Stack Layout
@@ -487,12 +509,12 @@ Item {
 
                                 ColumnLayout {
                                     id: ledStatusBrightnessLayout
-                                    visible: ledStatusStripType.currentValue > 0
+                                    visible: ledStatusStripType.currentValue > 0 || ledMallGrabEnabled.checked
                                     spacing: 10
 
                                     Text {
                                         color: Utility.getAppHexColor("lightText")
-                                        text: "Status Brightness"
+                                        text: ledMallGrabEnabled.checked && ledStatusStripType.currentValue > 0 ? "Status/Mall Grab Brightness" : ledMallGrabEnabled.checked ? "Mall Grab Brightness" : "Status Brightness"
                                     }
 
                                     Slider {
@@ -618,6 +640,12 @@ Item {
                                 color: Utility.getAppHexColor("lightText")
                                 text: "BMS Temp: Unknown"
                             }
+                            Text {
+                                id: loggerStatus
+                                Layout.fillWidth: true
+                                color: Utility.getAppHexColor("lightText")
+                                text: "Logger Status: Unknown"
+                            }
                         }
                     }
 
@@ -701,9 +729,15 @@ Item {
                                     editable: true
                                 }
 
+                                CheckBox {
+                                    id: ledUpdateNotRunning
+                                    text: "Don't update LEDs while running"
+                                    checked: false
+                                }
+
                                 Text {
                                     color: Utility.getAppHexColor("lightText")
-                                    text: "LED Max Brightness (80% by default to prevent LED burnout)"
+                                    text: "LED Max Brightness (80% by default)"
                                 }
 
                                 Slider {
@@ -712,7 +746,7 @@ Item {
                                     to: 1.0
                                     value: 0.8
                                     stepSize: 0.01
-                                    }
+                                }
 
                                 Text {
                                     color: Utility.getAppHexColor("lightText")
@@ -746,7 +780,8 @@ Item {
                                         {text: "Rave", value: 7},
                                         {text: "Mullet", value: 8},
                                         {text: "Knight Rider", value: 9},
-                                        {text: "Felony", value: 10}
+                                        {text: "Felony", value: 10},
+                                        {text: "Trans Pride", value: 11}
                                     ]
                                     textRole: "text"
                                     valueRole: "value"
@@ -800,6 +835,7 @@ Item {
                                     Layout.fillWidth: true
                                     model: [
                                         {text: "Green->Red Voltage, Blue Sensor, Yellow->Red Duty", value: 0},
+                                        {text: "Swap ADC1/ADC2", value: 1},
                                     ]
                                     textRole: "text"
                                     valueRole: "value"
@@ -819,6 +855,7 @@ Item {
                                     Layout.fillWidth: true
                                     model: [
                                         {text: "Rainbow Chase", value: 0},
+                                        {text: "Battery Meter", value: 1},
                                     ]
                                     textRole: "text"
                                     valueRole: "value"
@@ -1045,6 +1082,7 @@ Item {
                                         {text: "Avaspark Laserbeam V2", value: 8},
                                         {text: "Avaspark Laserbeam V2 Pint", value: 9},
                                         {text: "Light-shutka Flashfires", value: 10},
+                                        {text: "Fungineers GTFO", value: 11},
                                     ]
                                     textRole: "text"
                                     valueRole: "value"
@@ -1177,6 +1215,7 @@ Item {
                                         {text: "Avaspark Laserbeam V2", value: 8},
                                         {text: "Avaspark Laserbeam V2 Pint", value: 9},
                                         {text: "Light-shutka Flashfires", value: 10},
+                                        {text: "Fungineers GTFO", value: 11},
                                     ]
                                     textRole: "text"
                                     valueRole: "value"
@@ -1617,7 +1656,7 @@ Item {
 
                                     CheckBox {
                                         id: bmsOverrideSOC
-                                        text: "Override SOC (Voltage)"
+                                        text: "Override SOC (Choose cell type in Settings)"
                                         checked: false
                                     }
 
@@ -1633,6 +1672,74 @@ Item {
                                         value: 128
                                         editable: true
                                     }
+                                }
+                            }
+                        }
+                    }
+                    ColumnLayout {
+                        width: stackLayout.width
+                        spacing: 10
+                        GroupBox {
+                            title: "SD Card Config"
+                            Layout.fillWidth: true
+                            visible: logEnabled.checked && tabBar2.currentIndex === 3
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: 5
+                                RowLayout {
+                                    spacing: 5
+                                    id: sdLayout
+                                }
+                                Button {
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 500
+                                    text: "Test SD-card"
+                                    visible: logEnabled.checked
+                                
+                                    onClicked: {
+                                        commDialog.open()
+                                        var ok = mCommands.fileBlockWrite("test.txt", "TestTxt")
+                                        commDialog.close()
+                                    
+                                        VescIf.emitMessageDialog(
+                                                "Express SD-Card Test",
+                                            ok ?
+                                                "Writing to the SD-card works!" :
+                                            
+                                                "Could not write to the SD-card. Make sure " +
+                                                "that it is formatted to FAT32. Also make sure " +
+                                                "that the logger CAN ID is correct. Note that not " +
+                                                "all SD-cards work even if they are formatted " +
+                                                "correctly.",
+                                            ok, false)
+                                    }
+                                }
+                                Button {
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 500
+                                    text: "Start Logger"
+                                    visible: logEnabled.checked
+                                
+                                    onClicked: {
+                                        sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(start-log (get-config 'log-append-gnss) (get-config 'log-rate))");
+                                    }
+                                }
+                                Button {
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 500
+                                    text: "Stop Logger"
+                                    visible: logEnabled.checked
+                                
+                                    onClicked: {
+                                        sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(stop-log)");
+                                    }
+                                }
+                                CheckBox {
+                                    id: logAppendGnss
+                                    text: "GNSS Logging Enabled"
+                                    checked: false
+                                    visible: logEnabled.checked
                                 }
                             }
                         }
@@ -1674,6 +1781,105 @@ Item {
                                 text: "BMS Enabled"
                                 checked: false
                                 enabled: true
+                            }
+
+                            CheckBox {
+                                id: logEnabled
+                                text: "SD Card Logging Enabled"
+                                checked: false
+                                enabled: true
+                            }
+
+                            CheckBox {
+                                id: humidityEnabled
+                                text: "Humidity Sensor Enabled"
+                                checked: false
+                                enabled: true
+                            }
+                        }
+                    }
+
+                GroupBox {
+                    title: "Humidity Sensor"
+                    Layout.fillWidth: true
+                    visible: humidityEnabled.checked
+                        ColumnLayout {
+                            anchors.fill: parent
+                            width: stackLayout.width
+                            spacing: 10
+                            Text {
+                                color: Utility.getAppHexColor("lightText")
+                                text: "SDA Pin"
+                            }
+
+                            SpinBox {
+                                id: humiditySdaPin
+                                from: -1
+                                to: 100
+                                value: 7
+                                editable: true
+                            }
+                            Text {
+                                color: Utility.getAppHexColor("lightText")
+                                text: "SLC Pin"
+                            }
+
+                            SpinBox {
+                                id: humiditySlcPin
+                                from: -1
+                                to: 100
+                                value: 7
+                                editable: true
+                            }
+                        }
+                    }
+
+                    GroupBox {
+                        title: "State of Charge Reporting"
+                        Layout.fillWidth: true
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            width: stackLayout.width
+                            spacing: 10
+
+                            RadioButton {
+                                id: floatPkgSoc
+                                checked: true
+                                text: qsTr("Float Package (from VESC firmware)")
+                            }
+                            RadioButton {
+                                id: voltageCurveSoc
+                                text: qsTr("Voltage Curve Based")
+                            }
+
+                            Text {
+                                color: Utility.getAppHexColor("lightText")
+                                text: "Cell Type"
+                                visible: voltageCurveSoc.checked
+                            }
+
+                            ComboBox {
+                                id: cellType
+                                visible: voltageCurveSoc.checked
+                                Layout.fillWidth: true
+                                    model: [
+                                        {text: "Linear", value: 0},
+                                        {text: "P28A", value: 1},
+                                        {text: "P30B", value: 2},
+                                        {text: "P42A", value: 3},
+                                        {text: "P45B", value: 4},
+                                        {text: "P50B", value: 5},
+                                        {text: "DG40", value: 6},
+                                        {text: "50S", value: 7},
+                                        {text: "VTC6", value: 8},
+                                    ]
+                                textRole: "text"
+                                valueRole: "value"
+                                onCurrentIndexChanged: {
+                                   value = model[currentIndex].value
+                                }
+                                property int value: 0
                             }
                         }
                     }
@@ -1747,6 +1953,22 @@ Item {
                                 visible: bmsEnabled.checked
                                 editable: true
                             }
+
+                            Text {
+                                color: Utility.getAppHexColor("lightText")
+                                text: "Logging Delay (hz): "
+                                visible: logEnabled.checked
+                            }
+
+                            SpinBox {
+                                id: logRate
+                                from: 1
+                                to: 1000
+                                value: 2
+                                stepSize: 1
+                                visible: logEnabled.checked
+                                editable: true
+                            }
                         }
                     }
                 }
@@ -1775,12 +1997,12 @@ Item {
                             "<p><b>CREDITS</b></p>" +
                             "<p>Special Thanks: Benjamin Vedder, surfdado, Mitch (NuRxG), Siwoz, lolwheel (OWIE), ThankTheMaker (rESCue), 4_fools (avaspark), auden_builds (pubmote)</p>" +
                             "<p>gr33tz: outlandnish, exphat, datboig42069</p>" +
-                            "<p>Beta Testers: Koddex, Pickles</p>" +
+                            "<p>Beta Testers: Pickles</p>" +
 
                             "<p>My Blog: <a href='https://sylerclayton.com'>https://sylerclayton.com</a></p>" +
 
                             "<p><b>BUILD INFO</b></p>" +
-                            "<p>Version 2.9</p>" +
+                            "<p>Version 3.0</p>" +
                             "<p>Source code can be found here: <a href='https://github.com/relys/vesc_pkg'>https://github.com/relys/vesc_pkg</a></p>"
                         Layout.fillWidth: true
                         wrapMode: Text.WordWrap
@@ -1807,15 +2029,16 @@ Item {
 
             Button {
                 text: "Save Cfg"
+                enabled: readConfig && lastStatusTime < 2
                 onClicked: {
                     if (bmsEnabled.checked && !acceptTOS) {
                         termsPopup.visible = true
                     }
 
-                    //console.log(makeArgStr())
+                    console.log(makeArgStr())
                     sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(recv-config " + makeArgStr() + " )")
-                    sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(save-config)")
-                    sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
+                    //sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(save-config)")
+                    //sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
                 }
             }
 
@@ -1882,6 +2105,10 @@ Item {
                 ledFrontNum.value = 20;
                 ledFrontType.currentIndex = 0
                 break
+            case 11: // Fungineers GTFO
+                ledFrontNum.value = 10
+                ledFrontType.currentIndex = 0
+                break
             default:
                 // Do nothing, keep user-defined values
         }
@@ -1928,6 +2155,10 @@ Item {
             case 10: // Light-shutka Flashfires
                 ledRearNum.value = 20
                 ledRearType.currentIndex = 0
+                break
+            case 11: // Fungineers GTFO
+                ledFrontNum.value = 10
+                ledFrontType.currentIndex = 0
                 break
             default:
                 // Do nothing, keep user-defined values
@@ -2034,7 +2265,16 @@ Item {
             ledFrontHighbeamPin.value,
             ledRearHighbeamPin.value,
             bmsBuffSize.value,
-            parseFloat(ledMaxBrightness.value).toFixed(2)
+            parseFloat(ledMaxBrightness.value).toFixed(2),
+            voltageCurveSoc.checked * 1,
+            cellType.value,
+            ledUpdateNotRunning.checked * 1,
+            logEnabled.checked * 1,
+            logRate.value,
+            logAppendGnss.checked * 1,
+            humidityEnabled.checked * 1,
+            humiditySdaPin.value,
+            humiditySlcPin.value
         ].join(" ");
     }
 
@@ -2170,8 +2410,19 @@ Item {
                 ledRearHighbeamPin.value = Number(tokens[76])
                 bmsBuffSize.value = Number(tokens[77])
                 ledMaxBrightness.value = Number(tokens[78])
+                floatPkgSoc.checked = Number(tokens[79]) == 0
+                voltageCurveSoc.checked = Number(tokens[79]) == 1
+                cellType.currentIndex = Number(tokens[80])
+                ledUpdateNotRunning.checked = Number(tokens[81])
+                logEnabled.checked = Number(tokens[82])
+                logRate.value = Number(tokens[83])
+                logAppendGnss.checked = Number(tokens[84])
+                humidityEnabled.checked = Number(tokens[85])
+                humiditySdaPin.value = Number(tokens[86])
+                humiditySlcPin.value = Number(tokens[87])
 
                 pubmoteMacAddress.text = "Pubmote MAC: " + ((Number(tokens[46]) == -1) ? "Not Paired" : macAddress.toUpperCase());
+                readConfig = true;
             } else if (str.startsWith("msg")) {
                 var msg = str.substring(4)
                 VescIf.emitMessageDialog("Float Accessories", msg, false, false)
@@ -2205,18 +2456,21 @@ Item {
                 // Humidity Sensor Status
                 var hum = parseFloat(tokens[8])
                 var humTemp = parseFloat(tokens[9])
-                humidityStatus.text = "LCM Humidity: " + (hum>-100 ? hum +"%" : "Unknown")
-                humidityStatus.color = hum>-100 ? (hum < 65 ? "green" :hum < 80 ? "orange" : "red") : "grey"
-                humidityTempStatus.text = "LCM Temp: " + (humTemp>-100 ?  Math.floor((humTemp * 1.8 + 32) * 100)/100 +"F " + humTemp + "C" : "Unknown")
-                humidityTempStatus.color = humTemp>-100 ? "green" : "grey"
+                humidityStatus.text = "LCM Humidity: " + (hum>0 ? hum +"%" : "Unknown")
+                humidityStatus.color = hum>0 ? (hum < 65 ? "green" :hum < 80 ? "orange" : "red") : "grey"
+                humidityTempStatus.text = "LCM Temp: " + (humTemp>0 ?  Math.floor((humTemp * 1.8 + 32) * 100)/100 +"F " + humTemp + "C" : "Unknown")
+                humidityTempStatus.color = humTemp>0 ? "green" : "grey"
 
                 var bmsHum = parseFloat(tokens[10])
                 var bmsHumTemp = parseFloat(tokens[11])
-                bmsHumStatus.text = "BMS Humidity: " + (bmsHum ? bmsHum +"%" : "Unknown")
-                bmsHumStatus.color = bmsHum ? (bmsHum < 65 ? "green" : bmsHum < 80 ? "orange" : "red") : "grey"
-                bmsHumTempStatus.text = "BMS Temp: " + (bmsHumTemp ? Math.floor((bmsHumTemp * 1.8 + 32) * 100)/100 +"F " + bmsHumTemp + "C" : "Unknown")
-                bmsHumTempStatus.color = bmsHumTemp ? "green" : "grey"
+                bmsHumStatus.text = "BMS Humidity: " + (bmsHum>0 ? bmsHum +"%" : "Unknown")
+                bmsHumStatus.color = bmsHum>0 ? (bmsHum < 65 ? "green" : bmsHum < 80 ? "orange" : "red") : "grey"
+                bmsHumTempStatus.text = "BMS Temp: " + (bmsHumTemp>0 ? Math.floor((bmsHumTemp * 1.8 + 32) * 100)/100 +"F " + bmsHumTemp + "C" : "Unknown")
+                bmsHumTempStatus.color = bmsHumTemp>0 ? "green" : "grey"
 
+                var loggerRunning = parseFloat(tokens[12])
+                loggerStatus.text = "Logger Status: " + (loggerRunning ? "Running" : "Not Running")
+                loggerStatus.color = loggerRunning ? "green" : "red"
                 // Update status flags
                 lastStatusTime = 0  // Reset the timer when status is received
                 statusTimeout = false

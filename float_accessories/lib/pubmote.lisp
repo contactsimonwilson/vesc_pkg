@@ -1,7 +1,7 @@
 ;@const-symbol-strings
 
 @const-start
-(def wifi-enabled-on-boot nil)
+
 (def pubmote-loop-delay)  ; Loop delay in microseconds (100ms)
 (def pairing-state 0)
 (def esp-now-remote-mac '())
@@ -65,10 +65,12 @@
         ((= pairing -1) {
             (set-config 'esp-now-remote-mac-a (pack-bytes-to-uint32 (take esp-now-remote-mac 4)))
             (set-config 'esp-now-remote-mac-b (pack-bytes-to-uint32 (append (drop esp-now-remote-mac 4) '(0 0))))
-            (write-val-eeprom 'esp-now-remote-mac-a (get-config 'esp-now-remote-mac-a))
-            (write-val-eeprom 'esp-now-remote-mac-b (get-config 'esp-now-remote-mac-b))
-            (write-val-eeprom 'esp-now-secret-code (get-config 'esp-now-secret-code))
-            (write-val-eeprom 'crc (config-crc))
+            (atomic {
+                (write-val-eeprom 'esp-now-remote-mac-a (get-config 'esp-now-remote-mac-a))
+                (write-val-eeprom 'esp-now-remote-mac-b (get-config 'esp-now-remote-mac-b))
+                (write-val-eeprom 'esp-now-secret-code (get-config 'esp-now-secret-code))
+                (write-val-eeprom 'crc (config-crc cfg-len))
+            })
             (init-pubmote)
             (var tmpbuf (bufcreate 2))
             (bufset-u8 tmpbuf 0 (assoc rem-cmds 'REM_PAIR_COMPLETE))
@@ -82,8 +84,10 @@
         ; Pairing rejected
         ((= pairing -2) {
             (set-config 'esp-now-remote-mac-a -1)
-            (write-val-eeprom 'esp-now-remote-mac-a (get-config 'esp-now-remote-mac-a) -1)
-            (write-val-eeprom 'crc (config-crc))
+            (atomic {
+                (write-val-eeprom 'esp-now-remote-mac-a (get-config 'esp-now-remote-mac-a) -1)
+                (write-val-eeprom 'crc (config-crc cfg-len))
+            })
             (var tmpbuf (bufcreate 2))
             (bufset-u8 tmpbuf 0 (to-byte (assoc rem-cmds 'REM_PAIRING_COMPLETE)))
             (bufset-u8 tmpbuf 1 0)
@@ -255,23 +259,21 @@
             (REM_REC_SET_REMOTE_STATE {
                 ; Remote is paired and data was received
                 (if (and (= pairing-state 0) (eq esp-now-remote-mac src) (= (buflen data) 17) (= (bufget-i32 data 1 'little-endian) (get-config 'esp-now-secret-code))) {
-                    (atomic {
-                        ; Update last activity time from rx
-                        (print "Set last activity time from pubmote-rx")
-                        (setq pubmote-last-activity-time (systime))
+                    ; Update last activity time from rx
+                    (print "Set last activity time from pubmote-rx")
+                    (setq pubmote-last-activity-time (systime))
 
-                        ;(print (list "Received" src des data rssi))
-                        (var jsy (bufget-f32 data 5 'little-endian))
-                        (var jsx (bufget-f32 data 9 'little-endian))
-                        (var bt-c (bufget-u8 data 13))
-                        (var bt-z (bufget-u8 data 14))
-                        (var is-rev (bufget-u8 data 15))
-                        ; (print (list jsy jsx bt-c bt-z is-rev))
-                        ; (rcode-run-noret (get-config 'can-id) `(set-remote-state ,jsy ,jsx ,bt-c ,bt-z ,is-rev))
+                    ;(print (list "Received" src des data rssi))
+                    (var jsy (bufget-f32 data 5 'little-endian))
+                    (var jsx (bufget-f32 data 9 'little-endian))
+                    (var bt-c (bufget-u8 data 13))
+                    (var bt-z (bufget-u8 data 14))
+                    (var is-rev (bufget-u8 data 15))
+                    ; (print (list jsy jsx bt-c bt-z is-rev))
+                    ; (rcode-run-noret (get-config 'can-id) `(set-remote-state ,jsy ,jsx ,bt-c ,bt-z ,is-rev))
 
-                        (if (>= (get-config 'can-id) 0) {
-                            (can-cmd (get-config 'can-id) (str-replace (to-str(list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
-                        })
+                    (if (>= (get-config 'can-id) 0) {
+                        (can-cmd (get-config 'can-id) (str-replace (to-str(list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
                     })
                 } {
                    (print "Conditions not met for set remote state")

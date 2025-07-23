@@ -21,50 +21,122 @@
     })
 })
 
-(defun strobe-pattern (color-list strobe-index color) {
-    (set-led-strip-color color-list (if (= strobe-index 0) color 0x00000000))
-    (mod (+ strobe-index 1) 2)
-})
+(defun led-handtest (color-list switch-state switch-led-count time led-mode-status) {
+    (var led-num (length color-list))
+    (var left-color  (if (or (= switch-state 1) (= switch-state 3)) 0xFF 0x00))
+    (var right-color (if (or (= switch-state 2) (= switch-state 3)) 0xFF 0x00))
 
-(defun rave-pattern (color-list rave-index){
-    (set-led-strip-color color-list (ix rainbow-colors rave-index))
-    (mod (+ rave-index 1) (length rainbow-colors))
-})
-
-(defun knight-rider-pattern (color-list color-index) {
-    (var num-leds (length color-list))
-    (var pos (abs (- num-leds (mod (* color-index 2) (* num-leds 2)))))
-
-    (looprange i 0 num-leds {
-        (var distance (abs (- i pos)))
-        (var intensity (max 0 (- 255 (* distance 51))))
-        (var color (color-make intensity 0 0))
-        (setix color-list i color)
+    (if (!= led-mode-status 0) {
+        (var tmp left-color)
+        (setq left-color right-color)
+        (setq right-color tmp)
     })
 
-    (mod (+ color-index 1) num-leds)
+    (var pulse-speed 0.5)
+    (var pulse-index (floor (mod (* time 255 pulse-speed) 255)))
+    (var center-color (color-make 255 pulse-index 0))
+
+    (looprange i 0 led-num {
+        (cond
+            ((< i switch-led-count)
+                (setix color-list i left-color)
+            )
+            ((>= i (- led-num switch-led-count))
+                (setix color-list i right-color)
+            )
+            ((or (= i switch-led-count) (= i (- led-num switch-led-count 1)))
+                (setix color-list i 0)
+            )
+            ((and (> i switch-led-count) (< i (- led-num switch-led-count 1)))
+                (setix color-list i center-color)
+            )
+        )
+    })
 })
 
-(defun battery-pattern (color-list) {
+(defun led-connecting (color-list time) {
     (var led-num (length color-list))
-    (var num-lit-leds (floor (* led-num battery-percent-remaining)))
+    (var speed 4.0)
+    (var index (floor (mod (* time speed) (+ led-num 1))))
+    (looprange i 0 led-num {
+        (if (< i index)
+            (setix color-list i (color-make 255 0 0))
+            (setix color-list i 0)
+        )
+    })
+})
+
+(defun strobe-pattern (color-list color time) {
+    (var freq 5.0) ; flashes per second
+    (var phase (mod (floor (* time freq)) 2)) ; toggle 0/1
+    (var led-color (if (= phase 0) color 0x00000000))
+    (set-led-strip-color color-list led-color)
+})
+
+(defun rave-pattern (color-list time) {
+    (var colors '(0x00FF0000 0x00FFFF00 0x0000FF00 0x0000FFFF 0x000000FF 0x00FF00FF))
+    (var idx (floor (mod (* time 4.0) (length colors)))) ; cycle every 0.25s
+    (set-led-strip-color color-list (ix colors idx))
+})
+
+(defun knight-rider-pattern (color-list time) {
+    (var num-leds (length color-list))
+    (var tail (+ 1 (/ num-leds 3.0)))
+    (var speed 0.7)
+    (setq time (* time speed))
+
+    (var backlight (if (> (mod time 2.0) 0.3) 0.08 0.0))
+    (var x1 (- (* num-leds (mod time 2.0)) (* 0.5 num-leds) 1.0))
+    (var x2 (- (* 1.5 num-leds) (* num-leds (mod (- time 1.0) 2.0))))
+
+    (looprange i 0 num-leds {
+        (var k1 backlight)
+        (var dist1 (abs (- x1 i)))
+        (if (<= i x1) {
+            (if (<= dist1 tail) (setq k1 (/ (- tail dist1) tail)))
+        }{
+            (if (< i (+ x1 1)) (setq k1 (- x1 (floor x1))))
+        })
+
+        (var k2 backlight)
+        (var dist2 (abs (- x2 i)))
+        (if (>= i x2) {
+            (if (<= dist2 tail) (setq k2 (/ (- tail dist2) tail)))
+        }{
+            (if (> i (- x2 1)) (setq k2 (- 1 x2 (floor x2))))
+        })
+
+        (var blend (max k1 k2))
+        (setix color-list i (color-make (floor (* blend 255)) 0 0))
+    })
+})
+
+(defun battery-pattern (color-list charging time) {
+    (var led-num (length color-list))
+    (var soc (if (= soc-type 0) battery-percent-remaining (/ (estimate-soc (/ vin series-cells) voltage-curve) 100)))
+    (var num-lit-leds (floor (* led-num soc)))
+
+    ; Optional pulse factor if charging
+    (var pulse-factor (if charging
+       (+ 0.55 (* 0.45 (cos (* time 3.14159)))) ; Pulses between 0.0 and 1.0
+        1.0))
 
     (looprange led-index 0 led-num {
         (var color
             (if (or (< led-index num-lit-leds)
                    (and (= led-index 0) (<= num-lit-leds 1))) {
                 ; LED should be lit
-                (if (or (< battery-percent-remaining 0.2)
+                (if (or (< soc 0.2)
                        (and (= led-index 0) (<= num-lit-leds 1))) {
                     ; Low battery - red color
-                    (color-make 255 0 0)
+                    (color-make (floor (* 255 pulse-factor)) 0 0)
                 } {
                     ; Normal battery - gradient from green to yellow to red
-                    (let ((red-ratio (- 1 (/ battery-percent-remaining 0.8)))
-                          (green-ratio (/ battery-percent-remaining 0.8))) {
+                    (let ((red-ratio (- 1 (/ soc 0.8)))
+                          (green-ratio (/ soc 0.8))) {
                         (color-make
-                            (* 255 red-ratio)
-                            (* 255 green-ratio)
+                            (floor (* 255 red-ratio pulse-factor))
+                            (floor (* 255 green-ratio pulse-factor))
                             0)
                     })
                 })
@@ -76,44 +148,84 @@
     })
 })
 
-(defun rainbow-pattern (color-list rainbow-index) {
-    (var num-colors (length rainbow-colors))
-    (looprange led-index 0 (length color-list) {
-        (var color-index (mod (+ rainbow-index led-index (length color-list)) num-colors))
-        (var color (ix rainbow-colors color-index))
-        (setix color-list led-index color)
+(defun battery-pattern-button (color-list charging time) {
+    (var soc (if (= soc-type 0) battery-percent-remaining (/ (estimate-soc (/ vin series-cells) voltage-curve) 100)))
+    (var pulse-factor (if charging
+        (+ 0.55 (* 0.45 (cos (* time 3.14159)))) ; Half speed pulse
+        1.0))
+    (let ((red-ratio (- 1 (/ soc 1.0)))
+          (green-ratio (/ soc 1.0))) {
+        (setix color-list 0 (color-make
+            (floor (* 255 red-ratio pulse-factor))
+            (floor (* 255 green-ratio pulse-factor))
+            0))
     })
-    (mod (+ rainbow-index 1) num-colors)
 })
 
-(defun felony-pattern (color-list felony-index) {
-    (var felony-state (mod felony-index 3))
+(defun rainbow-pattern (color-list time) {
+    (var num-leds (length color-list))
+    (var speed 0.5)         ; scroll speed
+    (var rainbows 1.0)      ; how many rainbows fit on the strip
+    (var base-hue (* time speed)) ; how fast it scrolls
+    (var per-pixel-offset (/ rainbows num-leds))
+    (looprange i 0 num-leds {
+        (var hue (mod (+ base-hue (* i per-pixel-offset)) 1.0))
+        (setix color-list i (hue-to-color hue))
+    })
+})
+
+(defun hue-to-color (hue) {
+    ; Convert [0..1] to 0..2π
+    (var angle (* hue 6.28318)) ; 2π
+    ; Shift phases 120° apart
+    (var r (+ 1 (cos angle)))           ; 0°
+    (var g (+ 1 (cos (- angle 2.0944)))) ; 120° offset
+    (var b (+ 1 (cos (- angle 4.1888)))) ; 240° offset
+    ; Normalize 0..255
+    (var r8 (floor (* (/ r 2.0) 255)))
+    (var g8 (floor (* (/ g 2.0) 255)))
+    (var b8 (floor (* (/ b 2.0) 255)))
+    (color-make r8 g8 b8)
+})
+
+(defun trans-pattern (color-list time) {
+    (var num-leds (length color-list))
+    (var pixels-per-strip (/ num-leds 5.0))
+    (var shift (mod (* time 10.0) (* pixels-per-strip 5)))
+    (looprange i 0 num-leds {
+        (var shifted-index (mod (+ i shift) (* pixels-per-strip 5)))
+        (var strip (floor (/ shifted-index pixels-per-strip)))
+        (var color (cond
+            ((= strip 0) 0x0000FF)
+            ((= strip 1) 0xFF69B4)
+            ((= strip 2) 0xFFFFFF)
+            ((= strip 3) 0xFF69B4)
+            ((= strip 4) 0x0000FF)
+        ))
+        (setix color-list i color)
+    })
+})
+
+(defun felony-pattern (color-list time) {
     (var led-num (length color-list))
-    (var led-half (floor (/ led-num 2)))
+    (var half (floor (/ led-num 2)))
+    (var state-duration 0.2)
+    (var state (floor (mod (/ time state-duration) 3)))
 
     (cond
-      ((= felony-state 0) {
-       (looprange i 0 led-half
-         (setix color-list i 0x00000000)) ; BLACK
-       (looprange i led-half led-num
-         (setix color-list i 0x00FF0000)) ; RED
-      })
-
-      ((= felony-state 1) {
-       (looprange i 0 led-half
-         (setix color-list i 0x00FF0000)) ; RED
-       (looprange i led-half led-num
-         (setix color-list i 0x000000FF)) ; BLUE
-      })
-
-      ((= felony-state 2) {
-       (looprange i 0 led-half
-         (setix color-list i 0x000000FF)) ; BLUE
-       (looprange i led-half led-num
-         (setix color-list i 0x00000000)) ; BLACK
-      }))
-
-    (mod (+ felony-index 1) 3)
+        ((= state 0) {
+            (looprange i 0 half (setix color-list i 0x00000000))
+            (looprange i half led-num (setix color-list i 0x00FF0000)) ; RED
+        })
+        ((= state 1) {
+            (looprange i 0 half (setix color-list i 0x00FF0000)) ; RED
+            (looprange i half led-num (setix color-list i 0x000000FF)) ; BLUE
+        })
+        ((= state 2) {
+            (looprange i 0 half (setix color-list i 0x000000FF)) ; BLUE
+            (looprange i half led-num (setix color-list i 0x00000000))
+        })
+    )
 })
 
 (defun duty-cycle-pattern (color-list) {
@@ -143,11 +255,11 @@
     })
 })
 
-(defun footpad-pattern (color-list switch-state){
+(defun footpad-pattern (color-list switch-state led-mode-status){
     (var color-status-half1 (if (or (= switch-state 1) (= switch-state 3)) 0xFF 0x00))
     (var color-status-half2 (if (or (= switch-state 2) (= switch-state 3)) 0xFF 0x00))
     (looprange led-index 0 (length color-list) {
-        (setix color-list led-index (if (< led-index (/ (length color-list) 2)) color-status-half1 color-status-half2))
+        (setix color-list led-index (if (< led-index (/ (length color-list) 2)) (if (= led-mode-status 0) color-status-half1 color-status-half2) (if (= led-mode-status 0) color-status-half2 color-status-half1)))
     })
 })
 

@@ -11,6 +11,7 @@
 (def rpm 0)
 (def speed 0)
 (def tot-current 0)
+(def bat-current 0)
 (def duty-cycle-now 0)
 (def distance-abs -1)
 (def fet-temp-filtered 0)
@@ -24,6 +25,10 @@
 (def vin -1)
 (def last-running-state-time 0)
 (def battery-percent-remaining 0.0)
+(def footpad-adc1-t 0.0)
+(def footpad-adc2-t 0.0)
+(def series-cells -1)
+(def refloat-humidity nil)
 
 (def FLOAT_MAGIC 101)
 (def FLOAT_ACCESSORIES_MAGIC 102)
@@ -31,6 +36,7 @@
 (def float-cmds '(
     (COMMAND_GET_INFO . 0)
     (COMMAND_GET_ALLDATA . 10)
+    (COMMAND_HUMIDITY . 51)
 ))
 
 (def float-accessories-cmds '(
@@ -55,10 +61,11 @@
     (loopwhile t {
         (setq loop-start-time  (secs-since 0))
         (float-cmd can-id (list (assoc float-cmds 'COMMAND_GET_ALLDATA) 3))
+        (if (and refloat-humidity (get-config 'humidity-enabled)) (float-cmd can-id (list (assoc float-cmds 'COMMAND_HUMIDITY) (to-byte hum))))
 
         (if (or (>= bms-can-id 0) (< (secs-since bms-last-activity-time) 1)){
             (var prev-charging-state bms-is-charging)
-            (setq bms-is-charging (and (> (get-bms-val 'bms-v-charge) 10.0) (< (get-bms-val 'bms-i-in-ic) 0.1)))
+            (setq bms-is-charging (and (> (get-bms-val 'bms-v-charge) 10.0) (> (abs(get-bms-val 'bms-i-in-ic)) 0.1)))
 
             (if (and bms-is-charging (not prev-charging-state)){
                     (setq bms-charger-just-plugged t)
@@ -101,13 +108,56 @@
             (if (>= (get-config 'can-id ) 0) {
                 (if (not-eq (get-config 'can-id ) original-can-id) {
                     (write-val-eeprom 'can-id (get-config 'can-id ))
-                    (write-val-eeprom 'crc (config-crc))
+                    (write-val-eeprom 'crc (config-crc cfg-len))
                 })
+                (fetch-series-cells)
+                (float-cmd can-id (list (assoc float-cmds 'COMMAND_HUMIDITY)))
                 (return 1)
             })
         })
     })
     (return 0)
+})
+
+(defun fetch-series-cells () {
+    (if (>= can-id 0) {
+        (var cells 0)
+        (if (> (get-bms-val 'bms-can-id) -1) (setq cells (get-bms-val 'bms-cell-num)))
+        (if (= cells 0) {
+            (print "No BMS info; querying ESC for series cells...")
+            (var response)
+            
+            ; Spawn thread to receive CAN response
+            (loopwhile-thd 35 (eq response nil) {
+                (setq response (canmsg-recv 0 5)) ; Blocks until message or 'timeout
+            })
+
+            ; Send ESC query
+            (can-cmd can-id (str-merge
+                "(progn "
+                "(var resp (array-create 4)) "
+                "(bufset-i32 resp 0 (conf-get 'si-battery-cells)) "
+                "(canmsg-send " (str-from-n (can-local-id)) " 0 resp) "
+                "(free resp))"
+            ))
+
+            ; Busy wait until thread updates response
+            (loopwhile (eq response nil) {
+                (sleep 0.01) ; Light spin, prevent CPU hammering
+            })
+
+            ; Evaluate the response
+            (if (not (eq response 'timeout)) {
+                (setq series-cells (bufget-i32 response 0))
+                (print (str-merge "Battery cells (from ESC): " (str-from-n series-cells)))
+            } {
+                (print "ESC query for series cells timed out")
+            })
+        } {
+            (setq series-cells cells)
+            (print (str-merge "Battery cells (from BMS): " (str-from-n series-cells)))
+        })
+    })
 })
 
 (defun float-cmd (can-id cmd) {
@@ -161,11 +211,11 @@
                                 (setq state (bitwise-and state-byte 0x0F))
                                 (setq sat-t (shr state-byte 4))
                                 (var switch-state-byte (bufget-u8 data 10))
-                                (setq switch-state (bitwise-and switch-state-byte 0x0F))
+                                (setq switch-state (bitwise-and switch-state-byte 0x07))
                                 ;(var beep-reason-t (shr switch-state-byte 4))
                                 (setq handtest-mode (= (bitwise-and switch-state-byte 0x08) 0x08))
-                                (var footpad-adc1-t (/ (to-float (bufget-u8 data 11)) 50))
-                                (var footpad-adc2-t (/ (to-float (bufget-u8 data 12)) 50))
+                                (setq footpad-adc1-t (/ (to-float (bufget-u8 data 11)) 50))
+                                (setq footpad-adc2-t (/ (to-float (bufget-u8 data 12)) 50))
                                 (if (= switch-state 2) {
                                     (setq switch-state 3)
                                 })
@@ -179,6 +229,7 @@
                                 (setq rpm (/ (to-float  (bufget-i16 data 24)) 10))
                                 (setq speed (/ (to-float (bufget-i16 data 26)) 10))
                                 (setq tot-current (/ (to-float (bufget-i16 data 28)) 10))
+                                (setq bat-current (/ (to-float (bufget-i16 data 30)) 10))
                                 (setq duty-cycle-now (/ (to-float (- (bufget-u8 data 32) 128)) 100))
                                 (if (>= mode 2) {
                                     (setq distance-abs (bufget-f32 data 34))
@@ -192,6 +243,10 @@
                             })
                         })
                     })
+                })
+                (COMMAND_HUMIDITY {
+                    (setq refloat-humidity t)
+                    ;(print "Refloat Humidity supported")
                 })
                 (_ nil)
             )
