@@ -28,6 +28,7 @@
 (def footpad-adc1-t 0.0)
 (def footpad-adc2-t 0.0)
 (def series-cells -1)
+(def refloat-humidity nil)
 
 (def FLOAT_MAGIC 101)
 (def FLOAT_ACCESSORIES_MAGIC 102)
@@ -35,6 +36,7 @@
 (def float-cmds '(
     (COMMAND_GET_INFO . 0)
     (COMMAND_GET_ALLDATA . 10)
+    (COMMAND_HUMIDITY . 51)
 ))
 
 (def float-accessories-cmds '(
@@ -59,6 +61,7 @@
     (loopwhile t {
         (setq loop-start-time  (secs-since 0))
         (float-cmd can-id (list (assoc float-cmds 'COMMAND_GET_ALLDATA) 3))
+        (if (and refloat-humidity (get-config 'humidity-enabled)) (float-cmd can-id (list (assoc float-cmds 'COMMAND_HUMIDITY) (to-byte hum))))
 
         (if (or (>= bms-can-id 0) (< (secs-since bms-last-activity-time) 1)){
             (var prev-charging-state bms-is-charging)
@@ -108,6 +111,7 @@
                     (write-val-eeprom 'crc (config-crc cfg-len))
                 })
                 (fetch-series-cells)
+                (float-cmd can-id (list (assoc float-cmds 'COMMAND_HUMIDITY)))
                 (return 1)
             })
         })
@@ -239,6 +243,10 @@
                             })
                         })
                     })
+                })
+                (COMMAND_HUMIDITY {
+                    (setq refloat-humidity t)
+                    ;(print "Refloat Humidity supported")
                 })
                 (_ nil)
             )

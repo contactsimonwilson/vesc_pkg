@@ -122,8 +122,8 @@
 ; State
 (def log-running false)
 
-(def hum -100)
-(def hum-temp -100)
+(def hum 0)
+(def hum-temp 0)
 
 (defun recv-control (in-led-on in-led-highbeam-on in-led-brightness in-led-brightness-highbeam in-led-brightness-idle in-led-brightness-status in-bms-charge-state) {
     (setq led-on (to-i in-led-on))

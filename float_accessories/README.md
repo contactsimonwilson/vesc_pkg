@@ -32,6 +32,7 @@ My Blog: <a href='https://sylerclayton.com'>https://sylerclayton.com</a>
   <li>Add handtest and connecting LED patterns</li>
   <li>Fix for GTFO strips</li>
   <li>Humidity Sensor Support</li>
+  <li>Support for future refloat humidity pushback and alert</li>
 </ul>
 
 <H3>BUILD INFO</H3>
