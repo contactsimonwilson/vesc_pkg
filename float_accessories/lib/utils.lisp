@@ -147,6 +147,14 @@
     })
 })
 
+(defun apply-battery-config (new-soc-type new-cell-type) {
+    (setq soc-type new-soc-type)
+    (setq cell-type new-cell-type)
+    ;(setq series-cells (get-config 'series-cells))
+    (setq voltage-curve (get-voltage-curve cell-type))
+    (print (str-merge "Cell info: type=" (str-from-n cell-type) " soc-type=" (str-from-n soc-type) " series-cells=" (str-from-n series-cells)))
+})
+
 (defun estimate-soc (v voltage-curve) {
     (var n (length voltage-curve))
     (var socs (list 100 90 80 70 60 50 40 30 20 10 0))

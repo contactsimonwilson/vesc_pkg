@@ -113,8 +113,7 @@
 
 (defun battery-pattern (color-list charging time) {
     (var led-num (length color-list))
-    (var soc (if (= soc-type 0) battery-percent-remaining (/ (estimate-soc (/ vin series-cells) voltage-curve) 100)))
-    (var num-lit-leds (floor (* led-num soc)))
+    (var num-lit-leds (floor (* led-num battery-percent-remaining)))
 
     ; Optional pulse factor if charging
     (var pulse-factor (if charging
@@ -126,14 +125,14 @@
             (if (or (< led-index num-lit-leds)
                    (and (= led-index 0) (<= num-lit-leds 1))) {
                 ; LED should be lit
-                (if (or (< soc 0.2)
+                (if (or (< battery-percent-remaining 0.2)
                        (and (= led-index 0) (<= num-lit-leds 1))) {
                     ; Low battery - red color
                     (color-make (floor (* 255 pulse-factor)) 0 0)
                 } {
                     ; Normal battery - gradient from green to yellow to red
-                    (let ((red-ratio (- 1 (/ soc 0.8)))
-                          (green-ratio (/ soc 0.8))) {
+                    (let ((red-ratio (- 1 (/ battery-percent-remaining 0.8)))
+                          (green-ratio (/ battery-percent-remaining 0.8))) {
                         (color-make
                             (floor (* 255 red-ratio pulse-factor))
                             (floor (* 255 green-ratio pulse-factor))
@@ -149,12 +148,11 @@
 })
 
 (defun battery-pattern-button (color-list charging time) {
-    (var soc (if (= soc-type 0) battery-percent-remaining (/ (estimate-soc (/ vin series-cells) voltage-curve) 100)))
     (var pulse-factor (if charging
         (+ 0.55 (* 0.45 (cos (* time 3.14159)))) ; Half speed pulse
         1.0))
-    (let ((red-ratio (- 1 (/ soc 1.0)))
-          (green-ratio (/ soc 1.0))) {
+    (let ((red-ratio (- 1 (/ battery-percent-remaining 1.0)))
+          (green-ratio (/ battery-percent-remaining 1.0))) {
         (setix color-list 0 (color-make
             (floor (* 255 red-ratio pulse-factor))
             (floor (* 255 green-ratio pulse-factor))
