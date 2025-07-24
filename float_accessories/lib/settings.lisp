@@ -225,6 +225,11 @@
         )
     })
 
+    (if (or (!= soc-type in-soc-type) (!= cell-type in-cell-type)) {
+        ; Apply battery calculation
+        (apply-battery-config in-soc-type in-cell-type)  
+    })
+
     (set-config 'led-on (to-i in-led-on))
     (set-config 'led-highbeam-on (to-i in-led-highbeam-on))
     (set-config 'led-mode (to-i in-led-mode))
