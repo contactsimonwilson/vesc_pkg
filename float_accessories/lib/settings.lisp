@@ -101,16 +101,16 @@
 (def read-cfg-len 0)
 (def bms-context-id -1)
 (def bms-exit-flag nil)
-(def bms-last-activity-time (systime))
+(def bms-last-activity-time 0)
 (def pubmote-context-id -1)
 (def pubmote-exit-flag nil)
-(def pubmote-last-activity-time (systime))
+(def pubmote-last-activity-time 0)
 (def wifi-enabled-on-boot nil)
 (def led-context-id -1)
 (def led-exit-flag nil)
-(def led-last-activity-time (systime))
+(def led-last-activity-time 0)
 (def can-context-id -1)
-(def can-last-activity-time (systime))
+(def can-last-activity-time 0)
 (def bms-charge-state 0) ;0 if 100, 1 if 90
 (def log-context-id -1)
 
@@ -576,6 +576,14 @@
     (setq status-string (str-merge status-string (str-from-n (get-bms-val 'bms-temp-hum) "%.0f ")))
     (setq status-string (str-merge status-string (str-from-n (if log-running 1 0) "%d ")))
     (send-data status-string)
+})
+
+(defun init-settings () {
+    (var time-now (systime))
+    (setq bms-last-activity-time time-now)
+    (setq pubmote-last-activity-time time-now)
+    (setq led-last-activity-time time-now)
+    (setq can-last-activity-time time-now)
 })
 
 @const-end

@@ -6,7 +6,6 @@
 ; Special Thanks: Benjamin Vedder, surfdado, NuRxG, Siwoz, lolwheel (OWIE), ThankTheMaker (rESCue), 4_fools & marcos (avaspark), auden_builds (pubmote)
 ; gr33tz: outlandnish, exphat, datboig42069
 ; Beta Testers: Pickles
-@const-start
 (import "lib/utils.lisp" 'utils)
 (read-eval-program utils)
 (import "lib/settings.lisp" 'settings)
@@ -22,6 +21,7 @@
     (init)
 })
 (defun setup () {
+    (init-settings)
     (event-register-handler (spawn event-handler))
     (event-enable 'event-data-rx)
     (event-enable 'event-esp-now-rx)
@@ -86,6 +86,9 @@
 
     (if (= (get-config 'log-enabled) 1) (setq log-context-id (spawn 50 log-loop)))
 })
+
+(if (>= 6.06 fw-num) {
+    (image-save)
+})
 ; Start the main
 (main)
-@const-end
