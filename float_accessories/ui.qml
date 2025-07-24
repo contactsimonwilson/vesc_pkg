@@ -1765,20 +1765,20 @@ Item {
                             spacing: 10
                             CheckBox {
                                 id: ledEnabled
-                                text: "LED Enabled"
+                                text: "LED Enabled (requires reboot)"
                                 checked: true
                             }
 
                             CheckBox {
                                 id: pubmoteEnabled
-                                text: "Pubmote Enabled"
+                                text: "Pubmote Enabled (requires reboot)"
                                 checked: false
                                 enabled: true
                             }
 
                             CheckBox {
                                 id: bmsEnabled
-                                text: "BMS Enabled"
+                                text: "BMS Enabled (requires reboot)"
                                 checked: false
                                 enabled: true
                             }

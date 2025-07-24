@@ -7,20 +7,12 @@
 ; gr33tz: outlandnish, exphat, datboig42069
 ; Beta Testers: Pickles
 @const-start
-(import "lib/led.lisp" 'led)
-(read-eval-program led)
-(import "lib/led_patterns.lisp" 'led-patterns)
-(read-eval-program led-patterns)
-(import "lib/settings.lisp" 'settings)
-(read-eval-program settings)
 (import "lib/utils.lisp" 'utils)
 (read-eval-program utils)
+(import "lib/settings.lisp" 'settings)
+(read-eval-program settings)
 (import "lib/can.lisp" 'can)
 (read-eval-program can)
-(import "lib/bms.lisp" 'bms)
-(read-eval-program bms)
-(import "lib/pubmote.lisp" 'pubmote)
-(read-eval-program pubmote)
 (import "lib/logger.lisp" 'logger)
 (read-eval-program logger)
 
@@ -67,13 +59,28 @@
 
 (defun init (){
     ; Spawn the event handler thread and pass the ID it returns to C
-    (if (= (get-config 'led-enabled) 1) (setq led-context-id (spawn led-loop))); start the led loop as soon as possible once checks are done. once CAN bus comes online it will start responding, and since this is multi-process now leds won't freeze when can is scanning. :)
+    (if (= (get-config 'led-enabled) 1) {
+        (import "lib/led.lisp" 'led)
+        (read-eval-program led)
+        (import "lib/led_patterns.lisp" 'led-patterns)
+        (read-eval-program led-patterns)
+        (setq led-context-id (spawn led-loop))
+    }); start the led loop as soon as possible once checks are done. once CAN bus comes online it will start responding, and since this is multi-process now leds won't freeze when can is scanning. :)
     (setq can-context-id (spawn can-loop))
     (if (> (conf-get 'wifi-mode) 0) {
         (setq wifi-enabled-on-boot t)
-        (if (= (get-config 'pubmote-enabled) 1) (setq pubmote-context-id (spawn pubmote-loop)))
+        (if (= (get-config 'pubmote-enabled) 1){
+            (import "lib/pubmote.lisp" 'pubmote)
+            (read-eval-program pubmote)
+            (setq pubmote-context-id (spawn pubmote-loop))
+        })
     })
-    (if (= (get-config 'bms-enabled) 1) (setq bms-context-id (spawn bms-loop)))
+    (if (= (get-config 'bms-enabled) 1){
+        (import "lib/bms.lisp" 'bms)
+        (read-eval-program bms)
+        (setq bms-context-id (spawn bms-loop))
+
+    })
 
     (if (= (get-config 'humidity-enabled) 1) (setq humidity-context-id (spawn humidity-loop)))
 
