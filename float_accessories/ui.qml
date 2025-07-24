@@ -2002,7 +2002,7 @@ Item {
                             "<p>My Blog: <a href='https://sylerclayton.com'>https://sylerclayton.com</a></p>" +
 
                             "<p><b>BUILD INFO</b></p>" +
-                            "<p>Version 3.0</p>" +
+                            "<p>Version 3.1</p>" +
                             "<p>Source code can be found here: <a href='https://github.com/relys/vesc_pkg'>https://github.com/relys/vesc_pkg</a></p>"
                         Layout.fillWidth: true
                         wrapMode: Text.WordWrap
