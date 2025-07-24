@@ -308,8 +308,10 @@ Item {
     }
 
     ColumnLayout {
+        id: mainLayout
         anchors.fill: parent
         spacing: 10
+        property string primaryTabLabel: ledEnabled.checked || bmsEnabled.checked || logEnabled.checked ? qsTr("Control") : qsTr("Status")
 
         Text {
             Layout.alignment: Qt.AlignHCenter
@@ -323,7 +325,7 @@ Item {
             Layout.fillWidth: true
 
             TabButton {
-                text: qsTr("Control")
+                text: mainLayout.primaryTabLabel
             }
 
             TabButton {
@@ -342,7 +344,8 @@ Item {
         TabBar {
             id: tabBar2
             Layout.fillWidth: true
-            visible: tabBar.currentIndex === 1
+            property int enabledFeatureCount: ledEnabled.checked + pubmoteEnabled.checked + bmsEnabled.checked + logEnabled.checked
+            visible: tabBar.currentIndex === 1 && enabledFeatureCount > 1
 
             // Update enabled indices when checkboxes change
             Component.onCompleted: updateEnabledIndices()
@@ -365,20 +368,28 @@ Item {
             TabButton {
                 text: qsTr("LED")
                 enabled: ledEnabled.checked
+                visible: ledEnabled.checked
+                width: ledEnabled.checked ? implicitWidth : 0
             }
 
             TabButton {
                 text: qsTr("Pubmote")
                 enabled: pubmoteEnabled.checked
+                visible: pubmoteEnabled.checked
+                width: pubmoteEnabled.checked ? implicitWidth : 0
             }
 
             TabButton {
                 text: qsTr("BMS")
                 enabled: bmsEnabled.checked
+                visible: bmsEnabled.checked
+                width: bmsEnabled.checked ? implicitWidth : 0
             }
             TabButton {
-                text: qsTr("SD")
+                text: qsTr("Logging")
                 enabled: logEnabled.checked
+                visible: logEnabled.checked
+                width: logEnabled.checked ? implicitWidth : 0
             }
         }
 
@@ -560,6 +571,47 @@ Item {
                     }
 
                     GroupBox {
+                        title: "Logging Control"
+                        Layout.fillWidth: true
+                        visible: logEnabled.checked
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            spacing: 10
+
+                            Text {
+                                id: loggerStatus
+                                Layout.fillWidth: true
+                                color: Utility.getAppHexColor("lightText")
+                                text: "Logger Status: Unknown"
+                            }
+
+                            Button {
+                                id: logStartButton
+                                Layout.fillWidth: true
+                                Layout.preferredWidth: 500
+                                visible: false
+                                text: "Start Logging"
+                            
+                                onClicked: {
+                                    sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(start-log (get-config 'log-append-gnss) (get-config 'log-rate))");
+                                }
+                            }
+                            Button {
+                                id: logStopButton
+                                Layout.fillWidth: true
+                                Layout.preferredWidth: 500
+                                visible: false
+                                text: "Stop Logging"
+                            
+                                onClicked: {
+                                    sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(stop-log)");
+                                }
+                            }
+                        }
+                    }
+
+                    GroupBox {
                         title: "BMS Control"
                         Layout.fillWidth: true
                         visible: bmsEnabled.checked && bmsType.currentIndex > 1
@@ -608,6 +660,7 @@ Item {
                                 Layout.fillWidth: true
                                 color: Utility.getAppHexColor("lightText")
                                 text: "Pubmote Status: Unknown"
+                                visible: pubmoteEnabled.checked
                             }
 
                             Text {
@@ -615,6 +668,21 @@ Item {
                                 Layout.fillWidth: true
                                 color: Utility.getAppHexColor("lightText")
                                 text: "BMS Status: Unknown"
+                                visible: bmsEnabled.checked
+                            }
+                            Text {
+                                id: bmsHumStatus
+                                Layout.fillWidth: true
+                                color: Utility.getAppHexColor("lightText")
+                                text: "BMS Humidity: Unknown"
+                                visible: bmsEnabled.checked
+                            }
+                            Text {
+                                id: bmsHumTempStatus
+                                Layout.fillWidth: true
+                                color: Utility.getAppHexColor("lightText")
+                                text: "BMS Temp: Unknown"
+                                visible: bmsEnabled.checked
                             }
                             Text {
                                 id: humidityStatus
@@ -627,24 +695,6 @@ Item {
                                 Layout.fillWidth: true
                                 color: Utility.getAppHexColor("lightText")
                                 text: "LCM Temp: Unknown"
-                            }
-                            Text {
-                                id: bmsHumStatus
-                                Layout.fillWidth: true
-                                color: Utility.getAppHexColor("lightText")
-                                text: "BMS Humidity: Unknown"
-                            }
-                            Text {
-                                id: bmsHumTempStatus
-                                Layout.fillWidth: true
-                                color: Utility.getAppHexColor("lightText")
-                                text: "BMS Temp: Unknown"
-                            }
-                            Text {
-                                id: loggerStatus
-                                Layout.fillWidth: true
-                                color: Utility.getAppHexColor("lightText")
-                                text: "Logger Status: Unknown"
                             }
                         }
                     }
@@ -688,7 +738,6 @@ Item {
 
                 ColumnLayout {
                     width: stackLayout.width
-                    spacing: 10
 
                     ColumnLayout {
                         id: ledEnabledLayout
@@ -702,6 +751,22 @@ Item {
                             ColumnLayout {
                                 anchors.fill: parent
                                 spacing: 10
+
+                                Text {
+                                    color: Utility.getAppHexColor("lightText")
+                                    text: "LED Frequency (Hz) "
+                                    visible: ledEnabled.checked
+                                }
+
+                                SpinBox {
+                                    id: ledLoopDelay
+                                    from: 1
+                                    to: 1000
+                                    value: 20
+                                    stepSize: 1
+                                    visible: ledEnabled.checked
+                                    editable: true
+                                }
 
                                 Text {
                                     color: Utility.getAppHexColor("lightText")
@@ -1483,36 +1548,43 @@ Item {
                     ColumnLayout {
                         width: stackLayout.width
                         spacing: 10
+                        visible: pubmoteEnabled.checked && tabBar2.currentIndex === 1
                         GroupBox {
-                            title: "Pubmote Config"
                             Layout.fillWidth: true
-                            visible: pubmoteEnabled.checked && tabBar2.currentIndex === 1
 
                             ColumnLayout {
                                 anchors.fill: parent
-                                spacing: 5
-                                RowLayout {
-                                    spacing: 5
-                                    id: pubmoteLayout
+                                spacing: 10
 
-                                    Button {
-                                        text: "Pair Pubmote"
-                                        onClicked: {
-                                            pubmotePairPopup.open();  // Open the confirmation popup with the random code
-                                        }
-                                    }
-
-                                    Text {
-                                        id: pubmoteMacAddress
-                                        color: Utility.getAppHexColor("lightText")
-                                        text: "Pubmote MAC: Unknown"
-                                    }
+                                Text {
+                                    color: Utility.getAppHexColor("lightText")
+                                    text: "Pubmote Frequency (Hz)"
+                                    visible: pubmoteEnabled.checked
                                 }
 
-                                RowLayout {
-                                    spacing: 5
-                                    id: pubmoteLayout2
+                                SpinBox {
+                                    id: pubmoteLoopDelay
+                                    from: 1
+                                    to: 1000
+                                    value: 8
+                                    stepSize: 1
                                     visible: pubmoteEnabled.checked
+                                    editable: true
+                                }
+
+                                Text {
+                                    id: pubmoteMacAddress
+                                    color: Utility.getAppHexColor("lightText")
+                                    text: "Pubmote MAC: Unknown"
+                                }
+
+                                Button {
+                                    text: "Pair Pubmote"
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 500
+                                    onClicked: {
+                                        pubmotePairPopup.open();  // Open the confirmation popup with the random code
+                                    }
                                 }
                             }
                         }
@@ -1521,13 +1593,28 @@ Item {
                     ColumnLayout {
                         width: stackLayout.width
                         spacing: 10
+                        visible: bmsEnabled.checked && tabBar2.currentIndex === 2
                         GroupBox {
-                            title: "BMS Config"
                             Layout.fillWidth: true
-                            visible: bmsEnabled.checked && tabBar2.currentIndex === 2
                             ColumnLayout {
                                 anchors.fill: parent
                                 spacing: 10
+
+                                Text {
+                                    color: Utility.getAppHexColor("lightText")
+                                    text: "BMS Frequency (Hz): "
+                                    visible: bmsEnabled.checked
+                                }
+
+                                SpinBox {
+                                    id: bmsLoopDelay
+                                    from: 1
+                                    to: 1000
+                                    value: 8
+                                    stepSize: 1
+                                    visible: bmsEnabled.checked
+                                    editable: true
+                                }
 
                                 Text {
                                     color: Utility.getAppHexColor("lightText")
@@ -1676,21 +1763,37 @@ Item {
                             }
                         }
                     }
+                    
                     ColumnLayout {
                         width: stackLayout.width
                         spacing: 10
+                        visible: logEnabled.checked && tabBar2.currentIndex === 3
                         GroupBox {
-                            title: "SD Card Config"
                             Layout.fillWidth: true
-                            visible: logEnabled.checked && tabBar2.currentIndex === 3
 
                             ColumnLayout {
                                 anchors.fill: parent
-                                spacing: 5
-                                RowLayout {
-                                    spacing: 5
-                                    id: sdLayout
+                                spacing: 10
+                                Text {
+                                    color: Utility.getAppHexColor("lightText")
+                                    text: "Logging Frequency (Hz): "
                                 }
+
+                                SpinBox {
+                                    id: logRate
+                                    from: 1
+                                    to: 1000
+                                    value: 2
+                                    stepSize: 1
+                                    editable: true
+                                }
+
+                                CheckBox {
+                                    id: logAppendGnss
+                                    text: "GNSS Logging Enabled"
+                                    checked: false
+                                }
+
                                 Button {
                                     Layout.fillWidth: true
                                     Layout.preferredWidth: 500
@@ -1714,32 +1817,6 @@ Item {
                                                 "correctly.",
                                             ok, false)
                                     }
-                                }
-                                Button {
-                                    Layout.fillWidth: true
-                                    Layout.preferredWidth: 500
-                                    text: "Start Logger"
-                                    visible: logEnabled.checked
-                                
-                                    onClicked: {
-                                        sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(start-log (get-config 'log-append-gnss) (get-config 'log-rate))");
-                                    }
-                                }
-                                Button {
-                                    Layout.fillWidth: true
-                                    Layout.preferredWidth: 500
-                                    text: "Stop Logger"
-                                    visible: logEnabled.checked
-                                
-                                    onClicked: {
-                                        sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(stop-log)");
-                                    }
-                                }
-                                CheckBox {
-                                    id: logAppendGnss
-                                    text: "GNSS Logging Enabled"
-                                    checked: false
-                                    visible: logEnabled.checked
                                 }
                             }
                         }
@@ -1903,70 +1980,6 @@ Item {
                                 to: 1000
                                 value: 8
                                 stepSize: 1
-                                editable: true
-                            }
-
-                            Text {
-                                color: Utility.getAppHexColor("lightText")
-                                text: "LED Frequency (Hz) "
-                                visible: ledEnabled.checked
-                            }
-
-                            SpinBox {
-                                id: ledLoopDelay
-                                from: 1
-                                to: 1000
-                                value: 20
-                                stepSize: 1
-                                visible: ledEnabled.checked
-                                editable: true
-                            }
-
-                            Text {
-                                color: Utility.getAppHexColor("lightText")
-                                text: "Pubmote Frequency (Hz)"
-                                visible: pubmoteEnabled.checked
-                            }
-
-                            SpinBox {
-                                id: pubmoteLoopDelay
-                                from: 1
-                                to: 1000
-                                value: 8
-                                stepSize: 1
-                                visible: pubmoteEnabled.checked
-                                editable: true
-                            }
-
-                            Text {
-                                color: Utility.getAppHexColor("lightText")
-                                text: "BMS Frequency (Hz): "
-                                visible: bmsEnabled.checked
-                            }
-
-                            SpinBox {
-                                id: bmsLoopDelay
-                                from: 1
-                                to: 1000
-                                value: 8
-                                stepSize: 1
-                                visible: bmsEnabled.checked
-                                editable: true
-                            }
-
-                            Text {
-                                color: Utility.getAppHexColor("lightText")
-                                text: "Logging Frequency (Hz): "
-                                visible: logEnabled.checked
-                            }
-
-                            SpinBox {
-                                id: logRate
-                                from: 1
-                                to: 1000
-                                value: 2
-                                stepSize: 1
-                                visible: logEnabled.checked
                                 editable: true
                             }
                         }
@@ -2471,6 +2484,8 @@ Item {
                 var loggerRunning = parseFloat(tokens[12])
                 loggerStatus.text = "Logger Status: " + (loggerRunning ? "Running" : "Not Running")
                 loggerStatus.color = loggerRunning ? "green" : "red"
+                logStartButton.visible = !loggerRunning
+                logStopButton.visible = loggerRunning
                 // Update status flags
                 lastStatusTime = 0  // Reset the timer when status is received
                 statusTimeout = false
