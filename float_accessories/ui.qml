@@ -1876,41 +1876,6 @@ Item {
                         }
                     }
 
-                GroupBox {
-                    title: "Humidity Sensor"
-                    Layout.fillWidth: true
-                    visible: humidityEnabled.checked
-                        ColumnLayout {
-                            anchors.fill: parent
-                            width: stackLayout.width
-                            spacing: 10
-                            Text {
-                                color: Utility.getAppHexColor("lightText")
-                                text: "SDA Pin"
-                            }
-
-                            SpinBox {
-                                id: humiditySdaPin
-                                from: -1
-                                to: 100
-                                value: 7
-                                editable: true
-                            }
-                            Text {
-                                color: Utility.getAppHexColor("lightText")
-                                text: "SLC Pin"
-                            }
-
-                            SpinBox {
-                                id: humiditySlcPin
-                                from: -1
-                                to: 100
-                                value: 7
-                                editable: true
-                            }
-                        }
-                    }
-
                     GroupBox {
                         title: "State of Charge Reporting"
                         Layout.fillWidth: true
@@ -1980,6 +1945,42 @@ Item {
                                 to: 1000
                                 value: 8
                                 stepSize: 1
+                                editable: true
+                            }
+                        }
+                    }
+
+                    GroupBox {
+                        title: "Humidity Sensor"
+                        Layout.fillWidth: true
+                        visible: humidityEnabled.checked
+                        
+                        ColumnLayout {
+                            anchors.fill: parent
+                            width: stackLayout.width
+                            spacing: 10
+                            Text {
+                                color: Utility.getAppHexColor("lightText")
+                                text: "SDA Pin"
+                            }
+
+                            SpinBox {
+                                id: humiditySdaPin
+                                from: -1
+                                to: 100
+                                value: 7
+                                editable: true
+                            }
+                            Text {
+                                color: Utility.getAppHexColor("lightText")
+                                text: "SLC Pin"
+                            }
+
+                            SpinBox {
+                                id: humiditySlcPin
+                                from: -1
+                                to: 100
+                                value: 7
                                 editable: true
                             }
                         }
