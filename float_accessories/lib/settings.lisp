@@ -114,6 +114,14 @@
 (def bms-charge-state 0) ;0 if 100, 1 if 90
 (def log-context-id -1)
 
+; LED settings used by settings.lisp - needed otherwise they will be unbound
+(def led-on)
+(def led-highbeam-on)
+(def led-brightness 0.0)
+(def led-brightness-highbeam 0.0)
+(def led-brightness-idle 0.0)
+(def led-brightness-status 0.0)
+
 (def bms-status -1)
 (def bms-battery-type -1)
 (def bms-battery-cycles -1)
@@ -127,15 +135,12 @@
 (def hum-temp 0)
 
 (defun recv-control (in-led-on in-led-highbeam-on in-led-brightness in-led-brightness-highbeam in-led-brightness-idle in-led-brightness-status in-bms-charge-state) {
-    ; led variables are defined when led.lisp is loaded - skip if not loaded
-    (if (= (get-config 'led-enabled) 1) {
-        (setq led-on (to-i in-led-on))
-        (setq led-highbeam-on (to-i in-led-highbeam-on))
-        (setq led-brightness (to-float in-led-brightness))
-        (setq led-brightness-highbeam (to-float in-led-brightness-highbeam))
-        (setq led-brightness-idle (to-float in-led-brightness-idle))
-        (setq led-brightness-status (to-float in-led-brightness-status))
-    })
+    (setq led-on (to-i in-led-on))
+    (setq led-highbeam-on (to-i in-led-highbeam-on))
+    (setq led-brightness (to-float in-led-brightness))
+    (setq led-brightness-highbeam (to-float in-led-brightness-highbeam))
+    (setq led-brightness-idle (to-float in-led-brightness-idle))
+    (setq led-brightness-status (to-float in-led-brightness-status))
 
     (set-config 'led-on (to-i in-led-on))
     (set-config 'led-highbeam-on (to-i in-led-highbeam-on))
