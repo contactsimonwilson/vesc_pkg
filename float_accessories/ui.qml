@@ -437,7 +437,7 @@ Item {
 
                             CheckBox {
                                 id: ledOn
-                                text: "LED On"
+                                text: "LEDs On"
                                 checked: true
                                 onCheckedChanged: {
                                     handleDebouncedChange()
