@@ -1602,7 +1602,7 @@ Item {
 
                                 Text {
                                     color: Utility.getAppHexColor("lightText")
-                                    text: "BMS Frequency (Hz): "
+                                    text: "BMS Frequency (Hz)"
                                     visible: bmsEnabled.checked
                                 }
 
@@ -1776,7 +1776,7 @@ Item {
                                 spacing: 10
                                 Text {
                                     color: Utility.getAppHexColor("lightText")
-                                    text: "Logging Frequency (Hz): "
+                                    text: "Logging Frequency (Hz)"
                                 }
 
                                 SpinBox {
@@ -1954,7 +1954,7 @@ Item {
                         title: "Humidity Sensor"
                         Layout.fillWidth: true
                         visible: humidityEnabled.checked
-                        
+
                         ColumnLayout {
                             anchors.fill: parent
                             width: stackLayout.width
