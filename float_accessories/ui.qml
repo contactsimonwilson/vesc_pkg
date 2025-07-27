@@ -1843,7 +1843,7 @@ Item {
                             CheckBox {
                                 id: ledEnabled
                                 text: "LED Enabled (requires reboot)"
-                                checked: true
+                                checked: false
                             }
 
                             CheckBox {

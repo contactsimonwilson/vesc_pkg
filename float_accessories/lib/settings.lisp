@@ -10,7 +10,7 @@
     (crc                       . (1 i 61381))
     (can-id                    . (2  i -1))  ; if can-id < 0 then it will scan for one and pick the first.
     (accept-tos                . (3 b 0))
-    (led-enabled               . (4 b 1))
+    (led-enabled               . (4 b 0))
     (bms-enabled               . (5 b 0))
     (pubmote-enabled           . (6 b 0))
     (led-on                    . (7 b 1))
