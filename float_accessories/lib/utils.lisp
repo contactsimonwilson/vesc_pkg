@@ -1,5 +1,5 @@
 ;@const-symbol-strings
-
+@const-start
 ;Future interesting functions
 ;(conf-detect-foc canFwd maxLoss minCurrIn maxCurrIn openloopErpm slErpm)
 ;(conf-set) 'can-status-rate-hz 'foc-fw-duty-start 'foc-fw-current-max  'foc-offsets-cal-on-boot 'foc-sl-erpm-start 'foc-observer-gain 'foc-f-zv 'si-battery-ah 'si-battery-cells 'si-wheel-diameter  'si-gear-ratio  'si-motor-poles 'motor-type 'foc-sensor-mode 'l-current-min 'l-current-max 'l-abs-current-max 'l-min-vin 'l-max-vin 'l-battery-cut-start 'l-battery-cut-end 'l-temp-motor-start 'l-temp-motor-end 'l-temp-accel-dec 'bms-limit-mode 'bms-t-limit-start 'bms-t-limit-end 'bms-vmin-limit-start 'bms-vmin-limit-end 'bms-vmax-limit-start 'bms-vmax-limit-end
@@ -147,6 +147,14 @@
     })
 })
 
+(defun apply-battery-config (new-soc-type new-cell-type) {
+    (setq soc-type new-soc-type)
+    (setq cell-type new-cell-type)
+    ;(setq series-cells (get-config 'series-cells))
+    (setq voltage-curve (get-voltage-curve cell-type))
+    (print (str-merge "Cell info: type=" (str-from-n cell-type) " soc-type=" (str-from-n soc-type) " series-cells=" (str-from-n series-cells)))
+})
+
 (defun estimate-soc (v voltage-curve) {
     (var n (length voltage-curve))
     (var socs (list 100 90 80 70 60 50 40 30 20 10 0))
@@ -168,3 +176,5 @@
 })
 
 (defun get-var (i) i)
+
+@const-end

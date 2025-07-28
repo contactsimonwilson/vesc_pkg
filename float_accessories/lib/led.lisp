@@ -11,8 +11,6 @@
 (def led-loop-delay)
 ;config vars
 (def led-enabled)
-(def led-on)
-(def led-highbeam-on)
 (def led-mode)
 (def led-mode-idle)
 (def led-mode-status)
@@ -24,10 +22,6 @@
 (def led-brake-light-min-amps)
 (def idle-timeout)
 (def idle-timeout-shutoff)
-(def led-brightness 0.0)
-(def led-brightness-highbeam 0.0)
-(def led-brightness-idle 0.0)
-(def led-brightness-status 0.0)
 (def led-status-pin)
 (def led-status-num)
 (def led-status-type)
@@ -50,9 +44,6 @@
 (def led-footpad-reversed)
 (def led-footpad-strip-type)
 (def led-max-brightness)
-(def soc-type)
-(def cell-type)
-(def voltage-curve)
 (def led-update-not-running)
 
 (def led-max-blend-count 0.0)  ; how many times to blend before new led buffer
@@ -133,47 +124,8 @@
     (setq led-front-highbeam-pin (get-config 'led-front-highbeam-pin))
     (setq led-rear-highbeam-pin (get-config 'led-rear-highbeam-pin))
     (setq led-max-brightness (get-config 'led-max-brightness))
-    (setq soc-type (get-config 'soc-type))
-    (setq cell-type (get-config 'cell-type))
-    ;(setq series-cells (get-config 'series-cells))
-    (setq voltage-curve (get-voltage-curve cell-type))
     (setq led-update-not-running (get-config 'led-update-not-running))
 })
-
-(defun get-voltage-curve (cell-type)
-    (cond
-        ((= cell-type 0) { ; Linear
-            (list 4.20 4.05 3.90 3.75 3.60 3.45 3.30 3.15 3.00 2.85 2.7)
-        })
-        ((= cell-type 1) { ; P28A
-            (list 4.14 4.09 3.98 3.88 3.77 3.69 3.63 3.55 3.45 3.24 2.9)
-        })
-        ((= cell-type 2) { ; P30B
-           (list 4.14 4.09 3.98 3.88 3.77 3.69 3.63 3.55 3.45 3.24 2.9)
-        })
-        ((= cell-type 3) { ; P42A
-            (list 4.14 4.05 3.91 3.83 3.74 3.65 3.57 3.48 3.38 3 2.8)
-        })
-        ((= cell-type 4) { ; P45B
-            (list 4.14 4.08 4.00 3.91 3.82 3.73 3.64 3.56 3.45 3.23 2.9)
-        })
-        ((= cell-type 5) { ; P50B
-            (list 4.15 4.047 3.96 3.88 3.79 3.70 3.595 3.466 3.29 3.03 2.85)
-        })
-        ((= cell-type 6) { ; DG40
-            (list 4.15 4.02 3.91 3.83 3.75 3.61 3.49 3.35 3.17 2.81 2.7)
-        })
-        ((= cell-type 7) { ; 50S
-            (list 4.15 4.04 3.90 3.82 3.74 3.64 3.52 3.38 3.16 3.0 2.9)
-        })
-        ((= cell-type 8) { ; VTC6
-            (list 4.14 4.00 3.9 3.8 3.7 3.6 3.5 3.4 3.3 3.1 2.8)
-        })
-        (true { ; Any other value we return Linear
-            (list 4.20 4.05 3.90 3.75 3.60 3.45 3.30 3.15 3.00 2.85 2.7)
-        })
-    )
-)
 
 (defun init-led-vars () {
     (def blend-count led-max-blend-count)

@@ -19,6 +19,7 @@ My Blog: <a href='https://sylerclayton.com'>https://sylerclayton.com</a>
 <H2>RELEASE NOTES</H2>
 
 <ul>
+  <li>Memory optimization</li>
   <li>Setting save fix</li>
   <li>Motor Config fix</li>
   <li>SD card logging support</li>
@@ -37,6 +38,6 @@ My Blog: <a href='https://sylerclayton.com'>https://sylerclayton.com</a>
 
 <H3>BUILD INFO</H3>
 
-Version 3.0
+Version 3.1.2
 
 Source code can be found here:  <a href='https://github.com/relys/vesc%5Fpkg'>https://github.com/relys/vesc_pkg</a>

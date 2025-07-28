@@ -29,6 +29,9 @@
 (def footpad-adc2-t 0.0)
 (def series-cells -1)
 (def refloat-humidity nil)
+(def soc-type 0)
+(def cell-type)
+(def voltage-curve)
 
 (def FLOAT_MAGIC 101)
 (def FLOAT_ACCESSORIES_MAGIC 102)
@@ -90,35 +93,6 @@
     })
 })
 
-(defunret init-can () {
-    (var can-devices '())
-    (var original-can-id (get-config 'can-id ))
-    (set-config 'can-id -1)
-    (var init-time (systime))
-    (loopwhile (<= (secs-since init-time) 10) {
-        (if (and (>= original-can-id 0) (<= (secs-since init-time) 5)){
-            (setq can-devices (list original-can-id))
-        }{
-            (setq can-devices (can-scan))
-        })
-        (loopforeach can-id can-devices {
-            (setq discover-can-id can-id)
-            (float-cmd can-id (list (assoc float-cmds 'COMMAND_GET_ALLDATA) 3))
-            (yield 500000)
-            (if (>= (get-config 'can-id ) 0) {
-                (if (not-eq (get-config 'can-id ) original-can-id) {
-                    (write-val-eeprom 'can-id (get-config 'can-id ))
-                    (write-val-eeprom 'crc (config-crc cfg-len))
-                })
-                (fetch-series-cells)
-                (float-cmd can-id (list (assoc float-cmds 'COMMAND_HUMIDITY)))
-                (return 1)
-            })
-        })
-    })
-    (return 0)
-})
-
 (defun fetch-series-cells () {
     (if (>= can-id 0) {
         (var cells 0)
@@ -158,6 +132,71 @@
             (print (str-merge "Battery cells (from BMS): " (str-from-n series-cells)))
         })
     })
+})
+
+(defun get-voltage-curve (cell-type)
+    (cond
+        ((= cell-type 0) { ; Linear
+            (list 4.20 4.05 3.90 3.75 3.60 3.45 3.30 3.15 3.00 2.85 2.7)
+        })
+        ((= cell-type 1) { ; P28A
+            (list 4.14 4.09 3.98 3.88 3.77 3.69 3.63 3.55 3.45 3.24 2.9)
+        })
+        ((= cell-type 2) { ; P30B
+           (list 4.14 4.09 3.98 3.88 3.77 3.69 3.63 3.55 3.45 3.24 2.9)
+        })
+        ((= cell-type 3) { ; P42A
+            (list 4.14 4.05 3.91 3.83 3.74 3.65 3.57 3.48 3.38 3 2.8)
+        })
+        ((= cell-type 4) { ; P45B
+            (list 4.14 4.08 4.00 3.91 3.82 3.73 3.64 3.56 3.45 3.23 2.9)
+        })
+        ((= cell-type 5) { ; P50B
+            (list 4.15 4.047 3.96 3.88 3.79 3.70 3.595 3.466 3.29 3.03 2.85)
+        })
+        ((= cell-type 6) { ; DG40
+            (list 4.15 4.02 3.91 3.83 3.75 3.61 3.49 3.35 3.17 2.81 2.7)
+        })
+        ((= cell-type 7) { ; 50S
+            (list 4.15 4.04 3.90 3.82 3.74 3.64 3.52 3.38 3.16 3.0 2.9)
+        })
+        ((= cell-type 8) { ; VTC6
+            (list 4.14 4.00 3.9 3.8 3.7 3.6 3.5 3.4 3.3 3.1 2.8)
+        })
+        (true { ; Any other value we return Linear
+            (list 4.20 4.05 3.90 3.75 3.60 3.45 3.30 3.15 3.00 2.85 2.7)
+        })
+    )
+)
+
+(defunret init-can () {
+    (var can-devices '())
+    (var original-can-id (get-config 'can-id ))
+    (set-config 'can-id -1)
+    (var init-time (systime))
+    (loopwhile (<= (secs-since init-time) 10) {
+        (if (and (>= original-can-id 0) (<= (secs-since init-time) 5)){
+            (setq can-devices (list original-can-id))
+        }{
+            (setq can-devices (can-scan))
+        })
+        (loopforeach can-id can-devices {
+            (setq discover-can-id can-id)
+            (float-cmd can-id (list (assoc float-cmds 'COMMAND_GET_ALLDATA) 3))
+            (yield 500000)
+            (if (>= (get-config 'can-id ) 0) {
+                (if (not-eq (get-config 'can-id ) original-can-id) {
+                    (write-val-eeprom 'can-id (get-config 'can-id ))
+                    (write-val-eeprom 'crc (config-crc cfg-len))
+                })
+                (fetch-series-cells)
+                (float-cmd can-id (list (assoc float-cmds 'COMMAND_HUMIDITY)))
+                (apply-battery-config (get-config 'soc-type) (get-config 'cell-type))
+                (return 1)
+            })
+        })
+    })
+    (return 0)
 })
 
 (defun float-cmd (can-id cmd) {
@@ -226,6 +265,9 @@
                                 })
                                 (setq pitch-angle (/ (to-float (bufget-i16 data 19)) 10))
                                 (setq vin (/ (to-float (bufget-i16 data 22)) 10))
+                                (if (= soc-type 1) { ; Use voltage curve
+                                    (setq battery-percent-remaining (/ (estimate-soc (/ vin series-cells) voltage-curve) 100))
+                                })
                                 (setq rpm (/ (to-float  (bufget-i16 data 24)) 10))
                                 (setq speed (/ (to-float (bufget-i16 data 26)) 10))
                                 (setq tot-current (/ (to-float (bufget-i16 data 28)) 10))
@@ -238,7 +280,10 @@
                                 })
                                 (if (>= mode 3) {
                                     (setq odometer (bufget-u32 data 41))
-                                    (setq battery-percent-remaining (/ (to-float (bufget-u8 data 53)) 200))
+                                    
+                                    (if (= soc-type 0) { ; Ignore if using custom curves
+                                        (setq battery-percent-remaining (/ (to-float (bufget-u8 data 53)) 200))
+                                    })
                                 })
                             })
                         })
