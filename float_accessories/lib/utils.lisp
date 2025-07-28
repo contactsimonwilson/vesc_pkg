@@ -177,4 +177,8 @@
 
 (defun get-var (i) i)
 
+(defun get-version () {
+    (list 3 2 0) ; Major, Minor, Patch
+})
+
 @const-end

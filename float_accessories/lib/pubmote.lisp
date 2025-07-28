@@ -10,12 +10,15 @@
 (def uni-mac '(255 255 255 255 255 255)) ; Universal mac (all devices)
 (def channel-locked 0)
 (def channel-locked-timeout 10) ; How many seconds of no activity to wait before unlocking locked wifi channel
+(def pubmote-version-major 0)
+(def pubmote-version-minor 0)
+(def pubmote-version-patch 0)
 
 (def rem-cmds '(
     ; Remote version commands
     (REM_VERSION . 0)
     ; Receiver version commands
-    (REM_RECEIVER_VERSION . 5)
+    (REM_VERSION_REC. 5)
     ; Bonding commands
     (REM_PAIR_INIT . 10)
     (REM_PAIR_BOND . 11)
@@ -23,7 +26,7 @@
     ; Remote specific commands
     (REM_SET_CORE_DATA . 100)
     ; Receiver specific commands
-    (REM_REC_SET_REMOTE_STATE . 150)
+    (REM_SET_INPUT_STATE . 150)
 ))
 
 (defunret init-pubmote () {
@@ -143,6 +146,10 @@
     })
 })
 
+(defun should-send-message () {
+    (and (= pairing-state 0) (!= (get-config 'esp-now-remote-mac-a) -1) (>= (get-config 'can-id) 0))
+})
+
 (defun pubmote-loop () {
     (if (init-pubmote) {
         (setq pubmote-loop-delay (get-config 'pubmote-loop-delay))
@@ -202,7 +209,7 @@
                 })
 
                 ; Connected, send data
-                (if (and (= pairing-state 0) (!= (get-config 'esp-now-remote-mac-a) -1) (>= (get-config 'can-id) 0)) {                
+                (if (should-send-message) {                
                     (bufset-u8 data 0 (to-byte (assoc rem-cmds 'REM_SET_CORE_DATA)))
                     (bufset-i32 data 1 (get-config 'esp-now-secret-code))
                     (bufset-u8 data 5 fault-code)
@@ -243,6 +250,10 @@
     })
 })
 
+(defun should-process-message (src data) {
+    (and (= pairing-state 0) (eq esp-now-remote-mac src) (= (bufget-i32 data 1 'little-endian) (get-config 'esp-now-secret-code)))
+})
+
 (defun pubmote-rx (src des data rssi) {
     (if (and (get-config 'pubmote-enabled) wifi-enabled-on-boot) {
         (if (should-lock-channel) {
@@ -255,28 +266,35 @@
         (var cmd (bufget-u8 data 0))
 
         (match (cossa rem-cmds cmd)
-            ; Receiver command
-            (REM_REC_SET_REMOTE_STATE {
-                ; Remote is paired and data was received
-                (if (and (= pairing-state 0) (eq esp-now-remote-mac src) (= (buflen data) 17) (= (bufget-i32 data 1 'little-endian) (get-config 'esp-now-secret-code))) {
+            (REM_VERSION {
+                (if (and (should-process-message src data) (= (buflen data) 8)) {
                     ; Update last activity time from rx
-                    (print "Set last activity time from pubmote-rx")
                     (setq pubmote-last-activity-time (systime))
 
-                    ;(print (list "Received" src des data rssi))
-                    (var jsy (bufget-f32 data 5 'little-endian))
-                    (var jsx (bufget-f32 data 9 'little-endian))
-                    (var bt-c (bufget-u8 data 13))
-                    (var bt-z (bufget-u8 data 14))
-                    (var is-rev (bufget-u8 data 15))
-                    ; (print (list jsy jsx bt-c bt-z is-rev))
-                    ; (rcode-run-noret (get-config 'can-id) `(set-remote-state ,jsy ,jsx ,bt-c ,bt-z ,is-rev))
+                    (setq pubmote-version-major (bufget-u8 data 5))
+                    (setq pubmote-version-minor (bufget-u8 data 6))
+                    (setq pubmote-version-patch (bufget-u8 data 7))
+                    (print (str-merge "Remote version: " (to-str pubmote-version-major) "." (to-str pubmote-version-minor) "." (to-str pubmote-version-patch)))
+                })
 
-                    (if (>= (get-config 'can-id) 0) {
-                        (can-cmd (get-config 'can-id) (str-replace (to-str(list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
-                    })
-                } {
-                   (print "Conditions not met for set remote state")
+            })
+
+            (REM_VERSION_REC {
+                (if (should-process-message src data) {
+                    ; Update last activity time from rx
+                    (setq pubmote-last-activity-time (systime))
+
+                    (var tmpbuf (bufcreate 8))
+                    (bufset-u8 tmpbuf 0 (to-byte (assoc rem-cmds 'REM_VERSION_REC)))
+                    (bufset-i32 tmpbuf 1 (get-config 'esp-now-secret-code))
+
+                    (var version (get-version))
+                    (bufset-u8 tmpbuf 5 (first version))
+                    (bufset-u8 tmpbuf 6 (second version))
+                    (bufset-u8 tmpbuf 7 (third version))
+
+                    (esp-now-send esp-now-remote-mac tmpbuf)
+                    (free tmpbuf)
                 })
             })
 
@@ -298,6 +316,30 @@
 
                     ; Set pairing state to bonding
                     (setq pairing-state 2)
+                })
+            })
+
+            (REM_SET_INPUT_STATE {
+                ; Remote is paired and data was received
+                (if (and (should-process-message src data) (= (buflen data) 17)) {
+                    ; Update last activity time from rx
+                    ; (print "Set last activity time from pubmote-rx")
+                    (setq pubmote-last-activity-time (systime))
+
+                    ;(print (list "Received" src des data rssi))
+                    (var jsy (bufget-f32 data 5 'little-endian))
+                    (var jsx (bufget-f32 data 9 'little-endian))
+                    (var bt-c (bufget-u8 data 13))
+                    (var bt-z (bufget-u8 data 14))
+                    (var is-rev (bufget-u8 data 15))
+                    ; (print (list jsy jsx bt-c bt-z is-rev))
+                    ; (rcode-run-noret (get-config 'can-id) `(set-remote-state ,jsy ,jsx ,bt-c ,bt-z ,is-rev))
+
+                    (if (>= (get-config 'can-id) 0) {
+                        (can-cmd (get-config 'can-id) (str-replace (to-str(list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
+                    })
+                } {
+                   (print "Conditions not met for set remote state")
                 })
             })
 
