@@ -1558,7 +1558,7 @@ Item {
 
                                 Text {
                                     color: Utility.getAppHexColor("lightText")
-                                    text: "Pubmote Frequency (Hz)"
+                                    text: "Frequency (Hz)"
                                     visible: pubmoteEnabled.checked
                                 }
 
@@ -1575,7 +1575,13 @@ Item {
                                 Text {
                                     id: pubmoteMacAddress
                                     color: Utility.getAppHexColor("lightText")
-                                    text: "Pubmote MAC: Unknown"
+                                    text: "MAC: Unknown"
+                                }
+
+                                Text {
+                                    id: pubmoteVersion
+                                    color: Utility.getAppHexColor("lightText")
+                                    text: "Version: Unknown"
                                 }
 
                                 Button {
@@ -2435,7 +2441,7 @@ Item {
                 humiditySdaPin.value = Number(tokens[86])
                 humiditySlcPin.value = Number(tokens[87])
 
-                pubmoteMacAddress.text = "Pubmote MAC: " + ((Number(tokens[46]) == -1) ? "Not Paired" : macAddress.toUpperCase());
+                pubmoteMacAddress.text = "MAC: " + ((Number(tokens[46]) == -1) ? "Not Paired" : macAddress.toUpperCase());
                 readConfig = true;
             } else if (str.startsWith("msg")) {
                 var msg = str.substring(4)
@@ -2457,6 +2463,10 @@ Item {
                         : "Not Connected (WiFi Channel " + (wifiChannel ? wifiChannel : "?") + ")"
                 )
                 pubmoteStatus.color = pubmoteConnected ? "green" : "red"
+
+                if (!pubmoteConnected) {
+                    pubmoteVersion.text = "Version: Unknown";
+                }
 
                 // BMS connection status
                 bmsConnected = Number(tokens[3])
@@ -2506,6 +2516,16 @@ Item {
             } else if (str.startsWith("status")) {
                 var msg = str.substring(7)
                 VescIf.emitStatusMessage(msg, true)
+            } else if (str.startsWith("pubmote-info")) {
+                var tokens = str.split(" ");
+                var newVersion = "unknown";
+                if (tokens.length >= 2) {
+                   var version = tokens[1].split(".");
+                    if (version.length >= 3 && (version[0] || version[1] || version[2])) {
+                        newVersion = tokens[1];
+                    }
+                }
+                pubmoteVersion.text = "Version: " + newVersion;
             }
         }
     }

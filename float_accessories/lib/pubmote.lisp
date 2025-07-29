@@ -254,6 +254,10 @@
     (and (= pairing-state 0) (eq esp-now-remote-mac src) (= (bufget-i32 data 1 'little-endian) (get-config 'esp-now-secret-code)))
 })
 
+(defun reset-last-activity-time () {
+    (setq pubmote-last-activity-time (systime))
+})
+
 (defun pubmote-rx (src des data rssi) {
     (if (and (get-config 'pubmote-enabled) wifi-enabled-on-boot) {
         (if (should-lock-channel) {
@@ -268,8 +272,7 @@
         (match (cossa rem-cmds cmd)
             (REM_VERSION {
                 (if (and (should-process-message src data) (= (buflen data) 8)) {
-                    ; Update last activity time from rx
-                    (setq pubmote-last-activity-time (systime))
+                    (reset-last-activity-time)
 
                     (setq pubmote-version-major (bufget-u8 data 5))
                     (setq pubmote-version-minor (bufget-u8 data 6))
@@ -281,8 +284,7 @@
 
             (REM_VERSION_REC {
                 (if (should-process-message src data) {
-                    ; Update last activity time from rx
-                    (setq pubmote-last-activity-time (systime))
+                    (reset-last-activity-time)
 
                     (var tmpbuf (bufcreate 8))
                     (bufset-u8 tmpbuf 0 (to-byte (assoc rem-cmds 'REM_VERSION_REC)))
@@ -322,9 +324,7 @@
             (REM_SET_INPUT_STATE {
                 ; Remote is paired and data was received
                 (if (and (should-process-message src data) (= (buflen data) 17)) {
-                    ; Update last activity time from rx
-                    ; (print "Set last activity time from pubmote-rx")
-                    (setq pubmote-last-activity-time (systime))
+                    (reset-last-activity-time)
 
                     ;(print (list "Received" src des data rssi))
                     (var jsy (bufget-f32 data 5 'little-endian))

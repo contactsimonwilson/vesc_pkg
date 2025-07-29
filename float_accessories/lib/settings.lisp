@@ -569,7 +569,7 @@
 (defun status () {
     (var status-string "float-stats ")
     (setq status-string (str-merge status-string (str-from-n (if (< (secs-since can-last-activity-time) 1) 1 0) "%d ")))
-    (setq status-string (str-merge status-string (str-from-n (if (< (secs-since pubmote-last-activity-time) 1) 1 0) "%d ")))
+    (setq status-string (str-merge status-string (str-from-n (is-pubmote-connected) "%d ")))
     (setq status-string (str-merge status-string (str-from-n (if (< (secs-since bms-last-activity-time) 1) 1 0) "%d ")))
     (setq status-string (str-merge status-string (str-from-n bms-status "%d ")))
     (setq status-string (str-merge status-string (str-from-n bms-battery-type "%d ")))
@@ -581,6 +581,10 @@
     (setq status-string (str-merge status-string (str-from-n (get-bms-val 'bms-temp-hum) "%.0f ")))
     (setq status-string (str-merge status-string (str-from-n (if log-running 1 0) "%d ")))
     (send-data status-string)
+
+    (if (= (is-pubmote-connected) 1) {
+        (send-data (str-merge "pubmote-info " (to-str pubmote-version-major) "." (to-str pubmote-version-minor) "." (to-str pubmote-version-patch)))
+    })
 })
 
 @const-end
