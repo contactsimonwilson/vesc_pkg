@@ -6,8 +6,28 @@
 (def pairing-state 0)
 (def esp-now-remote-mac '())
 (def pubmote-pairing-timer 31)
+(def pubmote-pairing-timer-timeout 30) ; How many seconds to wait before aborting pairing
 (def uni-mac '(255 255 255 255 255 255)) ; Universal mac (all devices)
 (def channel-locked 0)
+(def channel-locked-timeout 10) ; How many seconds of no activity to wait before unlocking locked wifi channel
+(def pubmote-version-major 0)
+(def pubmote-version-minor 0)
+(def pubmote-version-patch 0)
+
+(def rem-cmds '(
+    ; Remote version commands
+    (REM_VERSION . 0)
+    ; Receiver version commands
+    (REM_VERSION_REC. 5)
+    ; Bonding commands
+    (REM_PAIR_INIT . 10)
+    (REM_PAIR_BOND . 11)
+    (REM_PAIR_COMPLETE . 12)
+    ; Remote specific commands
+    (REM_SET_CORE_DATA . 100)
+    ; Receiver specific commands
+    (REM_SET_INPUT_STATE . 150)
+))
 
 (defunret init-pubmote () {
     ; Escape without wifi
@@ -31,7 +51,6 @@
     (return true)
 })
 
-;todo more robust pairing process. Needs to keep sending packets as a missed packet can lead to invalid state machine.
 (defunret pair-pubmote (pairing) {
     (if (= (conf-get 'wifi-mode) 0) {
         (send-msg "WiFi is disabled. Please enable and reboot.")
@@ -56,8 +75,10 @@
                 (write-val-eeprom 'crc (config-crc cfg-len))
             })
             (init-pubmote)
-            (var tmpbuf (bufcreate 4))
-            (bufset-i32 tmpbuf 0 -1)
+            (var tmpbuf (bufcreate 2))
+            (bufset-u8 tmpbuf 0 (assoc rem-cmds 'REM_PAIR_COMPLETE))
+            (bufset-u8 tmpbuf 1 1)
+            (print "Sending pairing success message")
             (esp-now-send esp-now-remote-mac tmpbuf)
             (free tmpbuf)
             (setq pairing-state 0)
@@ -70,12 +91,17 @@
                 (write-val-eeprom 'esp-now-remote-mac-a (get-config 'esp-now-remote-mac-a) -1)
                 (write-val-eeprom 'crc (config-crc cfg-len))
             })
-            (var tmpbuf (bufcreate 4))
-            (bufset-i32 tmpbuf 0 -2)
+            (var tmpbuf (bufcreate 2))
+            (bufset-u8 tmpbuf 0 (to-byte (assoc rem-cmds 'REM_PAIRING_COMPLETE)))
+            (bufset-u8 tmpbuf 1 0)
+            (print "Sending pairing rejected message")
             (esp-now-send esp-now-remote-mac tmpbuf)
             (free tmpbuf)
             (setq esp-now-remote-mac '())
             (setq pairing-state 0)
+
+            ; Unlock wifi channel hopping
+            (should-unlock-channel pubmote-last-activity-time)
         })
     )
 
@@ -85,8 +111,8 @@
 (defun lock-channel (reason) {
     (print (str-merge "Channel switching disabled. Reason: " reason))
     (setq channel-locked (wifi-get-chan))
-    (wifi-auto-reconnect false)
     (wifi-disconnect)
+    (wifi-auto-reconnect nil)
 })
 
 (defun unlock-channel (reason) {
@@ -112,10 +138,16 @@
 })
 
 (defun should-unlock-channel (last-activity-time) {
-    ; Channel is locked,
-    ; Remote is disconnected
-    ; More than 10 seconds since last Pubmote rx
-    (and (> channel-locked 0) (is-station-mode) (> (secs-since last-activity-time) 10))
+    ; Channel is locked
+    ; Station mode
+    ; Last activity time is not set or more than set time passed since last rx
+    (if (and (> channel-locked 0) (is-station-mode) (> (secs-since last-activity-time) channel-locked-timeout)) {
+        (unlock-channel (str-from-n pubmote-last-activity-time "Last activity time greater than set time"))
+    })
+})
+
+(defun should-send-message () {
+    (and (= pairing-state 0) (!= (get-config 'esp-now-remote-mac-a) -1) (>= (get-config 'can-id) 0))
 })
 
 (defun pubmote-loop () {
@@ -125,61 +157,77 @@
         (var loop-start-time 0)
         (var loop-end-time 0)
         (var pubmote-loop-delay-sec (/ 1.0 pubmote-loop-delay))
-        (var data (bufcreate 32))
+        (var data (bufcreate 33))
 
         (loopwhile t {
             (if (get-config 'pubmote-enabled) {
-                (if (should-unlock-channel pubmote-last-activity-time) {
-                    (unlock-channel "Inactivity timeout")
-                })
+                ; Check last pubmote activity
+                (should-unlock-channel pubmote-last-activity-time)
 
                 (setq loop-start-time  (secs-since 0))
 
+                ; Escape as needed
                 (if pubmote-exit-flag {
                     (break)
                 })
 
-                ; Timeout pairing process after 30 seconds
-                (if (and (> (secs-since pubmote-pairing-timer) 30 ) (>= pairing-state 1)) {
+                ; Timeout pairing process after set time has passed
+                (if (and (> (secs-since pubmote-pairing-timer) pubmote-pairing-timer-timeout) (>= pairing-state 1)) {
                     (pair-pubmote -2)
                 })
 
+                ; Pairing search 
                 (if (= pairing-state 1) {
+                    ; Update last activity time for pairing duration
+                    (print "Set last activity time from pubmote-loop: Pairing search")
+                    (setq pubmote-last-activity-time (systime))
+
                     (if (should-lock-channel) {
-                        (lock-channel "ESP-NOW packet received")
+                        (lock-channel "Begin pairing")
                     })
 
-                    (var pairing-data (bufcreate 6))
+                    (var pairing-data (bufcreate 7))
+
+                    (bufset-u8 pairing-data 0 (to-byte (assoc rem-cmds 'REM_PAIR_INIT)))
                     (var local-mac (get-mac-addr))
 
-                    (looprange i 0 (buflen pairing-data) {
-                        (bufset-u8 pairing-data i (ix local-mac i))
+                    (looprange i 0 (- (buflen pairing-data) 1) {
+                        (bufset-u8 pairing-data (+ i 1) (ix local-mac i))
                     })
 
                     ; (bufset-u8 data 0 69)
-                    ; (print "sending pairing info")
+                    ; (print "Sending pairing mac address")
                     (esp-now-send uni-mac pairing-data)
                     (free pairing-data)
                 })
 
-                (if (and (= pairing-state 0) (!= (get-config 'esp-now-remote-mac-a) -1) (>= (get-config 'can-id) 0)) {
-                    (bufset-u8 data 0 69) ; Mode
-                    (bufset-u8 data 1 fault-code)
-                    (bufset-i16 data 2 (floor (* pitch-angle 10)))
-                    (bufset-i16 data 4 (floor (* roll-angle 10)))
-                    (bufset-u8 data 6 state)
-                    (bufset-u8 data 7 switch-state)
-                    (bufset-i16 data 8 (floor (* vin 10)))
-                    (bufset-i16 data 10 (floor rpm))
-                    (bufset-i16 data 12 (floor (* speed 10)))
-                    (bufset-i16 data 14 (floor (* tot-current 10)))
-                    (bufset-u8 data 16 (floor (* (+ (abs duty-cycle-now) 0.5) 100)))
-                    (bufset-f32 data 17 distance-abs 'little-endian)
-                    (bufset-u8 data 21 (floor (* fet-temp-filtered 2)))
-                    (bufset-u8 data 22 (floor (* motor-temp-filtered 2)))
-                    (bufset-u32 data 23 odometer)
-                    (bufset-u8 data 27 (floor (* battery-percent-remaining 200)))
-                    (bufset-i32 data 28 (get-config 'esp-now-secret-code))
+                ; Bond in progress
+                (if (= pairing-state 2) {
+                    ; Update last activity time for pairing duration
+                    (print "Set last activity time from pubmote-loop: Bond in progress")
+                    (setq pubmote-last-activity-time (systime))
+                })
+
+                ; Connected, send data
+                (if (should-send-message) {                
+                    (bufset-u8 data 0 (to-byte (assoc rem-cmds 'REM_SET_CORE_DATA)))
+                    (bufset-i32 data 1 (get-config 'esp-now-secret-code))
+                    (bufset-u8 data 5 fault-code)
+                    (bufset-i16 data 6 (floor (* pitch-angle 10)))
+                    (bufset-i16 data 8 (floor (* roll-angle 10)))
+                    (bufset-u8 data 10 state)
+                    (bufset-u8 data 11 switch-state)
+                    (bufset-i16 data 12 (floor (* vin 10)))
+                    (bufset-i16 data 14 (floor rpm))
+                    (bufset-i16 data 16 (floor (* speed 10)))
+                    (bufset-i16 data 18 (floor (* tot-current 10)))
+                    (bufset-u8 data 20 (floor (* (+ (abs duty-cycle-now) 0.5) 100)))
+                    (bufset-f32 data 21 distance-abs 'little-endian)
+                    (bufset-u8 data 25 (floor (* fet-temp-filtered 2)))
+                    (bufset-u8 data 26 (floor (* motor-temp-filtered 2)))
+                    (bufset-u32 data 27 odometer)
+                    (bufset-u8 data 31 (floor (* battery-percent-remaining 200)))
+                    ; (print "Sending board state to remote")
                     (esp-now-send esp-now-remote-mac data)
                 })
 
@@ -202,37 +250,104 @@
     })
 })
 
+(defun should-process-message (src data) {
+    (and (= pairing-state 0) (eq esp-now-remote-mac src) (= (bufget-i32 data 1 'little-endian) (get-config 'esp-now-secret-code)))
+})
+
+(defun reset-last-activity-time () {
+    (setq pubmote-last-activity-time (systime))
+})
+
 (defun pubmote-rx (src des data rssi) {
     (if (and (get-config 'pubmote-enabled) wifi-enabled-on-boot) {
         (if (should-lock-channel) {
+            ; Update last activity time in case it does not establish a connection
+            (setq pubmote-last-activity-time (systime))
+
             (lock-channel "ESP-NOW packet received")
         })
 
-        (if (and (= pairing-state 0) (eq esp-now-remote-mac src) (= (buflen data) 16) (= (bufget-i32 data 0 'little-endian) (get-config 'esp-now-secret-code))) {
-            (setq pubmote-last-activity-time (systime))
-            ; (print (list "Received" src des data rssi))
-            (var jsy (bufget-f32 data 4 'little-endian))
-            (var jsx (bufget-f32 data 8 'little-endian))
-            (var bt-c (bufget-u8 data 12))
-            (var bt-z (bufget-u8 data 13))
-            (var is-rev (bufget-u8 data 14))
-            ; (print (list jsy jsx bt-c bt-z is-rev))
-            ; (rcode-run-noret (get-config 'can-id) `(set-remote-state ,jsy ,jsx ,bt-c ,bt-z ,is-rev))
+        (var cmd (bufget-u8 data 0))
 
-            (if (>= (get-config 'can-id) 0) {
-                (can-cmd (get-config 'can-id) (str-replace (to-str(list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
+        (match (cossa rem-cmds cmd)
+            (REM_VERSION {
+                (if (and (should-process-message src data) (= (buflen data) 8)) {
+                    (reset-last-activity-time)
+
+                    (setq pubmote-version-major (bufget-u8 data 5))
+                    (setq pubmote-version-minor (bufget-u8 data 6))
+                    (setq pubmote-version-patch (bufget-u8 data 7))
+                    (print (str-merge "Remote version: " (to-str pubmote-version-major) "." (to-str pubmote-version-minor) "." (to-str pubmote-version-patch)))
+                })
+
             })
-        }{
-            (if (= pairing-state 1) {
-                (setq esp-now-remote-mac src)
-                (esp-now-add-peer esp-now-remote-mac)
-                (var tmpbuf (bufcreate 4))
-                (bufset-i32 tmpbuf 0 (get-config 'esp-now-secret-code))
-                (esp-now-send esp-now-remote-mac tmpbuf)
-                (free tmpbuf)
-                (esp-now-del-peer esp-now-remote-mac)
+
+            (REM_VERSION_REC {
+                (if (should-process-message src data) {
+                    (reset-last-activity-time)
+
+                    (var tmpbuf (bufcreate 8))
+                    (bufset-u8 tmpbuf 0 (to-byte (assoc rem-cmds 'REM_VERSION_REC)))
+                    (bufset-i32 tmpbuf 1 (get-config 'esp-now-secret-code))
+
+                    (var version (get-version))
+                    (bufset-u8 tmpbuf 5 (first version))
+                    (bufset-u8 tmpbuf 6 (second version))
+                    (bufset-u8 tmpbuf 7 (third version))
+
+                    (esp-now-send esp-now-remote-mac tmpbuf)
+                    (free tmpbuf)
+                })
             })
-        })
+
+            ; Bonding command
+            (REM_PAIR_BOND {
+                (if (= pairing-state 1) {
+                    ; Add the peer and save
+                    (setq esp-now-remote-mac src)
+                    (esp-now-add-peer esp-now-remote-mac)
+                    (var tmpbuf (bufcreate 5))
+                    (bufset-u8 tmpbuf 0 (to-byte (assoc rem-cmds 'REM_PAIR_BOND)))
+                    (bufset-i32 tmpbuf 1 (get-config 'esp-now-secret-code))
+
+                    ; Send pairing code
+                    (print "Responding with pairing code")
+                    (esp-now-send esp-now-remote-mac tmpbuf)
+                    (free tmpbuf)
+                    (esp-now-del-peer esp-now-remote-mac)
+
+                    ; Set pairing state to bonding
+                    (setq pairing-state 2)
+                })
+            })
+
+            (REM_SET_INPUT_STATE {
+                ; Remote is paired and data was received
+                (if (and (should-process-message src data) (= (buflen data) 17)) {
+                    (reset-last-activity-time)
+
+                    ;(print (list "Received" src des data rssi))
+                    (var jsy (bufget-f32 data 5 'little-endian))
+                    (var jsx (bufget-f32 data 9 'little-endian))
+                    (var bt-c (bufget-u8 data 13))
+                    (var bt-z (bufget-u8 data 14))
+                    (var is-rev (bufget-u8 data 15))
+                    ; (print (list jsy jsx bt-c bt-z is-rev))
+                    ; (rcode-run-noret (get-config 'can-id) `(set-remote-state ,jsy ,jsx ,bt-c ,bt-z ,is-rev))
+
+                    (if (>= (get-config 'can-id) 0) {
+                        (can-cmd (get-config 'can-id) (str-replace (to-str(list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
+                    })
+                } {
+                   (print "Conditions not met for set remote state")
+                })
+            })
+
+            ; No matching command
+            (_ {
+            (print (str-join (list "No command found: " (to-str cmd))))
+            })
+        )
     })
 })
 @const-end

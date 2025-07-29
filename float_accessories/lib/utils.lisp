@@ -177,4 +177,16 @@
 
 (defun get-var (i) i)
 
+(defun get-version () {
+    (list 3 2 0) ; Major, Minor, Patch
+})
+
+(defun is-pubmote-connected () {
+    (if (get-config 'pubmote-enabled) {
+        (if (< (secs-since pubmote-last-activity-time) 1) 1 0)
+    } {
+        (0)
+    })
+})
+
 @const-end
