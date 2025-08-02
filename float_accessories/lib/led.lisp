@@ -160,20 +160,18 @@
 
     (var front-highbeam-leds 0)
     (var rear-highbeam-leds 0)
-    (cond
-        ((or (= led-front-strip-type 2) (= led-front-strip-type 3) (= led-front-strip-type 8) (= led-front-strip-type 9) (= led-front-strip-type 10)) {
-             (setq front-highbeam-leds (+ front-highbeam-leds 1))
-        })
-        ((or (= led-rear-strip-type 2) (= led-rear-strip-type 3) (= led-rear-strip-type 8) (= led-rear-strip-type 9) (= led-rear-strip-type 10)) {
-             (setq rear-highbeam-leds (+ rear-highbeam-leds 1))
-        })
-        ((or (= led-front-strip-type 4) (= led-front-strip-type 5) (= led-front-strip-type 6) (= led-front-strip-type 11)) {
-             (setq front-highbeam-leds (+ front-highbeam-leds 4))
-        })
-        ((or (= led-rear-strip-type 4) (= led-rear-strip-type 5) (= led-rear-strip-type 6) (= led-rear-strip-type 11)) {
-             (setq rear-highbeam-leds (+ rear-highbeam-leds 4))
-        })
-    )
+    (if (or (= led-front-strip-type 2) (= led-front-strip-type 3) (= led-front-strip-type 8) (= led-front-strip-type 9) (= led-front-strip-type 10)) {
+         (setq front-highbeam-leds (+ front-highbeam-leds 1))
+    })
+    (if (or (= led-rear-strip-type 2) (= led-rear-strip-type 3) (= led-rear-strip-type 8) (= led-rear-strip-type 9) (= led-rear-strip-type 10)) {
+         (setq rear-highbeam-leds (+ rear-highbeam-leds 1))
+    })
+    (if (or (= led-front-strip-type 4) (= led-front-strip-type 5) (= led-front-strip-type 6) (= led-front-strip-type 11)) {
+         (setq front-highbeam-leds (+ front-highbeam-leds 4))
+    })
+    (if (or (= led-rear-strip-type 4) (= led-rear-strip-type 5) (= led-rear-strip-type 6) (= led-rear-strip-type 11)) {
+         (setq rear-highbeam-leds (+ rear-highbeam-leds 4))
+    })
     (if (>= led-footpad-pin 0) {
         (setq led-footpad-buffer (rgbled-buffer led-footpad-num led-footpad-type))
     })
