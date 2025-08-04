@@ -5,8 +5,13 @@
 
 (defun led-float-disabled (color-list) {
     (var led-num (length color-list))
-    (var start (floor (/ led-num 4.0)))
-    (var end (floor (* led-num 3 (/ 1 4.0))))
+    (var lit-width (floor (/ led-num 1.8)))
+    (if (!= (mod led-num 2.0) (mod lit-width 2.0)) {
+        (setq lit-width (- lit-width 1))
+    })
+    (var unlit-gutter (floor (/ (- led-num lit-width) 2.0)))
+    (var start unlit-gutter)
+    (var end (+ start lit-width))
     ; Single loop for LEDs
     (looprange i 0 led-num {
         (if (and (>= i start) (< i end)) {
