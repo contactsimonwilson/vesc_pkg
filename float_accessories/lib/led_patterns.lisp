@@ -259,10 +259,23 @@
 })
 
 (defun footpad-pattern (color-list switch-state led-mode-status){
+    (var led-num (length color-list))
+    (var is-odd (= (mod led-num 2.0) 1))
+    (var center-index (floor (/ led-num 2.0)))
     (var color-status-half1 (if (or (= switch-state 1) (= switch-state 3)) 0xFF 0x00))
     (var color-status-half2 (if (or (= switch-state 2) (= switch-state 3)) 0xFF 0x00))
-    (looprange led-index 0 (length color-list) {
-        (setix color-list led-index (if (< led-index (/ (length color-list) 2)) (if (= led-mode-status 0) color-status-half1 color-status-half2) (if (= led-mode-status 0) color-status-half2 color-status-half1)))
+    (var half1-color (if (= led-mode-status 0) color-status-half1 color-status-half2))
+    (var half2-color (if (= led-mode-status 0) color-status-half2 color-status-half1))
+    (looprange led-index 0 led-num {
+        (if (and is-odd (= led-index center-index)) {
+            (setix color-list led-index (bitwise-or half1-color half2-color))
+        }{
+            (if (< led-index center-index) {
+                (setix color-list led-index half1-color)
+            }{
+                (setix color-list led-index half2-color)
+            })
+        })
     })
 })
 
