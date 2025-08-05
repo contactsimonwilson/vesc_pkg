@@ -229,6 +229,11 @@
             (looprange i half led-num (setix color-list i 0x00000000))
         })
     )
+
+    ; Handle odd LED counts
+    (if (= (mod led-num 2) 1) {
+        (setix color-list half 0x00000000) ; Set center LED to OFF
+    })
 })
 
 (defun duty-cycle-pattern (color-list) {
