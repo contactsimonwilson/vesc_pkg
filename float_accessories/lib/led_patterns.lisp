@@ -118,7 +118,7 @@
 
 (defun battery-pattern (color-list charging time) {
     (var led-num (length color-list))
-    (var num-lit-leds (floor (* led-num battery-percent-remaining)))
+    (var num-lit-leds (round (* led-num battery-percent-remaining)))
 
     ; Optional pulse factor if charging
     (var pulse-factor (if charging
