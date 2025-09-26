@@ -5,8 +5,13 @@
 
 (defun led-float-disabled (color-list) {
     (var led-num (length color-list))
-    (var start (floor (/ led-num 4.0)))
-    (var end (floor (* led-num 3 (/ 1 4.0))))
+    (var lit-width (floor (/ led-num 1.8)))
+    (if (!= (mod led-num 2.0) (mod lit-width 2.0)) {
+        (setq lit-width (- lit-width 1))
+    })
+    (var unlit-gutter (floor (/ (- led-num lit-width) 2.0)))
+    (var start unlit-gutter)
+    (var end (+ start lit-width))
     ; Single loop for LEDs
     (looprange i 0 led-num {
         (if (and (>= i start) (< i end)) {
@@ -113,7 +118,7 @@
 
 (defun battery-pattern (color-list charging time) {
     (var led-num (length color-list))
-    (var num-lit-leds (floor (* led-num battery-percent-remaining)))
+    (var num-lit-leds (round (* led-num battery-percent-remaining)))
 
     ; Optional pulse factor if charging
     (var pulse-factor (if charging
@@ -224,6 +229,11 @@
             (looprange i half led-num (setix color-list i 0x00000000))
         })
     )
+
+    ; Handle odd LED counts
+    (if (= (mod led-num 2) 1) {
+        (setix color-list half 0x00000000) ; Set center LED to OFF
+    })
 })
 
 (defun duty-cycle-pattern (color-list) {
@@ -254,10 +264,23 @@
 })
 
 (defun footpad-pattern (color-list switch-state led-mode-status){
+    (var led-num (length color-list))
+    (var is-odd (= (mod led-num 2.0) 1))
+    (var center-index (floor (/ led-num 2.0)))
     (var color-status-half1 (if (or (= switch-state 1) (= switch-state 3)) 0xFF 0x00))
     (var color-status-half2 (if (or (= switch-state 2) (= switch-state 3)) 0xFF 0x00))
-    (looprange led-index 0 (length color-list) {
-        (setix color-list led-index (if (< led-index (/ (length color-list) 2)) (if (= led-mode-status 0) color-status-half1 color-status-half2) (if (= led-mode-status 0) color-status-half2 color-status-half1)))
+    (var half1-color (if (= led-mode-status 0) color-status-half1 color-status-half2))
+    (var half2-color (if (= led-mode-status 0) color-status-half2 color-status-half1))
+    (looprange led-index 0 led-num {
+        (if (and is-odd (= led-index center-index)) {
+            (setix color-list led-index (bitwise-or half1-color half2-color))
+        }{
+            (if (< led-index center-index) {
+                (setix color-list led-index half1-color)
+            }{
+                (setix color-list led-index half2-color)
+            })
+        })
     })
 })
 
