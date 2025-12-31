@@ -8,6 +8,56 @@ import Vedder.vesc.utility 1.0
 import Vedder.vesc.vescinterface 1.0
 
 Item {
+    // Custom components
+    Component {
+        id: customValueSlider
+
+        Slider {
+            id: slider
+            from: 0
+            to: 100
+            value: 50
+            property bool asPercent: false
+            property bool hideBubble: true
+            property var formatValue: function(val) { 
+                if (asPercent) {
+                    let percentage = ((val - from) / (to - from)) * 100;
+                    return percentage.toFixed(0) + "%";
+                }
+                return val + ""; 
+            }
+
+            Item {
+                parent: slider.handle
+                width: parent.width
+                height: parent.height
+
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottom: parent.top
+                    anchors.bottomMargin: 8
+                    width: valueText.width + 8
+                    height: 20
+                    radius: 4
+                    color: palette.toolTipBase               
+                    visible: true
+                    opacity: slider.pressed || !hideBubble ? 1.0 : 0.0
+                    Behavior on opacity { NumberAnimation { duration: 150 } }
+
+                    Text {
+                        id: valueText
+                        anchors.centerIn: parent
+                        text: slider.formatValue(slider.value)
+                        color: palette.toolTipText
+                        font.pixelSize: 12
+                        font.bold: true
+                    }
+                }
+            }
+        }
+    }
+
+    // Main app
     id: container
     anchors.fill: parent
     anchors.margins: 10
@@ -36,6 +86,7 @@ Item {
         running: true
         repeat: true
         onTriggered: {
+        statusTimeout = false;
             sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(status)")
             lastStatusTime++
 
@@ -259,8 +310,8 @@ Item {
                             "<p>The publication of this code is an exercise of the right to free speech and expression, protected under the First Amendment of the U.S. Constitution. Furthermore, this code is released in accordance with both the security research exception under DMCA Section 1201(g) and the exemption for motorized land vehicles, which allows the circumvention of technological protection measures (TPMs) for the purposes of repair, modification, and interoperability under the Librarian of Congress's 2015 ruling and subsequent triennial exemptions. This exemption applies specifically to vehicle software, including Battery Management Systems, and permits this work for diagnostic and modification purposes.</p>" +
                             "<p>This system lacks manufacturer-provided documentation or tools for repair. Currently, consumers are forced to replace the entire battery, enclosure, and BMS at significant cost, rather than repairing individual components. We are providing the necessary documentation and tools to facilitate the repair of these systems, enabling consumers to extend the life of their devices.</p>" +
                             "<p>This publication is further supported by the California Right to Repair Act (SB 244), which took full effect on July 1, 2024. Under this law, consumers and independent repair providers are entitled to access the tools, parts, and documentation necessary to perform repairs on electronics and appliances sold or used in California, reinforcing the legality and public interest of this code publication. Although some exceptions apply, this law affirms the right to repair motorized vehicles, aligning with the purpose of this research and promoting repairability and consumer choice.</p>" +
-                            "<p>Additionally, this publication is protected under Washington’s Revised Code of Washington (RCW) § 4.24.525 and California Code of Civil Procedure § 425.16, which are anti-SLAPP laws designed to prevent lawsuits aimed at intimidating or silencing lawful speech on matters of public interest. Any attempt to interfere with or litigate against the publication of this code may result in the dismissal of such legal actions, with the imposition of attorney’s fees and statutory damages.</p>" +
-                            "<p>Furthermore, the motor land vehicle this BMS resides in had its advertised speed reduced during a software update for the haptic buzz feature. This change constitutes a violation of Article 6(1)(a) of the EU Directive 2005/29/EC on Unfair Commercial Practices, which prohibits misleading actions that affect the consumer’s decision to purchase or retain a product. Reducing the performance of previously purchased products, is deemed unfair under EU law, particularly as consumers were not informed or compensated for this loss of functionality.</p>" +
+                            "<p>Additionally, this publication is protected under Washington's Revised Code of Washington (RCW) § 4.24.525 and California Code of Civil Procedure § 425.16, which are anti-SLAPP laws designed to prevent lawsuits aimed at intimidating or silencing lawful speech on matters of public interest. Any attempt to interfere with or litigate against the publication of this code may result in the dismissal of such legal actions, with the imposition of attorney's fees and statutory damages.</p>" +
+                            "<p>Furthermore, the motor land vehicle this BMS resides in had its advertised speed reduced during a software update for the haptic buzz feature. This change constitutes a violation of Article 6(1)(a) of the EU Directive 2005/29/EC on Unfair Commercial Practices, which prohibits misleading actions that affect the consumer's decision to purchase or retain a product. Reducing the performance of previously purchased products, is deemed unfair under EU law, particularly as consumers were not informed or compensated for this loss of functionality.</p>" +
                             "<p>Moreover, the haptic feedback feature remains insufficiently implemented. On uneven terrains such as trails, the vibration cannot be felt effectively, and the audio feedback is may sometimes be too quiet to be useful, especially for individuals with disabilities like hearing impairments. This code addresses these deficiencies by allowing use with ESCs that allow real-time interoperability with third-party phone applications that provide customizable alerts through speakers, or headphones, improving accessibility, safety, and overall user experience."
                         color: "white"
                         wrapMode: Text.Wrap
@@ -493,13 +544,17 @@ Item {
                                     text: "Brightness"
                                 }
 
-                                Slider {
-                                    id: ledBrightness
-                                    from: 0.0
-                                    to: 1.0
-                                    value: 0.6
-                                    onValueChanged: {
-                                        handleDebouncedChange()
+                                Loader {
+                                    id: ledBrightnessLoader
+                                    sourceComponent: customValueSlider
+                                    onLoaded: {
+                                        item.from = 0.0
+                                        item.to = 1.0
+                                        item.value = 0.6
+                                        item.asPercent = true
+                                        item.valueChanged.connect(function() {
+                                                handleDebouncedChange()
+                                        })
                                     }
                                 }
 
@@ -508,13 +563,17 @@ Item {
                                     text: "Idle Brightness"
                                 }
 
-                                Slider {
-                                    id: ledBrightnessIdle
-                                    from: 0.0
-                                    to: 1.0
-                                    value: 0.3
-                                    onValueChanged: {
-                                        handleDebouncedChange()
+                                Loader {
+                                    id: ledBrightnessIdleLoader
+                                    sourceComponent: customValueSlider
+                                    onLoaded: {
+                                        item.from = 0.0
+                                        item.to = 1.0
+                                        item.value = 0.3
+                                        item.asPercent = true
+                                        item.valueChanged.connect(function() {
+                                                handleDebouncedChange()
+                                        })
                                     }
                                 }
 
@@ -528,13 +587,17 @@ Item {
                                         text: ledMallGrabEnabled.checked && ledStatusStripType.currentValue > 0 ? "Status/Mall Grab Brightness" : ledMallGrabEnabled.checked ? "Mall Grab Brightness" : "Status Brightness"
                                     }
 
-                                    Slider {
-                                        id: ledBrightnessStatus
-                                        from: 0.0
-                                        to: 1.0
-                                        value: 0.6
-                                        onValueChanged: {
-                                            handleDebouncedChange()
+                                    Loader {
+                                        id: ledBrightnessStatusLoader
+                                        sourceComponent: customValueSlider
+                                        onLoaded: {
+                                            item.from = 0.0
+                                            item.to = 1.0
+                                            item.value = 0.6
+                                            item.asPercent = true
+                                            item.valueChanged.connect(function() {
+                                                    handleDebouncedChange()
+                                            })
                                         }
                                     }
                                 }
@@ -557,13 +620,17 @@ Item {
                                     text: "Highbeam Brightness"
                                 }
 
-                                Slider {
-                                    id: ledBrightnessHighbeam
-                                    from: 0.0
-                                    to: 1.0
-                                    value: 0.5
-                                    onValueChanged: {
-                                        handleDebouncedChange()
+                                Loader {
+                                    id: ledBrightnessHighbeamLoader
+                                    sourceComponent: customValueSlider
+                                    onLoaded: {
+                                        item.from = 0.0
+                                        item.to = 1.0
+                                        item.value = 0.5
+                                        item.asPercent = true
+                                        item.valueChanged.connect(function() {
+                                                handleDebouncedChange()
+                                        })
                                     }
                                 }
                             }
@@ -805,12 +872,16 @@ Item {
                                     text: "LED Max Brightness (80% by default)"
                                 }
 
-                                Slider {
-                                    id: ledMaxBrightness
-                                    from: 0.0
-                                    to: 1.0
-                                    value: 0.8
-                                    stepSize: 0.01
+                                Loader {
+                                    id: ledMaxBrightnessLoader
+                                    sourceComponent: customValueSlider
+                                    onLoaded: {
+                                        item.from = 0.0
+                                        item.to = 1.0
+                                        item.value = 0.8
+                                        item.stepSize = 0.01
+                                        item.asPercent = true
+                                    }
                                 }
 
                                 Text {
@@ -818,12 +889,16 @@ Item {
                                     text: "Dim RGB on Highbeam (% of main brightness)"
                                 }
 
-                                Slider {
-                                    id: ledDimOnHighbeamRatio
-                                    from: 0.0
-                                    to: 1.0
-                                    value: 0.0
-                                    stepSize: 0.1
+                                Loader {
+                                    id: ledDimOnHighbeamRatioLoader
+                                    sourceComponent: customValueSlider
+                                    onLoaded: {
+                                        item.from = 0.0
+                                        item.to = 1.0
+                                        item.value = 0.0
+                                        item.stepSize = 0.1
+                                        item.asPercent = true
+                                    }
                                 }
 
                                 Text {
@@ -2204,10 +2279,10 @@ Item {
         return [
             ledOn.checked * 1,
             ledHighbeamOn.checked * 1,
-            parseFloat(ledBrightness.value).toFixed(2),
-            parseFloat(ledBrightnessHighbeam.value).toFixed(2),
-            parseFloat(ledBrightnessIdle.value).toFixed(2),
-            parseFloat(ledBrightnessStatus.value).toFixed(2),
+            parseFloat(ledBrightnessLoader.item.value).toFixed(2),
+            parseFloat(ledBrightnessHighbeamLoader.item.value).toFixed(2),
+            parseFloat(ledBrightnessIdleLoader.item.value).toFixed(2),
+            parseFloat(ledBrightnessStatusLoader.item.value).toFixed(2),
             bmsChargeState.checked * 1
         ].join(" ");
     }
@@ -2239,10 +2314,10 @@ Item {
             parseFloat(ledBrakeLightMinAmps.value).toFixed(2),
             idleTimeout.value,
             idleTimeoutShutoff.value,
-            parseFloat(ledBrightness.value).toFixed(2),
-            parseFloat(ledBrightnessHighbeam.value).toFixed(2),
-            parseFloat(ledBrightnessIdle.value).toFixed(2),
-            parseFloat(ledBrightnessStatus.value).toFixed(2),
+            parseFloat(ledBrightnessLoader.item.value).toFixed(2),
+            parseFloat(ledBrightnessHighbeamLoader.item.value).toFixed(2),
+            parseFloat(ledBrightnessIdleLoader.item.value).toFixed(2),
+            parseFloat(ledBrightnessStatusLoader.item.value).toFixed(2),
             ledStatusPin.value,
             ledStatusNum.value,
             ledStatusType.currentIndex,
@@ -2276,7 +2351,7 @@ Item {
             canLoopDelay.value,
             ledMaxBlendCount.value,
             ledStartupTimeout.value,
-            parseFloat(ledDimOnHighbeamRatio.value).toFixed(2),
+            parseFloat(ledDimOnHighbeamRatioLoader.item.value).toFixed(2),
             bmsType.currentIndex,
             ledStatusStripType.currentIndex,
             bmsChargeOnly.checked * 1,
@@ -2285,7 +2360,7 @@ Item {
             ledFrontHighbeamPin.value,
             ledRearHighbeamPin.value,
             bmsBuffSize.value,
-            parseFloat(ledMaxBrightness.value).toFixed(2),
+            parseFloat(ledMaxBrightnessLoader.item.value).toFixed(2),
             voltageCurveSoc.checked * 1,
             cellType.value,
             ledUpdateNotRunning.checked * 1,
@@ -2368,10 +2443,10 @@ Item {
                 ledBrakeLightMinAmps.value = Number(tokens[18])
                 idleTimeout.value = Number(tokens[19])
                 idleTimeoutShutoff.value = Number(tokens[20])
-                ledBrightness.value = Number(tokens[21])
-                ledBrightnessHighbeam.value = Number(tokens[22])
-                ledBrightnessIdle.value = Number(tokens[23])
-                ledBrightnessStatus.value = Number(tokens[24])
+                ledBrightnessLoader.item.value = Number(tokens[21])
+                ledBrightnessHighbeamLoader.item.value = Number(tokens[22])
+                ledBrightnessIdleLoader.item.value = Number(tokens[23])
+                ledBrightnessStatusLoader.item.value = Number(tokens[24])
                 ledStatusPin.value = Number(tokens[25])
                 ledStatusNum.value = Number(tokens[26])
                 ledStatusType.currentIndex = Number(tokens[27])
@@ -2420,7 +2495,7 @@ Item {
                 canLoopDelay.value = Number(tokens[66])
                 ledMaxBlendCount.value = Number(tokens[67])
                 ledStartupTimeout.value = Number(tokens[68])
-                ledDimOnHighbeamRatio.value = Number(tokens[69])
+                ledDimOnHighbeamRatioLoader.item.value = Number(tokens[69])
                 bmsType.currentIndex = Number(tokens[70])
                 ledStatusStripType.currentIndex = Number(tokens[71])
                 bmsChargeOnly.checked = Number(tokens[72])
@@ -2429,7 +2504,7 @@ Item {
                 ledFrontHighbeamPin.value = Number(tokens[75])
                 ledRearHighbeamPin.value = Number(tokens[76])
                 bmsBuffSize.value = Number(tokens[77])
-                ledMaxBrightness.value = Number(tokens[78])
+                ledMaxBrightnessLoader.item.value = Number(tokens[78])
                 floatPkgSoc.checked = Number(tokens[79]) == 0
                 voltageCurveSoc.checked = Number(tokens[79]) == 1
                 cellType.currentIndex = Number(tokens[80])
@@ -2504,10 +2579,10 @@ Item {
                 var tokens = str.split(" ")
                 ledOn.checked = Number(tokens[1])
                 ledHighbeamOn.checked = Number(tokens[2])
-                ledBrightness.value = Number(tokens[3])
-                ledBrightnessHighbeam.value = parseFloat(Number(tokens[4]))
-                ledBrightnessIdle.value = Number(tokens[5])
-                ledBrightnessStatus.value = Number(tokens[6])
+                ledBrightnessLoader.item.value = Number(tokens[3])
+                ledBrightnessHighbeamLoader.item.value = parseFloat(Number(tokens[4]))
+                ledBrightnessIdleLoader.item.value = Number(tokens[5])
+                ledBrightnessStatusLoader.item.value = Number(tokens[6])
                 bmsChargeState.checked = Number(tokens[7])
             } else if (str.startsWith("status Settings Read")) {
                 sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-control)")
