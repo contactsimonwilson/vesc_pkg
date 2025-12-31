@@ -86,7 +86,6 @@ Item {
         running: true
         repeat: true
         onTriggered: {
-        statusTimeout = false;
             sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(status)")
             lastStatusTime++
 
