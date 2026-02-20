@@ -192,7 +192,7 @@
     in-log-enabled in-log-rate in-log-append-gnss in-humidity-enabled in-humidity-sda-pin in-humidity-slc-pin
 ) {
 
-    (if (or (!= in-led-enabled (get-config 'led-enabled))  (!= in-pubmote-enabled (get-config 'pubmote-enabled)) (!= in-bms-enabled (get-config 'bms-enabled))){
+    (if (or (!= (to-i in-led-enabled) (to-i (get-config 'led-enabled)))  (!= (to-i in-pubmote-enabled) (to-i (get-config 'pubmote-enabled))) (!= (to-i in-bms-enabled) (to-i (get-config 'bms-enabled)))){
         (set-config 'led-enabled (to-i in-led-enabled))
         (set-config 'bms-enabled (to-i in-bms-enabled))
         (set-config 'pubmote-enabled (to-i in-pubmote-enabled))
@@ -233,7 +233,7 @@
         )
     })
 
-    (if (or (!= soc-type in-soc-type) (!= cell-type in-cell-type)) {
+    (if (or (!= (to-i soc-type) (to-i in-soc-type)) (!= (to-i cell-type) (to-i in-cell-type))) {
         ; Apply battery calculation
         (apply-battery-config in-soc-type in-cell-type)  
     })
@@ -311,7 +311,7 @@
     (set-config 'log-rate  (to-i in-log-rate))
     (set-config 'log-append-gnss  (to-i in-log-append-gnss))
     (set-config 'humidity-enabled (to-i in-humidity-enabled))
-    (if (or (!= (get-config 'humidity-sda-pin) (to-i in-humidity-sda-pin)) (!= (get-config 'humidity-slc-pin) (to-i in-humidity-slc-pin))) (setq reboot-now t) )
+    (if (or (!= (to-i (get-config 'humidity-sda-pin)) (to-i in-humidity-sda-pin)) (!= (to-i (get-config 'humidity-slc-pin)) (to-i in-humidity-slc-pin))) (setq reboot-now t) )
     (set-config 'humidity-sda-pin (to-i in-humidity-sda-pin))
     (set-config 'humidity-slc-pin (to-i in-humidity-slc-pin))
 
