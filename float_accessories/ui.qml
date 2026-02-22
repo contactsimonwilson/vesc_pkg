@@ -763,6 +763,7 @@ Item {
                                 Layout.fillWidth: true
                                 color: Utility.getAppHexColor("lightText")
                                 text: "LCM Temp: Unknown"
+                                visible: humidityEnabled.checked
                             }
                         }
                     }
