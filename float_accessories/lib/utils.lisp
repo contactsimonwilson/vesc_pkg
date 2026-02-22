@@ -181,6 +181,10 @@
     (list 3 2 0) ; Major, Minor, Patch
 })
 
+(defun is-606-or-newer () {
+    (or (> (first (sysinfo 'fw-ver)) 6) (and (= (first (sysinfo 'fw-ver)) 6) (>= (second (sysinfo 'fw-ver)) 6)))
+})
+
 (defun is-pubmote-connected () {
     (if (get-config 'pubmote-enabled) {
         (if (< (secs-since pubmote-last-activity-time) 1) 1 0)

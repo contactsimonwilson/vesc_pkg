@@ -89,8 +89,9 @@
 
 ; Save the environment as a binary image for fast boot on subsequent power-cycles.
 ; On the very next boot the reader is skipped and main() is called directly.
-(image-save)
-
+(if (is-606-or-newer) {
+    (image-save)
+})
 ; Start immediately on this (first) boot too.
 (main)
 @const-end
