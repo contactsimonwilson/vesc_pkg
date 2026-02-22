@@ -742,7 +742,7 @@ Item {
                                 Layout.fillWidth: true
                                 color: Utility.getAppHexColor("lightText")
                                 text: "BMS Humidity: Unknown"
-                                visible: bmsEnabled.checked
+                                visible: bmsEnabled.checked && humidityEnabled.checked
                             }
                             Text {
                                 id: bmsHumTempStatus
@@ -756,6 +756,7 @@ Item {
                                 Layout.fillWidth: true
                                 color: Utility.getAppHexColor("lightText")
                                 text: "LCM Humidity: Unknown"
+                                visible: humidityEnabled.checked
                             }
                             Text {
                                 id: humidityTempStatus
@@ -2565,15 +2566,15 @@ Item {
                 var humTemp = parseFloat(tokens[9])
                 humidityStatus.text = "LCM Humidity: " + (hum>0 ? hum +"%" : "Unknown")
                 humidityStatus.color = hum>0 ? (hum < 65 ? "green" :hum < 80 ? "orange" : "red") : "grey"
-                humidityTempStatus.text = "LCM Temp: " + (humTemp>0 ?  Math.floor((humTemp * 1.8 + 32) * 100)/100 +"F " + humTemp + "C" : "Unknown")
-                humidityTempStatus.color = humTemp>0 ? "green" : "grey"
+                humidityTempStatus.text = "LCM Temp: " + (hum>0 ?  Math.floor((humTemp * 1.8 + 32) * 100)/100 +"F " + humTemp + "C" : "Unknown")
+                humidityTempStatus.color = hum>0 ? "green" : "grey"
 
                 var bmsHum = parseFloat(tokens[10])
                 var bmsHumTemp = parseFloat(tokens[11])
                 bmsHumStatus.text = "BMS Humidity: " + (bmsHum>0 ? bmsHum +"%" : "Unknown")
                 bmsHumStatus.color = bmsHum>0 ? (bmsHum < 65 ? "green" : bmsHum < 80 ? "orange" : "red") : "grey"
-                bmsHumTempStatus.text = "BMS Temp: " + (bmsHumTemp>0 ? Math.floor((bmsHumTemp * 1.8 + 32) * 100)/100 +"F " + bmsHumTemp + "C" : "Unknown")
-                bmsHumTempStatus.color = bmsHumTemp>0 ? "green" : "grey"
+                bmsHumTempStatus.text = "BMS Temp: " + (bmsHum>0 ? Math.floor((bmsHumTemp * 1.8 + 32) * 100)/100 +"F " + bmsHumTemp + "C" : "Unknown")
+                bmsHumTempStatus.color = bmsHum>0 ? "green" : "grey"
 
                 var loggerRunning = parseFloat(tokens[12])
                 loggerStatus.text = "Logger Status: " + (loggerRunning ? "Running" : "Not Running")
