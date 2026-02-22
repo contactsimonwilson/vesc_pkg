@@ -89,7 +89,7 @@
 
 ; Save the environment as a binary image for fast boot on subsequent power-cycles.
 ; On the very next boot the reader is skipped and main() is called directly.
-(if (or (> (first (sysinfo 'fw-ver)) 6) (and (= (first (sysinfo 'fw-ver)) 6) (>= (second (sysinfo 'fw-ver)) 6))) {
+(if (is-606-or-newer) {
     (image-save)
 })
 ; Start immediately on this (first) boot too.

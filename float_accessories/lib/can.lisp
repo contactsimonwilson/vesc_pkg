@@ -179,14 +179,22 @@
             (setq can-devices (list original-can-id))
         }{
             ; `can-scan` is a native C function that halts LispBM for ~2.5 seconds.
-            ; We reimplement it cooperatively using `can-ping` and yielding in between.
+            ; We reimplement it cooperatively using `can-ping` and yielding in between
+            ; (supported on firmware 6.6 and newer).
             (setq can-devices '())
-            (looprange probe-id 0 254 {
-                (if (can-ping probe-id) {
+            (if (not (is-606-or-newer)) {
+                (setq can-devices (can-scan))
+                (loopforeach probe-id can-devices {
                     (print (str-merge "Found CAN device at ID: " (str-from-n probe-id)))
-                    (setq can-devices (append can-devices (list probe-id)))
                 })
-                (sleep 0.005) ; 5ms cooperative yield to let LEDs run without stutter
+            } {
+                (looprange probe-id 0 254 {
+                    (if (can-ping probe-id) {
+                        (print (str-merge "Found CAN device at ID: " (str-from-n probe-id)))
+                        (setq can-devices (append can-devices (list probe-id)))
+                    })
+                    (sleep 0.005) ; 5ms cooperative yield to let LEDs run without stutter
+                })
             })
         })
         (loopforeach can-id can-devices {
