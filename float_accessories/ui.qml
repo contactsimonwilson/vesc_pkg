@@ -711,8 +711,8 @@ Item {
                             Text {
                                 id: lastStatusText
                                 Layout.fillWidth: true
-                                color: statusTimeout ? "red" : Utility.getAppHexColor("lightText")
-                                text: "Last Lisp Update: " + lastStatusTime + "s ago"
+                                color: statusTimeout ? "red" : "green"
+                                text: statusTimeout ? "Status: Connecting (" + lastStatusTime + "s)" : "Status: Connected"
                             }
 
                             Text {
