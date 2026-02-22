@@ -72,6 +72,21 @@ Item {
     property bool statusTimeout: false
     property bool readConfig: false
     property bool wasConnected: false
+    property int floatPackageLastStatusTime: 0
+    property int pubmoteLastStatusTime: 0
+    property int floatPackageConnected: 0
+    property int pubmoteConnected: 0
+    property int pubmoteWifiChannel: 0
+    property bool isPubmotePaired: false
+    property int bmsStatusTemp: 0
+    property int bmsBatteryTypeVal: 0
+    property int bmsBatteryCyclesVal: 0
+    property real lcmHum: 0
+    property real lcmHumTemp: 0
+    property real bmsHum: 0
+    property real bmsHumTemp: 0
+    property int loggerRunning: 0
+    property string pubmoteVersionStr: "Unknown"
 
     Component.onCompleted: {
         if (VescIf.getLastFwRxParams().hwTypeStr() !== "Custom Module") {
@@ -89,6 +104,8 @@ Item {
         onTriggered: {
             sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(status)")
             lastStatusTime++
+            floatPackageLastStatusTime++
+            pubmoteLastStatusTime++
 
             if (lastStatusTime > 2) { // 2 second timeout
                 statusTimeout = true
@@ -366,6 +383,7 @@ Item {
         anchors.fill: parent
         spacing: 10
         property string primaryTabLabel: ledEnabled.checked || bmsEnabled.checked || logEnabled.checked ? qsTr("Control") : qsTr("Status")
+        property int enabledFeatureCount: ledEnabled.checked + pubmoteEnabled.checked + bmsEnabled.checked + logEnabled.checked
 
         Text {
             Layout.alignment: Qt.AlignHCenter
@@ -384,6 +402,9 @@ Item {
 
             TabButton {
                 text: qsTr("Config")
+                enabled: mainLayout.enabledFeatureCount > 0
+                visible: mainLayout.enabledFeatureCount > 0
+                width: mainLayout.enabledFeatureCount > 0 ? implicitWidth : 0
             }
 
             TabButton {
@@ -398,8 +419,7 @@ Item {
         TabBar {
             id: tabBar2
             Layout.fillWidth: true
-            property int enabledFeatureCount: ledEnabled.checked + pubmoteEnabled.checked + bmsEnabled.checked + logEnabled.checked
-            visible: tabBar.currentIndex === 1 && enabledFeatureCount > 1
+            visible: tabBar.currentIndex === 1 && mainLayout.enabledFeatureCount > 1
 
             // Update enabled indices when checkboxes change
             Component.onCompleted: updateEnabledIndices()
@@ -652,15 +672,15 @@ Item {
                             Text {
                                 id: loggerStatus
                                 Layout.fillWidth: true
-                                color: Utility.getAppHexColor("lightText")
-                                text: "Logger Status: Unknown"
+                                color: statusTimeout ? "grey" : (loggerRunning ? "green" : Utility.getAppHexColor("lightText"))
+                                text: statusTimeout ? "Logger Status: Unknown" : "Logger Status: " + (loggerRunning ? "Running" : "Not Running")
                             }
 
                             Button {
                                 id: logStartButton
                                 Layout.fillWidth: true
                                 Layout.preferredWidth: 500
-                                visible: false
+                                visible: !statusTimeout && !loggerRunning
                                 text: "Start Logging"
                             
                                 onClicked: {
@@ -671,7 +691,7 @@ Item {
                                 id: logStopButton
                                 Layout.fillWidth: true
                                 Layout.preferredWidth: 500
-                                visible: false
+                                visible: !statusTimeout && loggerRunning
                                 text: "Stop Logging"
                             
                                 onClicked: {
@@ -721,51 +741,53 @@ Item {
                             Text {
                                 id: floatPackageStatus
                                 Layout.fillWidth: true
-                                color: Utility.getAppHexColor("lightText")
-                                text: "Float Package Status: Unknown"
+                                property int effectiveTime: Math.max(floatPackageLastStatusTime, lastStatusTime)
+                                color: (floatPackageConnected === 1 && !statusTimeout) ? "green" : (effectiveTime <= 60 ? "yellow" : "red")
+                                text: (floatPackageConnected === 1 && !statusTimeout) ? "Float Package Status: Connected" : (effectiveTime <= 60 ? "Float Package Status: Connecting (" + effectiveTime + "s)" : "Float Package Status: Disconnected (" + effectiveTime + "s)")
                             }
 
                             Text {
                                 id: pubmoteStatus
                                 Layout.fillWidth: true
-                                color: Utility.getAppHexColor("lightText")
-                                text: "Pubmote Status: Unknown"
                                 visible: pubmoteEnabled.checked
+                                property int effectiveTime: Math.max(pubmoteLastStatusTime, lastStatusTime)
+                                color: !isPubmotePaired ? Utility.getAppHexColor("lightText") : ((pubmoteConnected === 1 && !statusTimeout) ? "green" : (effectiveTime <= 60 ? "yellow" : "red"))
+                                text: !isPubmotePaired ? "Pubmote Status: Not Paired" : ("Pubmote Status: " + ((pubmoteConnected === 1 && !statusTimeout) ? "Connected (WiFi Channel " + (pubmoteWifiChannel ? pubmoteWifiChannel : "?") + ")" : (effectiveTime <= 60 ? "Connecting (" + effectiveTime + "s)" : "Disconnected (" + effectiveTime + "s)")))
                             }
 
                             Text {
                                 id: bmsStatus
                                 Layout.fillWidth: true
-                                color: Utility.getAppHexColor("lightText")
-                                text: "BMS Status: Unknown"
+                                color: (!statusTimeout && bmsConnected) ? "green" : "red"
+                                text: statusTimeout ? "BMS Status: Unknown" : "BMS Status: " + (bmsConnected ? "Connected" : "Not Connected")
                                 visible: bmsEnabled.checked
                             }
                             Text {
                                 id: bmsHumStatus
                                 Layout.fillWidth: true
-                                color: Utility.getAppHexColor("lightText")
-                                text: "BMS Humidity: Unknown"
+                                color: (!statusTimeout && bmsHum > 0) ? (bmsHum < 65 ? "green" : bmsHum < 80 ? "orange" : "red") : "grey"
+                                text: "BMS Humidity: " + ((!statusTimeout && bmsHum > 0) ? bmsHum + "%" : "Unknown")
                                 visible: bmsEnabled.checked && humidityEnabled.checked
                             }
                             Text {
                                 id: bmsHumTempStatus
                                 Layout.fillWidth: true
-                                color: Utility.getAppHexColor("lightText")
-                                text: "BMS Temp: Unknown"
+                                color: (!statusTimeout && bmsHum > 0) ? "green" : "grey"
+                                text: "BMS Temp: " + ((!statusTimeout && bmsHum > 0) ? Math.floor((bmsHumTemp * 1.8 + 32) * 100)/100 +"F " + bmsHumTemp + "C" : "Unknown")
                                 visible: bmsEnabled.checked
                             }
                             Text {
                                 id: humidityStatus
                                 Layout.fillWidth: true
-                                color: Utility.getAppHexColor("lightText")
-                                text: "LCM Humidity: Unknown"
+                                color: (!statusTimeout && lcmHum > 0) ? (lcmHum < 65 ? "green" : lcmHum < 80 ? "orange" : "red") : "grey"
+                                text: "LCM Humidity: " + ((!statusTimeout && lcmHum > 0) ? lcmHum + "%" : "Unknown")
                                 visible: humidityEnabled.checked
                             }
                             Text {
                                 id: humidityTempStatus
                                 Layout.fillWidth: true
-                                color: Utility.getAppHexColor("lightText")
-                                text: "LCM Temp: Unknown"
+                                color: (!statusTimeout && lcmHum > 0) ? "green" : "grey"
+                                text: "LCM Temp: " + ((!statusTimeout && lcmHum > 0) ? Math.floor((lcmHumTemp * 1.8 + 32) * 100)/100 +"F " + lcmHumTemp + "C" : "Unknown")
                                 visible: humidityEnabled.checked
                             }
                         }
@@ -784,19 +806,19 @@ Item {
                                 id: bmsError
                                 Layout.fillWidth: true
                                 color: Utility.getAppHexColor("lightText")
-                                text: "BMS Error: None"
+                                text: statusTimeout ? "BMS Error: Unknown" : "BMS Error: " + bmsStatusTemp + "\nCharging: " + ((bmsStatusTemp & 0x20)>0) + "\nEmpty: " + ((bmsStatusTemp & 0x04)>0) + "\nTemp: " + ((bmsStatusTemp & 0x03)>0) + "\nOvercharge: " + ((bmsStatusTemp & 0x08)>0) + "\nSoC Calibration: " + ((bmsStatusTemp & 0x40)>0)
                             }
                             Text {
                                 id: bmsBatteryType
                                 Layout.fillWidth: true
                                 color: Utility.getAppHexColor("lightText")
-                                text: "Battery Type: None"
+                                text: statusTimeout ? "Battery Type: Unknown" : "Battery Type: " + bmsBatteryTypeVal
                             }
                             Text {
                                 id: bmsBatteryCycles
                                 Layout.fillWidth: true
                                 color: Utility.getAppHexColor("lightText")
-                                text: "Battery Cycles: None"
+                                text: statusTimeout ? "Battery Cycles: Unknown" : "Battery Cycles: " + bmsBatteryCyclesVal
                             }
                         }
                     }
@@ -1661,7 +1683,7 @@ Item {
                                 Text {
                                     id: pubmoteVersion
                                     color: Utility.getAppHexColor("lightText")
-                                    text: "Version: Unknown"
+                                    text: statusTimeout ? "Version: Unknown" : "Version: " + pubmoteVersionStr
                                 }
 
                                 Button {
@@ -2119,16 +2141,12 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             spacing: 10
+            visible: tabBar.currentIndex === 1 || tabBar.currentIndex === 2
+
+            Item { Layout.fillWidth: true }
 
             Button {
-                text: "Read Cfg"
-                onClicked: {
-                    sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
-                }
-            }
-
-            Button {
-                text: "Save Cfg"
+                text: "Save Config"
                 enabled: readConfig && lastStatusTime < 2
                 onClicked: {
                     if (bmsEnabled.checked && !acceptTOS) {
@@ -2142,11 +2160,30 @@ Item {
                 }
             }
 
-            Button {
-                text: "Restore Defaults"
-                onClicked: {
-                    sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(restore-config)")
-                    sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
+            ToolButton {
+                id: optionsButton
+                text: "⋮"
+                font.pixelSize: 24
+                onClicked: optionsMenu.open()
+
+                Menu {
+                    id: optionsMenu
+                    y: optionsButton.height
+
+                    MenuItem {
+                        text: "Read Config"
+                        onClicked: {
+                            sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
+                        }
+                    }
+
+                    MenuItem {
+                        text: "Restore Default Config"
+                        onClicked: {
+                            sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(restore-config)")
+                            sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
+                        }
+                    }
                 }
             }
         }
@@ -2529,7 +2566,8 @@ Item {
                 humiditySdaPin.value = Number(tokens[86])
                 humiditySlcPin.value = Number(tokens[87])
 
-                pubmoteMacAddress.text = "MAC: " + ((Number(tokens[46]) == -1) ? "Not Paired" : macAddress.toUpperCase());
+                isPubmotePaired = (Number(tokens[46]) != -1);
+                pubmoteMacAddress.text = "MAC: " + (!isPubmotePaired ? "Not Paired" : macAddress.toUpperCase());
                 readConfig = true;
             } else if (str.startsWith("msg")) {
                 var msg = str.substring(4)
@@ -2538,55 +2576,51 @@ Item {
                 var tokens = str.split(" ")
 
                 // Float Package connection status
-                var floatPackageConnected = Number(tokens[1])
-                floatPackageStatus.text = "Float Package Status: " + (floatPackageConnected ? "Connected" : "Not Connected")
-                floatPackageStatus.color = floatPackageConnected ? "green" : "red"
+                floatPackageConnected = Number(tokens[1])
+                if (floatPackageConnected === 1) {
+                    floatPackageLastStatusTime = 0
+                }
 
                 // Pubmote connection status
-                var pubmoteConnected = Number(tokens[2])
-                var wifiChannel = Number(tokens[7])
-                pubmoteStatus.text = "Pubmote Status: " + (
-                    pubmoteConnected
-                        ? "Connected (WiFi Channel " + (wifiChannel ? wifiChannel : "?") + ")"
-                        : "Not Connected (WiFi Channel " + (wifiChannel ? wifiChannel : "?") + ")"
-                )
-                pubmoteStatus.color = pubmoteConnected ? "green" : "red"
+                pubmoteConnected = Number(tokens[2])
+                pubmoteWifiChannel = Number(tokens[7])
+                if (pubmoteConnected === 1) {
+                    pubmoteLastStatusTime = 0
+                }
 
                 if (!pubmoteConnected) {
-                    pubmoteVersion.text = "Version: Unknown";
+                    pubmoteVersionStr = "Unknown";
                 }
 
                 // BMS connection status
                 bmsConnected = Number(tokens[3])
-                bmsStatus.text = "BMS Status: " + (bmsConnected ? "Connected" : "Not Connected")
-                bmsStatus.color = bmsConnected ? "green" : "red"
-                var bmsStatusTemp = Number(tokens[4])
-                bmsError.text = "BMS Error: " + bmsStatusTemp + "\nCharging: " + ((bmsStatusTemp & 0x20)>0) + "\nEmpty: " + ((bmsStatusTemp & 0x04)>0) + "\nTemp: " + ((bmsStatusTemp & 0x03)>0) + "\nOvercharge: " + ((bmsStatusTemp & 0x08)>0) + "\nSoC Calibration: " + ((bmsStatusTemp & 0x40)>0)
-                bmsBatteryType.text = "Battery Type: " + Number(tokens[5])
-                bmsBatteryCycles.text = "Battery Cycles: " + Number(tokens[6])
+                bmsStatusTemp = Number(tokens[4])
+                bmsBatteryTypeVal = Number(tokens[5])
+                bmsBatteryCyclesVal = Number(tokens[6])
 
                 // Humidity Sensor Status
-                var hum = parseFloat(tokens[8])
-                var humTemp = parseFloat(tokens[9])
-                humidityStatus.text = "LCM Humidity: " + (hum>0 ? hum +"%" : "Unknown")
-                humidityStatus.color = hum>0 ? (hum < 65 ? "green" :hum < 80 ? "orange" : "red") : "grey"
-                humidityTempStatus.text = "LCM Temp: " + (hum>0 ?  Math.floor((humTemp * 1.8 + 32) * 100)/100 +"F " + humTemp + "C" : "Unknown")
-                humidityTempStatus.color = hum>0 ? "green" : "grey"
+                lcmHum = parseFloat(tokens[8])
+                lcmHumTemp = parseFloat(tokens[9])
 
-                var bmsHum = parseFloat(tokens[10])
-                var bmsHumTemp = parseFloat(tokens[11])
-                bmsHumStatus.text = "BMS Humidity: " + (bmsHum>0 ? bmsHum +"%" : "Unknown")
-                bmsHumStatus.color = bmsHum>0 ? (bmsHum < 65 ? "green" : bmsHum < 80 ? "orange" : "red") : "grey"
-                bmsHumTempStatus.text = "BMS Temp: " + (bmsHum>0 ? Math.floor((bmsHumTemp * 1.8 + 32) * 100)/100 +"F " + bmsHumTemp + "C" : "Unknown")
-                bmsHumTempStatus.color = bmsHum>0 ? "green" : "grey"
+                bmsHum = parseFloat(tokens[10])
+                bmsHumTemp = parseFloat(tokens[11])
 
-                var loggerRunning = parseFloat(tokens[12])
-                loggerStatus.text = "Logger Status: " + (loggerRunning ? "Running" : "Not Running")
-                loggerStatus.color = loggerRunning ? "green" : "red"
-                logStartButton.visible = !loggerRunning
-                logStopButton.visible = loggerRunning
+                loggerRunning = parseFloat(tokens[12])
+
                 // Update status flags
                 lastStatusTime = 0  // Reset the timer when status is received
+                if (floatPackageConnected === 1) {
+                    floatPackageLastStatusTime = 0
+                } else {
+                    floatPackageLastStatusTime = floatPackageLastStatusTime // Trigger binding re-evaluation
+                }
+                
+                if (pubmoteConnected === 1) {
+                    pubmoteLastStatusTime = 0
+                } else {
+                    pubmoteLastStatusTime = pubmoteLastStatusTime // Trigger binding re-evaluation
+                }
+
                 statusTimeout = false
             } else if (str.startsWith("control")) {
                 var tokens = str.split(" ")
@@ -2613,7 +2647,7 @@ Item {
                         newVersion = tokens[1];
                     }
                 }
-                pubmoteVersion.text = "Version: " + newVersion;
+                pubmoteVersionStr = newVersion;
             }
         }
     }
