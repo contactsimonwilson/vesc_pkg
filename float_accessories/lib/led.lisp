@@ -43,11 +43,6 @@
 (def led-footpad-type)
 (def led-footpad-reversed)
 (def led-footpad-strip-type)
-(def led-front-timing-preset)
-(def led-rear-timing-preset)
-(def led-status-timing-preset)
-(def led-button-timing-preset)
-(def led-footpad-timing-preset)
 (def led-max-brightness)
 (def led-update-not-running)
 
@@ -74,9 +69,7 @@
 (def prev-led-button-color '())
 (def target-led-button-color '())
 (def combined-pins nil)
-(def led-current-pin -1) ; track which pin the RMT channel is currently on
-(def led-current-type -1)
-(def led-current-timing-preset -1)
+(def led-fix 1)
 (def led-show-battery-charging 0)
 (def led-front-highbeam-pin)
 (def led-rear-highbeam-pin)
@@ -121,16 +114,12 @@
     (setq led-footpad-type (get-config 'led-footpad-type))
     (setq led-footpad-reversed (get-config 'led-footpad-reversed))
     (setq led-footpad-strip-type (get-config 'led-footpad-strip-type))
-    (setq led-front-timing-preset (get-config 'led-front-timing-preset))
-    (setq led-rear-timing-preset (get-config 'led-rear-timing-preset))
-    (setq led-status-timing-preset (get-config 'led-status-timing-preset))
-    (setq led-button-timing-preset (get-config 'led-button-timing-preset))
-    (setq led-footpad-timing-preset (get-config 'led-footpad-timing-preset))
     (setq led-max-blend-count (get-config 'led-max-blend-count))
     (setq led-startup-timeout (get-config 'led-startup-timeout))
     (setq led-dim-on-highbeam-ratio (get-config 'led-dim-on-highbeam-ratio))
     (setq led-status-strip-type (get-config 'led-status-strip-type))
     (setq led-loop-delay (get-config 'led-loop-delay))
+    (setq led-fix (get-config 'led-fix))
     (setq led-show-battery-charging (get-config 'led-show-battery-charging))
     (setq led-front-highbeam-pin (get-config 'led-front-highbeam-pin))
     (setq led-rear-highbeam-pin (get-config 'led-rear-highbeam-pin))
@@ -141,9 +130,6 @@
 (defun init-led-vars () {
     (def blend-count led-max-blend-count)
     (setq combined-pins nil)
-    (setq led-current-pin -1)
-    (setq led-current-type -1)
-    (setq led-current-timing-preset -1)
     (setq led-current-brightness 0.0)
     (setq led-status-color (mklist led-status-num 0))
     (setq led-front-color (mklist led-front-num 0))
@@ -218,17 +204,6 @@
                 (setq led-front-buffer (rgbled-buffer (+ led-front-num front-highbeam-leds) led-front-type))
             })
         })
-    })
-})
-
-; Only calls rgbled-init when switching to a different pin, avoiding
-; the gpio_reset_pin glitch that causes the first LED to flicker every frame.
-(defun led-init-if-needed (pin type timing-preset) {
-    (if (or (!= (to-i pin) (to-i led-current-pin)) (!= type led-current-type) (!= timing-preset led-current-timing-preset)) {
-        (rgbled-init pin (min type 3) timing-preset)
-        (setq led-current-pin (to-i pin))
-        (setq led-current-type type)
-        (setq led-current-timing-preset timing-preset)
     })
 })
 
@@ -517,16 +492,16 @@
     )
     (if (and (> led-button-strip-type 0) (>= led-button-pin 0)) {
         (rgbled-color led-button-buffer 0 led-button-color led-current-brightness)
-        (led-init-if-needed led-button-pin 0 led-button-timing-preset)
+        (rgbled-init led-button-pin)
+        (yield led-fix)
         (rgbled-update led-button-buffer)
-        (rgbled-wait)
     })
 
     (if (and (> led-footpad-strip-type 0) (>= led-footpad-pin 0)) {
         (rgbled-color led-footpad-buffer 0 led-footpad-color led-current-brightness)
-        (led-init-if-needed led-footpad-pin led-footpad-type led-footpad-timing-preset)
+        (rgbled-init led-footpad-pin)
+        (yield led-fix)
         (rgbled-update led-footpad-buffer)
-        (rgbled-wait)
     })
 
     (if (and (>= led-status-strip-type 0) (>= led-front-strip-type 0) (>= led-rear-strip-type 0) (>= led-front-pin 0) (= led-status-pin led-front-pin) (= led-front-pin led-rear-pin)) {
@@ -534,18 +509,18 @@
         (var led-combined-color (append led-status-color led-current-front-color led-current-rear-color))
         (var total-leds (length led-combined-color))
         (rgbled-color led-combined-buffer 0 led-combined-color led-current-brightness)
-        (led-init-if-needed led-front-pin led-status-type led-status-timing-preset)
+        (rgbled-init led-front-pin)
+        (yield led-fix)
         (rgbled-update led-combined-buffer)
-        (rgbled-wait)
     }{
         ;LED front/back are on same pin
         (if (and (> led-front-strip-type 0) (> led-rear-strip-type 0) (>= led-front-pin 0) (= led-front-pin led-rear-pin)) {
             (var led-combined-color (append led-current-front-color led-current-rear-color))
             (var total-leds (length led-combined-color))
             (rgbled-color led-combined-buffer 0 led-combined-color led-current-brightness)
-            (led-init-if-needed led-front-pin led-front-type led-front-timing-preset)
+            (rgbled-init led-front-pin)
+            (yield led-fix)
             (rgbled-update led-combined-buffer)
-            (rgbled-wait)
         }{
             (if (and (> led-status-strip-type 0) (> led-rear-strip-type 0) (>= led-status-pin 0) (= led-status-pin led-rear-pin)) {
                 (if (!= led-status-type led-rear-type)
@@ -554,16 +529,16 @@
                 (var led-combined-color (append led-status-color led-current-rear-color))
                 (var total-leds (length led-combined-color))
                 (rgbled-color led-combined-buffer 0 led-combined-color led-current-brightness)
-                (led-init-if-needed led-status-pin led-status-type led-status-timing-preset)
+                (rgbled-init led-status-pin)
+                (yield led-fix)
                 (rgbled-update led-combined-buffer)
-                ; no wait here - front strip's rgbled-init will wait internally
             }{
                 ; LED strips are on separate pins
                 (if (and (> led-status-strip-type 0) (>= led-status-pin 0)) {
                     (rgbled-color led-status-buffer 0 led-status-color (min led-brightness-status led-max-brightness))
-                    (led-init-if-needed led-status-pin led-status-type led-status-timing-preset)
+                    (rgbled-init led-status-pin)
+                    (yield led-fix)
                     (rgbled-update led-status-buffer)
-                    ; no wait here - next rgbled-init will wait internally
                 })
                 (if (and (> led-rear-strip-type 0) (>= led-rear-pin 0) dont-freeze-update) {
                     ; If it's a JetFleet H4, JetFleet H4 (no limit), JetFleet GT or Fungineers GTFO we do not pass brighness as the buffer already has brighness applied to each color to account for the special mapping of the high beams.
@@ -571,23 +546,20 @@
                         (rgbled-color led-rear-buffer 0 led-current-rear-color)
                         (rgbled-color led-rear-buffer 0 led-current-rear-color led-current-brightness-rear)
                     )
-                    (led-init-if-needed led-rear-pin led-rear-type led-rear-timing-preset)
+                    (rgbled-init led-rear-pin)
+                    (yield led-fix)
                     (rgbled-update led-rear-buffer)
-                    ; no wait here - next rgbled-init will wait internally
                 })
             })
-            ; Front strip: runs regardless of how status/rear are combined
             (if (and (> led-front-strip-type 0) (>= led-front-pin 0) dont-freeze-update) {
                 ; If it's a JetFleet H4, JetFleet H4 (no limit), JetFleet GT or Fungineers GTFO we do not pass brighness as the buffer already has brighness applied to each color to account for the special mapping of the high beams.
                 (if (or (= led-front-strip-type 4) (= led-front-strip-type 5) (= led-front-strip-type 6) (= led-front-strip-type 11))
                     (rgbled-color led-front-buffer 0 led-current-front-color)
                     (rgbled-color led-front-buffer 0 led-current-front-color led-current-brightness-front)
                 )
-                (led-init-if-needed led-front-pin led-front-type led-front-timing-preset)
+                (rgbled-init led-front-pin)
+                (yield led-fix)
                 (rgbled-update led-front-buffer)
-                (rgbled-wait) ; final wait - end of frame
-            }{
-                (rgbled-wait) ; no front strip - wait for whatever was last
             })
         })
     })
