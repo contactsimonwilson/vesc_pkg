@@ -78,7 +78,7 @@
     (bms-type                  . (69 i 0))
     (led-status-strip-type     . (70 i 0))
     (bms-charge-only           . (71 b 0))
-    (led-fix                   . (72 i 100))  ; deprecated - was a yield delay workaround, now unused
+    (led-fix                   . (72 i 100))
     (led-show-battery-charging . (73 b 1))
     (led-front-highbeam-pin    . (74 i -1))
     (led-rear-highbeam-pin     . (75 i -1))
@@ -93,11 +93,6 @@
     (humidity-enabled          . (84 b 0))
     (humidity-sda-pin          . (85 i -1))
     (humidity-slc-pin          . (86 i -1))
-    (led-front-timing-preset   . (87 i 0))
-    (led-rear-timing-preset    . (88 i 0))
-    (led-status-timing-preset  . (89 i 0))
-    (led-button-timing-preset  . (90 i 0))
-    (led-footpad-timing-preset . (91 i 0))
 ))
 (def runtime-vals)
 (setq runtime-vals (mklist (length eeprom-addrs) -1))
@@ -179,16 +174,6 @@
         (str-from-n led-brightness-idle "%.2f ")
         (str-from-n led-brightness-status "%.2f ")
         (str-from-n (to-i bms-charge-state) "%d ")
-        (str-from-n (get-config 'log-rate) "%.2f ")
-        (str-from-n (get-config 'log-append-gnss) "%d ")
-        (str-from-n (get-config 'humidity-enabled) "%d ")
-        (str-from-n (get-config 'humidity-sda-pin) "%d ")
-        (str-from-n (get-config 'humidity-slc-pin) "%d ")
-        (str-from-n (get-config 'led-front-timing-preset) "%d ")
-        (str-from-n (get-config 'led-rear-timing-preset) "%d ")
-        (str-from-n (get-config 'led-status-timing-preset) "%d ")
-        (str-from-n (get-config 'led-button-timing-preset) "%d ")
-        (str-from-n (get-config 'led-footpad-timing-preset) "%d ")
     ))
 
     (send-data config-string)
@@ -205,7 +190,6 @@
     in-led-dim-on-highbeam-ratio in-bms-type in-led-status-strip-type in-bms-charge-only in-led-fix in-led-show-battery-charging
     in-led-front-highbeam-pin in-led-rear-highbeam-pin in-bms-buff-size in-led-max-brightness in-soc-type in-cell-type in-led-update-not-running
     in-log-enabled in-log-rate in-log-append-gnss in-humidity-enabled in-humidity-sda-pin in-humidity-slc-pin
-    in-led-front-timing-preset in-led-rear-timing-preset in-led-status-timing-preset in-led-button-timing-preset in-led-footpad-timing-preset
 ) {
 
     (if (or (!= (to-i in-led-enabled) (to-i (get-config 'led-enabled)))  (!= (to-i in-pubmote-enabled) (to-i (get-config 'pubmote-enabled))) (!= (to-i in-bms-enabled) (to-i (get-config 'bms-enabled)))){
@@ -315,7 +299,7 @@
     (set-config 'bms-type (to-i in-bms-type))
     (set-config 'led-status-strip-type (to-i in-led-status-strip-type))
     (set-config 'bms-charge-only (to-i in-bms-charge-only))
-    ; led-fix (slot 72) intentionally not set - deprecated, kept for EEPROM address compatibility
+    (set-config 'led-fix (to-i in-led-fix))
     (set-config 'led-show-battery-charging (to-i in-led-show-battery-charging))
     (set-config 'bms-buff-size (to-i in-bms-buff-size))
     (set-config 'led-max-brightness (to-float in-led-max-brightness))
@@ -324,15 +308,8 @@
     (set-config 'led-update-not-running  (to-i in-led-update-not-running))
 
     (set-config 'log-enabled  (to-i in-log-enabled))
-    (set-config 'log-rate (to-float in-log-rate))
+    (set-config 'log-rate (to-i in-log-rate))
     (set-config 'log-append-gnss (to-i in-log-append-gnss))
-
-    (set-config 'led-front-timing-preset (to-i in-led-front-timing-preset))
-    (set-config 'led-rear-timing-preset (to-i in-led-rear-timing-preset))
-    (set-config 'led-status-timing-preset (to-i in-led-status-timing-preset))
-    (set-config 'led-button-timing-preset (to-i in-led-button-timing-preset))
-    (set-config 'led-footpad-timing-preset (to-i in-led-footpad-timing-preset))
-
     (set-config 'humidity-enabled (to-i in-humidity-enabled))
     (if (or (!= (to-i (get-config 'humidity-sda-pin)) (to-i in-humidity-sda-pin)) (!= (to-i (get-config 'humidity-slc-pin)) (to-i in-humidity-slc-pin))) (setq reboot-now t) )
     (set-config 'humidity-sda-pin (to-i in-humidity-sda-pin))
@@ -341,7 +318,7 @@
 
     (if (= in-led-enabled 1) {
         (if (and (> in-led-front-strip-type 0) (>= in-led-front-pin 0)) {
-            (if (not-eq (first (trap (rgbled-init in-led-front-pin (min (to-i in-led-front-type) 3) in-led-front-timing-preset))) 'exit-ok) {
+            (if (not-eq (first (trap (rgbled-init in-led-front-pin))) 'exit-ok) {
                 (send-msg "Invalid Pin: led-front-pin")
             }{
                 (set-config 'led-front-pin (to-i in-led-front-pin))
@@ -349,7 +326,7 @@
         })
 
         (if (and (> in-led-rear-strip-type 0) (>= in-led-rear-pin 0)) {
-            (if (not-eq (first (trap (rgbled-init in-led-rear-pin (min (to-i in-led-rear-type) 3) in-led-rear-timing-preset))) 'exit-ok) {
+            (if (not-eq (first (trap (rgbled-init in-led-rear-pin))) 'exit-ok) {
                 (send-msg "Invalid Pin: led-rear-pin")
             }{
                 (set-config 'led-rear-pin (to-i in-led-rear-pin))
@@ -357,7 +334,7 @@
         })
 
         (if (and (> in-led-status-strip-type 0) (>= in-led-status-pin 0)) {
-            (if (not-eq (first (trap (rgbled-init in-led-status-pin (min (to-i in-led-status-type) 3) in-led-status-timing-preset))) 'exit-ok) {
+            (if (not-eq (first (trap (rgbled-init in-led-status-pin))) 'exit-ok) {
                 (send-msg "Invalid Pin: led-status-pin")
             }{
                 (set-config 'led-status-pin (to-i in-led-status-pin))
@@ -365,7 +342,7 @@
         })
 
         (if (and (> in-led-button-strip-type 0) (>= in-led-button-pin 0)) {
-            (if (not-eq (first (trap (rgbled-init in-led-button-pin 0 in-led-button-timing-preset))) 'exit-ok) {
+            (if (not-eq (first (trap (rgbled-init in-led-button-pin))) 'exit-ok) {
                 (send-msg "Invalid Pin: led-button-pin")
             }{
                 (set-config 'led-button-pin (to-i in-led-button-pin))
@@ -373,7 +350,7 @@
         })
 
         (if (and (> in-led-footpad-strip-type 0) (>= in-led-footpad-pin 0)) {
-            (if (not-eq (first (trap (rgbled-init in-led-footpad-pin (min (to-i in-led-footpad-type) 3) in-led-footpad-timing-preset))) 'exit-ok) {
+            (if (not-eq (first (trap (rgbled-init in-led-footpad-pin))) 'exit-ok) {
                 (send-msg "Invalid Pin: led-footpad-pin")
             }{
                 (set-config 'led-footpad-pin (to-i in-led-footpad-pin))
