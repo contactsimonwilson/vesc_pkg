@@ -21,6 +21,7 @@ Item {
     property int lastStatusTime: 0
     property bool statusTimeout: false
     property bool readConfig: false
+    property bool wasConnected: false
 
     Component.onCompleted: {
         if (VescIf.getLastFwRxParams().hwTypeStr() !== "Custom Module") {
@@ -781,19 +782,6 @@ Item {
                                     editable: true
                                 }
 
-                                Text {
-                                    color: Utility.getAppHexColor("lightText")
-                                    text: "LED Fix"
-                                }
-
-                                SpinBox {
-                                    id: ledFix
-                                    from: 1
-                                    to: 1000000
-                                    value: 100
-                                    editable: true
-                                }
-
                                 CheckBox {
                                     id: ledUpdateNotRunning
                                     text: "Don't update LEDs while running"
@@ -1115,6 +1103,29 @@ Item {
                                         text: "Status Reversed"
                                         checked: false
                                     }
+
+                                    Text {
+                                        color: Utility.getAppHexColor("lightText")
+                                        text: "Status LED Type"
+                                    }
+
+                                    ComboBox {
+                                        id: ledStatusTimingPreset
+                                        Layout.fillWidth: true
+                                        model: [
+                                            {text: "Generic", value: 0},
+                                            {text: "WS2812B", value: 1},
+                                            {text: "WS2815", value: 2},
+                                            {text: "SK6812", value: 3},
+                                            {text: "SK6815", value: 4}
+                                        ]
+                                        textRole: "text"
+                                        valueRole: "value"
+                                        onCurrentIndexChanged: {
+                                            value = model[currentIndex].value
+                                        }
+                                        property int value: 0
+                                    }
                                 }
                             }
                         }
@@ -1247,6 +1258,35 @@ Item {
                                         id: ledFrontReversed
                                         text: "Front Reversed"
                                         checked: false
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    id: ledFrontTimingLayout
+                                    visible: ledFrontStripType.currentValue > 0
+                                    spacing: 10
+
+                                    Text {
+                                        color: Utility.getAppHexColor("lightText")
+                                        text: "Front LED Type"
+                                    }
+
+                                    ComboBox {
+                                        id: ledFrontTimingPreset
+                                        Layout.fillWidth: true
+                                        model: [
+                                            {text: "Generic", value: 0},
+                                            {text: "WS2812B", value: 1},
+                                            {text: "WS2815", value: 2},
+                                            {text: "SK6812", value: 3},
+                                            {text: "SK6815", value: 4}
+                                        ]
+                                        textRole: "text"
+                                        valueRole: "value"
+                                        onCurrentIndexChanged: {
+                                            value = model[currentIndex].value
+                                        }
+                                        property int value: 0
                                     }
                                 }
                             }
@@ -1382,6 +1422,35 @@ Item {
                                         checked: false
                                     }
                                 }
+
+                                ColumnLayout {
+                                    id: ledRearTimingLayout
+                                    visible: ledRearStripType.currentValue > 0
+                                    spacing: 10
+
+                                    Text {
+                                        color: Utility.getAppHexColor("lightText")
+                                        text: "Rear LED Type"
+                                    }
+
+                                    ComboBox {
+                                        id: ledRearTimingPreset
+                                        Layout.fillWidth: true
+                                        model: [
+                                            {text: "Generic", value: 0},
+                                            {text: "WS2812B", value: 1},
+                                            {text: "WS2815", value: 2},
+                                            {text: "SK6812", value: 3},
+                                            {text: "SK6815", value: 4}
+                                        ]
+                                        textRole: "text"
+                                        valueRole: "value"
+                                        onCurrentIndexChanged: {
+                                            value = model[currentIndex].value
+                                        }
+                                        property int value: 0
+                                    }
+                                }
                             }
                         }
 
@@ -1434,8 +1503,37 @@ Item {
 
                                 ColumnLayout {
                                     id: ledButtonCustomSettings
-                                    visible: ledRearStripType.currentValue === 1
+                                    visible: ledButtonStripType.currentValue === 1
                                     spacing: 10
+                                }
+
+                                ColumnLayout {
+                                    id: ledButtonTimingLayout
+                                    visible: ledButtonStripType.currentValue > 0
+                                    spacing: 10
+
+                                    Text {
+                                        color: Utility.getAppHexColor("lightText")
+                                        text: "Button LED Type"
+                                    }
+
+                                    ComboBox {
+                                        id: ledButtonTimingPreset
+                                        Layout.fillWidth: true
+                                        model: [
+                                            {text: "Generic", value: 0},
+                                            {text: "WS2812B", value: 1},
+                                            {text: "WS2815", value: 2},
+                                            {text: "SK6812", value: 3},
+                                            {text: "SK6815", value: 4}
+                                        ]
+                                        textRole: "text"
+                                        valueRole: "value"
+                                        onCurrentIndexChanged: {
+                                            value = model[currentIndex].value
+                                        }
+                                        property int value: 0
+                                    }
                                 }
                             }
                         }
@@ -1539,6 +1637,35 @@ Item {
                                         id: ledFootpadReversed
                                         text: "Footpad Reversed"
                                         checked: false
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    id: ledFootpadTimingLayout
+                                    visible: ledFootpadStripType.currentValue > 0
+                                    spacing: 10
+
+                                    Text {
+                                        color: Utility.getAppHexColor("lightText")
+                                        text: "Footpad LED Type"
+                                    }
+
+                                    ComboBox {
+                                        id: ledFootpadTimingPreset
+                                        Layout.fillWidth: true
+                                        model: [
+                                            {text: "Generic", value: 0},
+                                            {text: "WS2812B", value: 1},
+                                            {text: "WS2815", value: 2},
+                                            {text: "SK6812", value: 3},
+                                            {text: "SK6815", value: 4}
+                                        ]
+                                        textRole: "text"
+                                        valueRole: "value"
+                                        onCurrentIndexChanged: {
+                                            value = model[currentIndex].value
+                                        }
+                                        property int value: 0
                                     }
                                 }
                             }
@@ -2280,7 +2407,7 @@ Item {
             bmsType.currentIndex,
             ledStatusStripType.currentIndex,
             bmsChargeOnly.checked * 1,
-            ledFix.value,
+            0, // Maintain led fix for conf
             ledShowBatteryCharging.checked * 1,
             ledFrontHighbeamPin.value,
             ledRearHighbeamPin.value,
@@ -2294,7 +2421,12 @@ Item {
             logAppendGnss.checked * 1,
             humidityEnabled.checked * 1,
             humiditySdaPin.value,
-            humiditySlcPin.value
+            humiditySlcPin.value,
+            ledFrontTimingPreset.currentIndex,
+            ledRearTimingPreset.currentIndex,
+            ledStatusTimingPreset.currentIndex,
+            ledButtonTimingPreset.currentIndex,
+            ledFootpadTimingPreset.currentIndex
         ].join(" ");
     }
 
@@ -2348,6 +2480,14 @@ Item {
 
         function onCustomAppDataReceived(data) {
             var str = data.toString()
+
+            if (!wasConnected) {
+                // Read settings on initial message
+                wasConnected = true
+                if (!readConfig) {
+                    sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
+                }
+            }
 
             if (str.startsWith("settings")) {
                 var tokens = str.split(" ")
@@ -2424,7 +2564,6 @@ Item {
                 bmsType.currentIndex = Number(tokens[70])
                 ledStatusStripType.currentIndex = Number(tokens[71])
                 bmsChargeOnly.checked = Number(tokens[72])
-                ledFix.value = Number(tokens[73])
                 ledShowBatteryCharging.checked = Number(tokens[74])
                 ledFrontHighbeamPin.value = Number(tokens[75])
                 ledRearHighbeamPin.value = Number(tokens[76])
@@ -2440,6 +2579,11 @@ Item {
                 humidityEnabled.checked = Number(tokens[85])
                 humiditySdaPin.value = Number(tokens[86])
                 humiditySlcPin.value = Number(tokens[87])
+                ledFrontTimingPreset.currentIndex = Number(tokens[88]) || 0
+                ledRearTimingPreset.currentIndex = Number(tokens[89]) || 0
+                ledStatusTimingPreset.currentIndex = Number(tokens[90]) || 0
+                ledButtonTimingPreset.currentIndex = Number(tokens[91]) || 0
+                ledFootpadTimingPreset.currentIndex = Number(tokens[92]) || 0
 
                 pubmoteMacAddress.text = "MAC: " + ((Number(tokens[46]) == -1) ? "Not Paired" : macAddress.toUpperCase());
                 readConfig = true;
