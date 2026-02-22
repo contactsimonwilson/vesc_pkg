@@ -93,6 +93,9 @@ Item {
             if (lastStatusTime > 2) { // 2 second timeout
                 statusTimeout = true
             }
+            if (lastStatusTime > 60) {
+                wasConnected = false
+            }
         }
     }
 
@@ -711,8 +714,8 @@ Item {
                             Text {
                                 id: lastStatusText
                                 Layout.fillWidth: true
-                                color: statusTimeout ? "red" : "green"
-                                text: statusTimeout ? "Status: Connecting (" + lastStatusTime + "s)" : "Status: Connected"
+                                color: !statusTimeout ? "green" : (lastStatusTime <= 60 ? "yellow" : "red")
+                                text: !statusTimeout ? "Status: Connected" : (lastStatusTime <= 60 ? "Status: Connecting (" + lastStatusTime + "s)" : "Status: Disconnected (" + lastStatusTime + "s)")
                             }
 
                             Text {
