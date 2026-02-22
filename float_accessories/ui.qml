@@ -71,6 +71,7 @@ Item {
     property int lastStatusTime: 0
     property bool statusTimeout: false
     property bool readConfig: false
+    property bool wasConnected: false
 
     Component.onCompleted: {
         if (VescIf.getLastFwRxParams().hwTypeStr() !== "Custom Module") {
@@ -1508,7 +1509,7 @@ Item {
 
                                 ColumnLayout {
                                     id: ledButtonCustomSettings
-                                    visible: ledRearStripType.currentValue === 1
+                                    visible: ledButtonStripType.currentValue === 1
                                     spacing: 10
                                 }
                             }
@@ -2096,7 +2097,7 @@ Item {
                             "<p>My Blog: <a href='https://sylerclayton.com'>https://sylerclayton.com</a></p>" +
 
                             "<p><b>BUILD INFO</b></p>" +
-                            "<p>Version 3.2.1</p>" +
+                            "<p>Version 3.2.2</p>" +
                             "<p>Source code can be found here: <a href='https://github.com/relys/vesc_pkg'>https://github.com/relys/vesc_pkg</a></p>"
                         Layout.fillWidth: true
                         wrapMode: Text.WordWrap
@@ -2422,6 +2423,14 @@ Item {
 
         function onCustomAppDataReceived(data) {
             var str = data.toString()
+
+            if (!wasConnected) {
+                // Read settings on initial message
+                wasConnected = true
+                if (!readConfig) {
+                    sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
+                }
+            }
 
             if (str.startsWith("settings")) {
                 var tokens = str.split(" ")
