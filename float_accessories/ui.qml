@@ -234,6 +234,7 @@ Item {
 
     // Main app
     id: container
+    property string tabTitle: "Float Accessories"  
     anchors.fill: parent
     property int pubmotePairCode: -1  // Initialize with a default invalid value
     property bool pairingTimeout: false
