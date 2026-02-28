@@ -52,6 +52,7 @@
 (def led-status-strip-type)
 ;runtime vars
 (def led-current-brightness 0.0)
+(def led-smoothed-brightness 0.0)
 (def led-status-color '())
 (def led-front-color '())
 (def led-rear-color '())
@@ -131,6 +132,7 @@
     (def blend-count led-max-blend-count)
     (setq combined-pins nil)
     (setq led-current-brightness 0.0)
+    (setq led-smoothed-brightness 0.0)
     (setq led-status-color (mklist led-status-num 0))
     (setq led-front-color (mklist led-front-num 0))
     (setq led-rear-color (mklist led-rear-num 0))
@@ -228,6 +230,22 @@
         (if (> anim-time 100.0) (setq anim-time 0.0)) ; prevent overflow
         (if led-exit-flag {
             (break)
+        })
+
+        ; Reinitialize in-place when settings change (avoids stop/respawn RMT issues)
+        (if led-reinit-flag {
+            ; Clear all LEDs with the old config before reinitializing
+            (clear-leds)
+            (set-led-strip-color led-button-color 0x00)
+            (set-led-strip-color led-status-color 0x00)
+            (led-flush-buffers t)
+            (rgbled-deinit)
+            (if (and (= led-front-strip-type 7) (>= led-front-highbeam-pin 0)) (pwm-stop 0))
+            (if (and (= led-rear-strip-type 7) (>= led-rear-highbeam-pin 0)) (pwm-stop 1))
+            (load-led-settings)
+            (init-led-vars)
+            (setq led-loop-delay-sec (/ 1.0 led-loop-delay))
+            (setq led-reinit-flag nil)
         })
 
         (var idle-rpm-darkride 100)
@@ -349,9 +367,9 @@
     (reverse-led-strips)
     ;Enable/disable high beams and lets dim the rest of the leds if the high beams are on to help temps if on seperate pins
 
-    (var led-current-brightness-rear led-current-brightness)
-    (var led-current-brightness-front led-current-brightness)
-    (var led-dim-on-highbeam-brightness (* led-current-brightness led-dim-on-highbeam-ratio))
+    (var led-current-brightness-rear led-smoothed-brightness)
+    (var led-current-brightness-front led-smoothed-brightness)
+    (var led-dim-on-highbeam-brightness (* led-smoothed-brightness led-dim-on-highbeam-ratio))
     (var front-color-highbeam 0x00)
     (var rear-color-highbeam 0x00)
     (var led-current-front-color '())
@@ -620,10 +638,20 @@
     (if (= led-mall-grab 1) {
         (setq led-current-brightness (min led-brightness-status led-max-brightness))
     })
-    (if (or (and (>= last-activity-sec idle-timeout) (<= can-last-activity-time-sec 1)) (= state 5)) {
+    (if (and (>= last-activity-sec idle-timeout) (<= can-last-activity-time-sec 1)) {
         (setq current-led-mode led-mode-idle)
         (setq led-current-brightness (min led-brightness-idle led-max-brightness))
     })
+    (if (= state 5) {
+        (setq led-current-brightness (min led-brightness-idle led-max-brightness))
+    })
+
+    ; Smoothly interpolate led-smoothed-brightness toward the target led-current-brightness
+    (var brightness-step (* 5.0 (/ 1.0 led-loop-delay)))
+    (if (> led-current-brightness led-smoothed-brightness)
+        (setq led-smoothed-brightness (min led-current-brightness (+ led-smoothed-brightness brightness-step)))
+        (setq led-smoothed-brightness (max led-current-brightness (- led-smoothed-brightness brightness-step)))
+    )
 
     (if (and (<= (secs-since 0) led-startup-timeout) (not (running-state) )) { (setq current-led-mode led-mode-startup)})
     (var blend-ratio (/ blend-count led-max-blend-count))

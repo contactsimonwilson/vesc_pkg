@@ -101,6 +101,7 @@
 (def read-cfg-len 0)
 (def bms-context-id -1)
 (def bms-exit-flag nil)
+(def humidity-exit-flag nil)
 (def bms-last-activity-time (systime))
 (def pubmote-context-id -1)
 (def pubmote-exit-flag nil)
@@ -108,6 +109,7 @@
 (def wifi-enabled-on-boot nil)
 (def led-context-id -1)
 (def led-exit-flag nil)
+(def led-reinit-flag nil)
 (def led-last-activity-time (systime))
 (def can-context-id -1)
 (def can-last-activity-time (systime))
@@ -192,16 +194,13 @@
     in-log-enabled in-log-rate in-log-append-gnss in-humidity-enabled in-humidity-sda-pin in-humidity-slc-pin
 ) {
 
-    (if (or (!= (to-i in-led-enabled) (to-i (get-config 'led-enabled)))  (!= (to-i in-pubmote-enabled) (to-i (get-config 'pubmote-enabled))) (!= (to-i in-bms-enabled) (to-i (get-config 'bms-enabled)))){
-        (set-config 'led-enabled (to-i in-led-enabled))
-        (set-config 'bms-enabled (to-i in-bms-enabled))
-        (set-config 'pubmote-enabled (to-i in-pubmote-enabled))
-        (save-config)
-        (send-msg "Rebooting")
-        (reboot)
-    })
-    (var reboot-now nil)
-    (if (>= led-context-id 0) {
+    (var prev-led-enabled (get-config 'led-enabled))
+    (set-config 'led-enabled (to-i in-led-enabled))
+    (set-config 'bms-enabled (to-i in-bms-enabled))
+    (set-config 'pubmote-enabled (to-i in-pubmote-enabled))
+
+    ; Only stop LED loop if LEDs are being disabled
+    (if (and (>= led-context-id 0) (!= (to-i in-led-enabled) 1)) {
         (let ((start-time (systime)) (timeout-val 2000000)) ; 2 sec timeout
 
         (setq led-exit-flag t)
@@ -211,10 +210,10 @@
 
             ; Check if exited due to timeout
             (if led-exit-flag {
-                (send-msg "ERROR: LED loop did not exit in time. Rebooting...")
-                (setq reboot-now t)
+                (send-msg "WARNING: LED loop did not exit in time.")
             })
         )
+        (setq led-context-id -1)
     })
 
     (if (>= bms-context-id 0) {
@@ -227,8 +226,7 @@
 
             ; Check if exited due to timeout
             (if bms-exit-flag {
-                (send-msg "ERROR: BMS loop did not exit in time. Rebooting...")
-                (setq reboot-now t)
+                (send-msg "WARNING: BMS loop did not exit in time.")
             })
         )
     })
@@ -311,77 +309,57 @@
     (set-config 'log-rate (to-i in-log-rate))
     (set-config 'log-append-gnss (to-i in-log-append-gnss))
     (set-config 'humidity-enabled (to-i in-humidity-enabled))
-    (if (or (!= (to-i (get-config 'humidity-sda-pin)) (to-i in-humidity-sda-pin)) (!= (to-i (get-config 'humidity-slc-pin)) (to-i in-humidity-slc-pin))) (setq reboot-now t) )
+    ; Stop humidity loop if pins changed so it can be restarted with new config
+    (if (and (>= humidity-context-id 0) (or (!= (to-i (get-config 'humidity-sda-pin)) (to-i in-humidity-sda-pin)) (!= (to-i (get-config 'humidity-slc-pin)) (to-i in-humidity-slc-pin)))) {
+        (let ((start-time (systime)) (timeout-val 2000000))
+            (setq humidity-exit-flag t)
+            (loopwhile (and humidity-exit-flag (< (- (systime) start-time) timeout-val))
+                (yield 10000))
+            (if humidity-exit-flag {
+                (send-msg "WARNING: Humidity loop did not exit in time.")
+            })
+        )
+        (setq humidity-context-id -1)
+    })
     (set-config 'humidity-sda-pin (to-i in-humidity-sda-pin))
     (set-config 'humidity-slc-pin (to-i in-humidity-slc-pin))
 
 
-    (if (= in-led-enabled 1) {
-        (if (and (> in-led-front-strip-type 0) (>= in-led-front-pin 0)) {
-            (if (not-eq (first (trap (rgbled-init in-led-front-pin))) 'exit-ok) {
-                (send-msg "Invalid Pin: led-front-pin")
-            }{
-                (set-config 'led-front-pin (to-i in-led-front-pin))
-            })
-        })
+    (set-config 'led-status-pin (to-i in-led-status-pin))
+    (set-config 'led-front-pin (to-i in-led-front-pin))
+    (set-config 'led-rear-pin (to-i in-led-rear-pin))
+    (set-config 'led-button-pin (to-i in-led-button-pin))
+    (set-config 'led-footpad-pin (to-i in-led-footpad-pin))
+    (set-config 'led-front-highbeam-pin (to-i in-led-front-highbeam-pin))
+    (set-config 'led-rear-highbeam-pin (to-i in-led-rear-highbeam-pin))
 
-        (if (and (> in-led-rear-strip-type 0) (>= in-led-rear-pin 0)) {
-            (if (not-eq (first (trap (rgbled-init in-led-rear-pin))) 'exit-ok) {
-                (send-msg "Invalid Pin: led-rear-pin")
-            }{
-                (set-config 'led-rear-pin (to-i in-led-rear-pin))
-            })
-        })
-
-        (if (and (> in-led-status-strip-type 0) (>= in-led-status-pin 0)) {
-            (if (not-eq (first (trap (rgbled-init in-led-status-pin))) 'exit-ok) {
-                (send-msg "Invalid Pin: led-status-pin")
-            }{
-                (set-config 'led-status-pin (to-i in-led-status-pin))
-            })
-        })
-
-        (if (and (> in-led-button-strip-type 0) (>= in-led-button-pin 0)) {
-            (if (not-eq (first (trap (rgbled-init in-led-button-pin))) 'exit-ok) {
-                (send-msg "Invalid Pin: led-button-pin")
-            }{
-                (set-config 'led-button-pin (to-i in-led-button-pin))
-            })
-        })
-
-        (if (and (> in-led-footpad-strip-type 0) (>= in-led-footpad-pin 0)) {
-            (if (not-eq (first (trap (rgbled-init in-led-footpad-pin))) 'exit-ok) {
-                (send-msg "Invalid Pin: led-footpad-pin")
-            }{
-                (set-config 'led-footpad-pin (to-i in-led-footpad-pin))
-            })
-        })
-
-        (if (and (= in-led-front-strip-type 7) (>= in-led-front-highbeam-pin 0)) {
-            (if (not-eq (first (trap (pwm-start 2000 0.0 0 in-led-front-highbeam-pin 12))) 'exit-ok) {
-                (send-msg "Invalid Pin: led-front-highbeam-pin")
-            }{
-                (set-config 'led-front-highbeam-pin (to-i in-led-front-highbeam-pin))
-            })
-        })
-
-        (if (and (= in-led-rear-strip-type 7) (>= in-led-rear-highbeam-pin 0)) {
-            (if (not-eq (first (trap (pwm-start 2000 0.0 1 in-led-rear-highbeam-pin 12))) 'exit-ok) {
-                (send-msg "Invalid Pin: led-rear-highbeam-pin")
-            }{
-                (set-config 'led-rear-highbeam-pin (to-i in-led-rear-highbeam-pin))
-            })
-        })
+    ; If LED loop is running and LEDs remain enabled, reinit in-place
+    (if (and (>= led-context-id 0) (= (get-config 'led-enabled) 1)) {
+        (setq led-reinit-flag t)
     })
+    ; If LEDs are newly enabled, spawn the loop
+    (if (and (= led-context-id -1) (= (get-config 'led-enabled) 1)) {
+        (setq led-context-id (spawn led-loop))
+    })
+    (setq bms-context-id (if (= (get-config 'bms-enabled) 1) (spawn bms-loop) -1))
 
-    (if (not reboot-now) (setq led-context-id (if (= (get-config 'led-enabled) 1) (spawn led-loop) -1)))
-    (if (not reboot-now) (setq bms-context-id (if (= (get-config 'bms-enabled) 1) (spawn bms-loop) -1)))
-
-    (if (= in-humidity-enabled 1) {
+    (if (= (to-i in-humidity-enabled) 1) {
         (if (= humidity-context-id -1) (setq humidity-context-id (spawn humidity-loop)))
     })
 
-    (if (= in-pubmote-enabled 1) {
+    ; Stop pubmote if it was running and is now disabled
+    (if (and (>= pubmote-context-id 0) (!= (to-i in-pubmote-enabled) 1)) {
+        (let ((start-time (systime)) (timeout-val 2000000))
+            (setq pubmote-exit-flag t)
+            (loopwhile (and pubmote-exit-flag (< (- (systime) start-time) timeout-val))
+                (yield 10000))
+            (if pubmote-exit-flag {
+                (send-msg "WARNING: Pubmote loop did not exit in time.")
+            })
+        )
+        (setq pubmote-context-id -1)
+    })
+    (if (= (to-i in-pubmote-enabled) 1) {
         (if (= pubmote-context-id -1) (setq pubmote-context-id (spawn pubmote-loop)))
     })
 
@@ -397,7 +375,7 @@
 
     (save-config)
     (send-config)
-    (if reboot-now {(send-msg "Rebooting") (reboot)})
+
 })
 
 (defun send-keys (key-list counter-list) {

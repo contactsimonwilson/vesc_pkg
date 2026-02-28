@@ -32,6 +32,8 @@
 (def soc-type 0)
 (def cell-type)
 (def voltage-curve)
+(def need-fetch-cells nil)
+(def last-fetch-cells-time 0)
 
 (def FLOAT_MAGIC 101)
 (def FLOAT_ACCESSORIES_MAGIC 102)
@@ -83,6 +85,14 @@
 
         (setq loop-end-time (secs-since 0))
         (var actual-loop-time (- loop-end-time loop-start-time))
+
+        (if need-fetch-cells {
+            (setq need-fetch-cells nil)
+            (setq last-fetch-cells-time (secs-since 0))
+            (fetch-series-cells)
+            (apply-battery-config (get-config 'soc-type) (get-config 'cell-type))
+        })
+
         (var time-to-wait (- next-run-time (secs-since 0)))
         (if (> time-to-wait 0) {
             (yield (* time-to-wait 1000000))
@@ -246,13 +256,18 @@
 
     ; Only process data if data is long enough and magic number is correct
     (if (and (> (buflen data) 1) (= (bufget-u8 data 0) FLOAT_MAGIC)) {
+        (var time-since-last-can (- (systime) can-last-activity-time))
         (setq can-last-activity-time (systime))
         (match (cossa float-cmds (bufget-u8 data 1))
                 (COMMAND_GET_ALLDATA {
-                (if (< can-id 0){
+                (if (or (< can-id 0) (> time-since-last-can 5000000)) {
                     (set-config 'can-id discover-can-id)
                     (setq can-id discover-can-id)
                     (setq bms-can-id (get-bms-val 'bms-can-id))
+                    ; Only re-fetch if cells aren't already known and we haven't tried recently
+                    (if (and (< series-cells 1) (> (secs-since last-fetch-cells-time) 10)) {
+                        (setq need-fetch-cells t)
+                    })
                 })
                     (if  (> (buflen data) 3){
                         (var mode (bufget-u8 data 2))

@@ -109,6 +109,10 @@
         (var rx-si7021 (bufcreate 4))
         (var rx-aht20 (bufcreate 6))
         (loopwhile t {
+            (if humidity-exit-flag {
+                (break)
+            })
+
             (if has-si7021 {
                 (i2c-tx-rx 0x40 '() rx-si7021)
                 (i2c-tx-rx 0x40 (list 0x0F 0x01))
@@ -144,6 +148,7 @@
         })
         (free rx-si7021)
         (free rx-aht20)
+        (setq humidity-exit-flag nil)
     })
 })
 
