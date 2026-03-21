@@ -75,6 +75,10 @@
 (def led-front-highbeam-pin)
 (def led-rear-highbeam-pin)
 
+(defun yield-led-fix () {
+    (yield led-fix)
+})
+
 (defun load-led-settings () {
     (setq led-enabled (get-config 'led-enabled))
     (setq led-on (get-config 'led-on))
@@ -511,14 +515,14 @@
     (if (and (> led-button-strip-type 0) (>= led-button-pin 0)) {
         (rgbled-color led-button-buffer 0 led-button-color led-current-brightness)
         (rgbled-init led-button-pin)
-        (yield led-fix)
+        (yield-led-fix)
         (rgbled-update led-button-buffer)
     })
 
     (if (and (> led-footpad-strip-type 0) (>= led-footpad-pin 0)) {
         (rgbled-color led-footpad-buffer 0 led-footpad-color led-current-brightness)
         (rgbled-init led-footpad-pin)
-        (yield led-fix)
+        (yield-led-fix)
         (rgbled-update led-footpad-buffer)
     })
 
@@ -528,7 +532,7 @@
         (var total-leds (length led-combined-color))
         (rgbled-color led-combined-buffer 0 led-combined-color led-current-brightness)
         (rgbled-init led-front-pin)
-        (yield led-fix)
+        (yield-led-fix)
         (rgbled-update led-combined-buffer)
     }{
         ;LED front/back are on same pin
@@ -537,7 +541,7 @@
             (var total-leds (length led-combined-color))
             (rgbled-color led-combined-buffer 0 led-combined-color led-current-brightness)
             (rgbled-init led-front-pin)
-            (yield led-fix)
+            (yield-led-fix)
             (rgbled-update led-combined-buffer)
         }{
             (if (and (> led-status-strip-type 0) (> led-rear-strip-type 0) (>= led-status-pin 0) (= led-status-pin led-rear-pin)) {
@@ -548,14 +552,14 @@
                 (var total-leds (length led-combined-color))
                 (rgbled-color led-combined-buffer 0 led-combined-color led-current-brightness)
                 (rgbled-init led-status-pin)
-                (yield led-fix)
+                (yield-led-fix)
                 (rgbled-update led-combined-buffer)
             }{
                 ; LED strips are on separate pins
                 (if (and (> led-status-strip-type 0) (>= led-status-pin 0)) {
                     (rgbled-color led-status-buffer 0 led-status-color (min led-brightness-status led-max-brightness))
                     (rgbled-init led-status-pin)
-                    (yield led-fix)
+                    (yield-led-fix)
                     (rgbled-update led-status-buffer)
                 })
                 (if (and (> led-rear-strip-type 0) (>= led-rear-pin 0) dont-freeze-update) {
@@ -565,7 +569,7 @@
                         (rgbled-color led-rear-buffer 0 led-current-rear-color led-current-brightness-rear)
                     )
                     (rgbled-init led-rear-pin)
-                    (yield led-fix)
+                    (yield-led-fix)
                     (rgbled-update led-rear-buffer)
                 })
             })
@@ -576,7 +580,7 @@
                     (rgbled-color led-front-buffer 0 led-current-front-color led-current-brightness-front)
                 )
                 (rgbled-init led-front-pin)
-                (yield led-fix)
+                (yield-led-fix)
                 (rgbled-update led-front-buffer)
             })
         })
