@@ -304,6 +304,7 @@ Item {
             if (remainingTime <= 0) {
                 pairingTimeout = true;
                 sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pair-pubmote -2)");  // Automatically reject if time runs out
+                sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)");
                 pubmotePairPopup.close();
             }
         }
@@ -389,6 +390,7 @@ Item {
                     onClicked: {
                         if (!pairingTimeout) {
                             sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pair-pubmote -1)");  // Accept pairing
+                            sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)");
                             pubmotePairPopup.close();
                         }
                     }
@@ -398,6 +400,7 @@ Item {
                     text: "Reject"
                     onClicked: {
                         sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pair-pubmote -2)");  // Reject pairing manually
+                        sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)");
                         pubmotePairPopup.close();
                     }
                 }
@@ -1147,8 +1150,8 @@ Item {
                                 Layout.fillWidth: true
                                 visible: pubmoteEnabled.checked
                                 property int effectiveTime: Math.max(pubmoteLastStatusTime, lastStatusTime)
-                                color: !isPubmotePaired ? Utility.getAppHexColor("lightText") : ((pubmoteConnected === 1 && !statusTimeout) ? "green" : (effectiveTime <= 60 ? "yellow" : "red"))
-                                text: !isPubmotePaired ? "Pubmote: Not Paired" : ("Pubmote : " + ((pubmoteConnected === 1 && !statusTimeout) ? "Connected (WiFi Channel " + (pubmoteWifiChannel ? pubmoteWifiChannel : "?") + ")" : (effectiveTime <= 60 ? "Connecting (" + effectiveTime + "s)" : "Disconnected (" + effectiveTime + "s)")))
+                                color: !isPubmotePaired ? Utility.getAppHexColor("lightText") : ((pubmoteConnected && !statusTimeout) ? "green" : (effectiveTime <= 60 ? "yellow" : "red"))
+                                text: !isPubmotePaired ? "Pubmote: Not Paired" : ("Pubmote : " + ((pubmoteConnected && !statusTimeout) ? "Connected (WiFi Channel " + (pubmoteWifiChannel ? pubmoteWifiChannel : "?") + ")" : (effectiveTime <= 60 ? "Connecting (" + effectiveTime + "s)" : "Disconnected (" + effectiveTime + "s)")))
                             }
 
                             Text {
@@ -2265,11 +2268,16 @@ Item {
                                 }
 
                                 Button {
-                                    text: "Pair Pubmote"
+                                    text: isPubmotePaired ? "Unpair Pubmote" : "Pair Pubmote"
                                     Layout.fillWidth: true
                                     Layout.preferredWidth: 500
                                     onClicked: {
-                                        pubmotePairPopup.open();  // Open the confirmation popup with the random code
+                                        if (isPubmotePaired) {
+                                            sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pair-pubmote -2)");
+                                            sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)");
+                                        } else {
+                                            pubmotePairPopup.open();  // Open the confirmation popup with the random code
+                                        }
                                     }
                                 }
                             }
@@ -3197,7 +3205,7 @@ Item {
                 var macAddress = unpack.map(function(token) {
                     return ("0" + Number(token).toString(16)).slice(-2);
                 }).join(":");
-                // esp-now-secret-code 48
+                // pubmote-secret-code 48
                 bmsRs485DIPin.value = Number(tokens[49])
                 bmsRs485ROPin.value = Number(tokens[50])
                 bmsRs485DEREPin.value = Number(tokens[51])
@@ -3241,7 +3249,7 @@ Item {
                 humiditySlcPin.value = Number(tokens[87])
 
                 isPubmotePaired = (Number(tokens[46]) != -1);
-                pubmoteMacAddress.text = "MAC: " + (!isPubmotePaired ? "Not Paired" : macAddress.toUpperCase());
+                pubmoteMacAddress.text = !isPubmotePaired ? "MAC: Not Paired" : (macAddress === "00:00:00:00:00:00" ? "Connection: BLE" : "MAC: " + macAddress.toUpperCase());
                 readConfig = true;
             } else if (str.startsWith("msg")) {
                 var msg = str.substring(4)

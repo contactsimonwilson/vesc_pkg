@@ -63,7 +63,7 @@
                      (to-u32 (ix byte-list 3)))))
 })
 (defunret unpack-uint32-to-bytes (packed-value) {
-  (return (list (to-byte (shr packed-value 24))
+  (return (list (to-byte (bitwise-and (shr packed-value 24) 0xFF))
                 (to-byte (shr (bitwise-and packed-value 0xFF0000) 16))
                 (to-byte (shr (bitwise-and packed-value 0xFF00) 8))
                 (to-byte (bitwise-and packed-value 0xFF))))

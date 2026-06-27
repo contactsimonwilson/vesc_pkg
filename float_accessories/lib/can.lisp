@@ -232,15 +232,23 @@
 
 (defun float-command-rx (data) {
     ;(print-hex data)
+
+    ; Support for remote command packets starting with PUBMOTE_MAGIC (169)
+    (if (and (> (buflen data) 1) (= (bufget-u8 data 0) 169)) {
+        (pubmote-ble-rx data)
+    })
+
     ;Support for saving config/code exec from qml
     (if (and (> (buflen data) 1) (= (bufget-u8 data 0) FLOAT_ACCESSORIES_MAGIC)) {
         (match (cossa float-accessories-cmds (bufget-u8 data 1))
             ;(COMMAND_GET_INFO {
             ;})
             (COMMAND_RUN_LISP {
-                (bufcpy data 0 data 2 (-(buflen data) 2))
-                (buf-resize data -2)
-                (eval (read data))
+                (var payload-len (- (buflen data) 2))
+                (var payload (bufcreate payload-len))
+                (bufcpy payload 0 data 2 payload-len)
+                (eval (read payload))
+                (free payload)
             })
             (COMMAND_BMS_STATUS {
                 (var send-buffer (bufcreate 3))
