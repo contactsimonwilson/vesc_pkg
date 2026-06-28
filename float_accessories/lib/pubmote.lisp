@@ -13,6 +13,7 @@
 (def pubmote-version-major 0)
 (def pubmote-version-minor 0)
 (def pubmote-version-patch 0)
+(def pubmote-api-version 1)
 
 (def last-log-time-telemetry-tx 0)
 (def last-log-time-telemetry-rx 0)
@@ -318,14 +319,10 @@
 
         (REM_VERSION_REC {
             (reset-last-activity-time)
-            (var tmpbuf (bufcreate 8))
+            (var tmpbuf (bufcreate 6))
             (bufset-u8 tmpbuf 0 (to-byte (assoc rem-cmds 'REM_VERSION_REC)))
             (bufset-i32 tmpbuf 1 (get-config 'pubmote-secret-code))
-
-            (var version (get-version))
-            (bufset-u8 tmpbuf 5 (first version))
-            (bufset-u8 tmpbuf 6 (second version))
-            (bufset-u8 tmpbuf 7 (third version))
+            (bufset-u8 tmpbuf 5 pubmote-api-version)
 
             (pubmote-send-packet (if is-ble '() pubmote-remote-mac) tmpbuf is-ble)
             (free tmpbuf)
