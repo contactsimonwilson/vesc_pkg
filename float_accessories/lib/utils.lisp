@@ -31,7 +31,7 @@
     (loopwhile t
         (recv
             ((event-esp-now-rx (? src) (? des) (? data) (? rssi)) (pubmote-rx src des data rssi))
-            ((event-data-rx . (? data)) (float-command-rx data))
+            ((event-data-rx . (? data)) (command-rx data))
             (_ nil)
         )
     )

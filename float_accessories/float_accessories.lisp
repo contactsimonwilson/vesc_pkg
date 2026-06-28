@@ -23,6 +23,8 @@
 (read-eval-program bms)
 (import "lib/pubmote.lisp" 'pubmote)
 (read-eval-program pubmote)
+(import "lib/commands.lisp" 'commands)
+(read-eval-program commands)
 
 (defun main () {
     (setup)
@@ -75,6 +77,31 @@
     (if (> (conf-get 'wifi-mode) 0) {
         (setq wifi-enabled-on-boot t)
         (if (= (get-config 'pubmote-enabled) 1){
+            (setq pubmote-on-control (fn (jsy jsx bt-c bt-z is-rev) {
+                (if (>= (get-config 'can-id) 0) {
+                    (can-cmd (get-config 'can-id) (str-replace (to-str (list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
+                })
+            }))
+            (setq pubmote-get-telemetry (fn () {
+                (list fault-code pitch-angle roll-angle state switch-state vin rpm speed tot-current duty-cycle-now distance-abs fet-temp-filtered motor-temp-filtered odometer battery-percent-remaining)
+            }))
+            (setq pubmote-send-msg-cb (fn (text) {
+                (send-msg text)
+            }))
+            (setq pubmote-get-config (fn (name) {
+                (get-config name)
+            }))
+            (setq pubmote-set-config (fn (name val) {
+                (set-config name val)
+            }))
+            (setq pubmote-save-config (fn () {
+                (atomic {
+                    (write-val-eeprom 'pubmote-remote-mac-a (get-config 'pubmote-remote-mac-a))
+                    (write-val-eeprom 'pubmote-remote-mac-b (get-config 'pubmote-remote-mac-b))
+                    (write-val-eeprom 'pubmote-secret-code (get-config 'pubmote-secret-code))
+                    (write-val-eeprom 'crc (config-crc cfg-len))
+                })
+            }))
             (setq pubmote-context-id (spawn pubmote-loop))
         })
     })
