@@ -237,8 +237,9 @@ Item {
     property string tabTitle: "Float Accessories"  
     anchors.fill: parent
     property int pubmotePairCode: -1  // Initialize with a default invalid value
+    property int pubmotePairingState: 0
     property bool pairingTimeout: false
-    property int remainingTime: 30  // Initialize with the full 30 seconds
+    property int remainingTime: 60  // Initialize with the full 60 seconds
     property int bmsConnected: 0
     property Commands mCommands: VescIf.commands()
     property int floatAccessoriesMagic: 102
@@ -252,6 +253,7 @@ Item {
     property bool floatPackageConnected: false
     property bool pubmoteConnected: false
     property int pubmoteWifiChannel: 0
+    property bool isPubmoteBle: false
     property bool isPubmotePaired: false
     property int bmsStatusTemp: 0
     property int bmsBatteryTypeVal: 0
@@ -291,7 +293,7 @@ Item {
         }
     }
 
-    // Timer for 30-second timeout
+    // Timer for 60-second timeout
     Timer {
         id: pairingTimeoutTimer
         interval: 1000  // 1 second
@@ -344,10 +346,11 @@ Item {
 
         onVisibleChanged: {
             if (visible) {
+                pubmotePairingState = 1;
                 // Generate code only when the popup is shown
                 pubmotePairCode = Math.floor(1000 + Math.random() * 9000);  // Generates a number between 1000 and 9999
                 pairingTimeout = false;  // Reset timeout flag
-                remainingTime = 30;  // Reset the timer to 30 seconds
+                remainingTime = 60;  // Reset the timer to 60 seconds
                 pairingTimeoutTimer.start();  // Start the 1-second timer to count down
 
                 // Send the pairing request with the generated code
@@ -378,6 +381,14 @@ Item {
             Text {
                 text: "Time remaining: " + remainingTime + " seconds"
                 color: "white"
+                Layout.alignment: Qt.AlignHCenter
+            }
+
+            Text {
+                text: pubmotePairingState === 1 ? "Searching for remote..." :
+                      pubmotePairingState === 2 ? "Remote found! Confirm code and Accept." :
+                      "Pairing..."
+                color: "cyan"
                 Layout.alignment: Qt.AlignHCenter
             }
 
@@ -1151,7 +1162,7 @@ Item {
                                 visible: pubmoteEnabled.checked
                                 property int effectiveTime: Math.max(pubmoteLastStatusTime, lastStatusTime)
                                 color: !isPubmotePaired ? Utility.getAppHexColor("lightText") : ((pubmoteConnected && !statusTimeout) ? "green" : (effectiveTime <= 60 ? "yellow" : "red"))
-                                text: !isPubmotePaired ? "Pubmote: Not Paired" : ("Pubmote : " + ((pubmoteConnected && !statusTimeout) ? "Connected (WiFi Channel " + (pubmoteWifiChannel ? pubmoteWifiChannel : "?") + ")" : (effectiveTime <= 60 ? "Connecting (" + effectiveTime + "s)" : "Disconnected (" + effectiveTime + "s)")))
+                                text: !isPubmotePaired ? "Pubmote: Not Paired" : ("Pubmote : " + ((pubmoteConnected && !statusTimeout) ? (isPubmoteBle ? "Connected (BLE)" : "Connected (WiFi Channel " + (pubmoteWifiChannel ? pubmoteWifiChannel : "?") + ")") : (effectiveTime <= 60 ? "Connecting (" + effectiveTime + "s)" : "Disconnected (" + effectiveTime + "s)")))
                             }
 
                             Text {
@@ -3248,8 +3259,9 @@ Item {
                 humiditySdaPin.value = Number(tokens[86])
                 humiditySlcPin.value = Number(tokens[87])
 
+                isPubmoteBle = (macAddress === "00:00:00:00:00:00");
                 isPubmotePaired = (Number(tokens[46]) != -1);
-                pubmoteMacAddress.text = !isPubmotePaired ? "MAC: Not Paired" : (macAddress === "00:00:00:00:00:00" ? "Connection: BLE" : "MAC: " + macAddress.toUpperCase());
+                pubmoteMacAddress.text = !isPubmotePaired ? "MAC: Not Paired" : (isPubmoteBle ? "Connection: BLE" : "MAC: " + macAddress.toUpperCase());
                 readConfig = true;
             } else if (str.startsWith("msg")) {
                 var msg = str.substring(4)
@@ -3330,6 +3342,9 @@ Item {
                     }
                 }
                 pubmoteVersionStr = newVersion;
+            } else if (str.startsWith("pairing-status")) {
+                var tokens = str.split(" ");
+                pubmotePairingState = Number(tokens[1]);
             }
         }
     }

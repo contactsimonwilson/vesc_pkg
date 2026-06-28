@@ -6,7 +6,7 @@
 (def pairing-state 0)
 (def pubmote-remote-mac '())
 (def pubmote-pairing-timer 31)
-(def pubmote-pairing-timer-timeout 30) ; How many seconds to wait before aborting pairing
+(def pubmote-pairing-timer-timeout 60) ; How many seconds to wait before aborting pairing (increased to 60s)
 (def uni-mac '(255 255 255 255 255 255)) ; Universal mac (all devices)
 (def channel-locked 0)
 (def channel-locked-timeout 10) ; How many seconds of no activity to wait before unlocking locked wifi channel
@@ -31,6 +31,11 @@
     ; Receiver specific commands
     (REM_SET_INPUT_STATE . 150)
 ))
+
+(defun set-pairing-state (new-state) {
+    (setq pairing-state new-state)
+    (send-data (str-merge "pairing-status " (to-str new-state)))
+})
 
 (defunret init-pubmote () {
     ; Escape without wifi
@@ -68,7 +73,7 @@
         ((>= pairing 0) {
             (set-config 'pubmote-secret-code (to-i32 pairing))
             (setq pubmote-pairing-timer (systime))
-            (setq pairing-state 1)
+            (set-pairing-state 1)
         })
 
         ; Pairing accepted
@@ -95,7 +100,7 @@
                 (pubmote-send-packet '() tmpbuf t)
             })
             (free tmpbuf)
-            (setq pairing-state 0)
+            (set-pairing-state 0)
         })
 
         ; Pairing rejected
@@ -115,7 +120,7 @@
             })
             (free tmpbuf)
             (setq pubmote-remote-mac '())
-            (setq pairing-state 0)
+            (set-pairing-state 0)
 
             ; Unlock wifi channel hopping
             (should-unlock-channel pubmote-last-activity-time)
@@ -290,7 +295,7 @@
     (bufcpy send-buf 1 packet-buf 0 (buflen packet-buf))
 
     (if is-ble {
-        (send-data send-buf)
+        (send-data send-buf 8)
     } {
         (esp-now-send dest-mac send-buf)
     })
@@ -411,7 +416,7 @@
                         (free tmpbuf)
                         (esp-now-del-peer pubmote-remote-mac)
 
-                        (setq pairing-state 2)
+                        (set-pairing-state 2)
                     })
                 })
             })
@@ -420,9 +425,12 @@
 })
 
 (defun pubmote-ble-rx (data) {
+    ; (print "pubmote-ble-rx: entered!")
     (if (get-config 'pubmote-enabled) {
+        ; (print "pubmote-ble-rx: pubmote-enabled is true")
         ; Verify and strip PUBMOTE_MAGIC (169)
         (if (and (> (buflen data) 1) (= (bufget-u8 data 0) 169)) {
+            ; (print "pubmote-ble-rx: Magic byte found, preparing payload")
             (var payload-len (- (buflen data) 1))
             (var payload (bufcreate payload-len))
             (bufcpy payload 0 data 1 payload-len)
@@ -430,29 +438,37 @@
             (var cmd (bufget-u8 payload 0))
             (print (str-join (list "pubmote-ble-rx: cmd=" (to-str cmd) " len=" (to-str payload-len) " pairing-state=" (to-str pairing-state))))
             ; BLE doesn't check src/mac, but we verify pairing-state and secret code
-            (if (and (= pairing-state 0) (= payload-len 5) (= (bufget-i32 payload 1 'little-endian) (get-config 'pubmote-secret-code))) {
+            (if (and (= pairing-state 0) (>= payload-len 5) (= (bufget-i32 payload 1 'little-endian) (get-config 'pubmote-secret-code))) {
+                ; (print "pubmote-ble-rx: calling process-pubmote-packet")
                 (process-pubmote-packet payload t)
             } {
                 ; BLE pairing request
                 (if (= cmd (to-byte (assoc rem-cmds 'REM_PAIR_BOND))) {
                     (print "pubmote-ble-rx: Received REM_PAIR_BOND")
                     (if (= pairing-state 1) {
+                        (setq pubmote-remote-mac '(0 0 0 0 0 0)) ; Initialize with dummy all-zeros MAC for BLE
                         (var tmpbuf (bufcreate 5))
                         (bufset-u8 tmpbuf 0 (to-byte (assoc rem-cmds 'REM_PAIR_BOND)))
                         (bufset-i32 tmpbuf 1 (get-config 'pubmote-secret-code))
 
-                        (print "Responding with pairing code over BLE")
+                        (print "pubmote-ble-rx: Responding with pairing code over BLE")
                         (pubmote-send-packet '() tmpbuf t)
                         (free tmpbuf)
 
-                        (setq pairing-state 2)
+                        (set-pairing-state 2)
+                    } {
+                        (print "pubmote-ble-rx: Ignored REM_PAIR_BOND because pairing-state != 1")
                     })
+                } {
+                    (print "pubmote-ble-rx: Unhandled command")
                 })
             })
             (free payload)
         } {
             (print (str-join (list "pubmote-ble-rx invalid magic: " (to-str (bufget-u8 data 0)))))
         })
+    } {
+        (print "pubmote-ble-rx: pubmote-enabled is false!")
     })
 })
 @const-end

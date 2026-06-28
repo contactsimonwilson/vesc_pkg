@@ -231,10 +231,14 @@
 })
 
 (defun float-command-rx (data) {
-    ;(print-hex data)
+    ; (print (str-join (list "float-command-rx: buflen=" (to-str (buflen data)))))
+    ; (if (> (buflen data) 0) {
+    ;     (print (str-join (list "float-command-rx: magic=" (to-str (bufget-u8 data 0)))))
+    ; })
 
     ; Support for remote command packets starting with PUBMOTE_MAGIC (169)
     (if (and (> (buflen data) 1) (= (bufget-u8 data 0) 169)) {
+        ; (print "float-command-rx: Found PUBMOTE_MAGIC, calling pubmote-ble-rx")
         (pubmote-ble-rx data)
     })
 
