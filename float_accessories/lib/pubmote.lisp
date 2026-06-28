@@ -9,6 +9,9 @@
     (PAIR_STATE_BONDING . 2)
 ))
 (def pairing-state (assoc pairing-states 'PAIR_STATE_IDLE))
+(def pubmote-exit-flag nil)
+(def pubmote-last-activity-time (systime))
+(def wifi-enabled-on-boot nil)
 (def pubmote-remote-mac '())
 (def pubmote-pairing-timer 31)
 (def pubmote-pairing-timer-timeout 60) ; How many seconds to wait before aborting pairing (increased to 60s)
@@ -78,16 +81,10 @@
 })
 
 (defunret init-pubmote () {
-    ; Escape without wifi
-    (if (not wifi-enabled-on-boot) {
-        (pubmote-send-msg "WiFi was disabled on boot. Please enable and reboot to use Pubmote.")
-        (return false)
-    })
-
     ;(if (is-606-or-newer) {
     ;    (eval '(ble-set-max-clients 2))
     ;})
-
+    (setq wifi-enabled-on-boot (> (conf-get 'wifi-mode) 0))
     (setq pubmote-remote-mac (append (unpack-uint32-to-bytes (pubmote-get-cfg 'pubmote-remote-mac-a)) (take (unpack-uint32-to-bytes (pubmote-get-cfg 'pubmote-remote-mac-b)) 2)))
 
     ; Read as bytes, convert to i so we can compare lists
@@ -95,20 +92,19 @@
         (setix pubmote-remote-mac i (to-i (ix pubmote-remote-mac i)))
     })
 
-    (esp-now-start)
-    (esp-now-del-peer pubmote-remote-mac)
-    (esp-now-add-peer pubmote-remote-mac)
-    (esp-now-del-peer uni-mac)
-    (esp-now-add-peer uni-mac)
+    (if (not wifi-enabled-on-boot) {
+        (pubmote-send-msg "WiFi disabled. Pubmote running in BLE-only mode.")
+    } {
+        (esp-now-start)
+        (esp-now-del-peer pubmote-remote-mac)
+        (esp-now-add-peer pubmote-remote-mac)
+        (esp-now-del-peer uni-mac)
+        (esp-now-add-peer uni-mac)
+    })
     (return true)
 })
 
 (defunret pair-pubmote (pairing) {
-    (if (= (conf-get 'wifi-mode) 0) {
-        (pubmote-send-msg "WiFi is disabled. Please enable and reboot.")
-        (return false)
-    })
-
     (cond
         ((>= pairing 0) {
             (pubmote-set-cfg 'pubmote-secret-code (to-i32 pairing))
@@ -331,7 +327,9 @@
     (if is-ble {
         (send-data send-buf 8)
     } {
-        (esp-now-send dest-mac send-buf)
+        (if wifi-enabled-on-boot {
+            (esp-now-send dest-mac send-buf)
+        })
     })
     (free send-buf)
 })
