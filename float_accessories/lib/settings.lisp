@@ -427,7 +427,7 @@
     (send-data status-string)
 
     (if (= (is-pubmote-connected) 1) {
-        (send-data (str-merge "pubmote-info " (to-str pubmote-version-major) "." (to-str pubmote-version-minor) "." (to-str pubmote-version-patch)))
+        (send-data (str-merge "pubmote-info " (to-str (ix pubmote-version 0)) "." (to-str (ix pubmote-version 1)) "." (to-str (ix pubmote-version 2))))
     })
 })
 
