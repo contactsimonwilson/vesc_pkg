@@ -43,9 +43,27 @@
     (init)
     (print (str-merge "Boot complete in " (str-from-n (/ (systime) 1000000.0) "%.3f") "s since power-on"))
 })
+(defun spawn-with-restart (name stack-size func) {
+    (var monitor-fn (fn () 
+        (loopwhile t {
+            (if stack-size
+                (spawn-trap stack-size func)
+                (spawn-trap func))
+            (recv   ((exit-error (? tid) (? e))
+                        (print (str-merge name " error: " (to-str e)))
+                    )
+                    ((exit-ok (? tid) (? v)) 'ok))
+            (sleep 1.0)
+        })
+    ))
+    (if stack-size
+        (spawn stack-size monitor-fn)
+        (spawn monitor-fn))
+})
+
 (defun setup () {
     (var fw-num (+ (first (sysinfo 'fw-ver)) (* (second (sysinfo 'fw-ver)) 0.01)))
-    (event-register-handler (spawn event-handler))
+    (event-register-handler (spawn-with-restart "event-handler" nil event-handler))
     (event-enable 'event-data-rx)
     (event-enable 'event-esp-now-rx)
     (if (!= (str-cmp (to-str (sysinfo 'hw-type)) "hw-express") 0) {
@@ -83,9 +101,9 @@
 (defun init () {
     ; Spawn the event handler thread and pass the ID it returns to C
     (if (= (get-config 'led-enabled) 1) {
-        (setq led-context-id (spawn led-loop))
+        (setq led-context-id (spawn-with-restart "led-loop" nil led-loop))
     }); start the led loop as soon as possible once checks are done. once CAN bus comes online it will start responding, and since this is multi-process now leds won't freeze when can is scanning. :)
-    (setq can-context-id (spawn can-loop))
+    (setq can-context-id (spawn-with-restart "can-loop" nil can-loop))
     (if (= (get-config 'pubmote-enabled) 1){
         (setup-pubmote
             VEHICLE_TYPE_ONEWHEEL
@@ -115,15 +133,15 @@
                 })
             })
         )
-        (setq pubmote-context-id (spawn pubmote-loop))
+        (setq pubmote-context-id (spawn-with-restart "pubmote-loop" nil pubmote-loop))
     })
     (if (= (get-config 'bms-enabled) 1){
-        (setq bms-context-id (spawn bms-loop))
+        (setq bms-context-id (spawn-with-restart "bms-loop" nil bms-loop))
     })
 
-    (if (= (get-config 'humidity-enabled) 1) (setq humidity-context-id (spawn humidity-loop)))
+    (if (= (get-config 'humidity-enabled) 1) (setq humidity-context-id (spawn-with-restart "humidity-loop" nil humidity-loop)))
 
-    (if (= (get-config 'log-enabled) 1) (setq log-context-id (spawn 50 log-loop)))
+    (if (= (get-config 'log-enabled) 1) (setq log-context-id (spawn-with-restart "log-loop" 50 log-loop)))
 })
 
 ; Save the environment as a binary image for fast boot on subsequent power-cycles.
