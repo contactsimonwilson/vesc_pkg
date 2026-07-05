@@ -25,6 +25,13 @@
     (setq pubmote-remote-mac (append (unpack-uint32-to-bytes (pubmote-get-cfg 'pubmote-remote-mac-a)) (take (unpack-uint32-to-bytes (pubmote-get-cfg 'pubmote-remote-mac-b)) 2)))
     ; A remote paired over BLE is stored with the all-zeros placeholder MAC
     (setq pubmote-ble-paired (= (pubmote-get-cfg 'pubmote-remote-mac-a) 0))
+    (if pubmote-ble-paired {
+        (print "Pubmote BLE paired with remote")
+        ; (ble-set-max-clients 2)
+        ; (print "BLE max clients set to 2")
+    } {
+        (print "Pubmote ESP-NOW paired with remote:" pubmote-remote-mac)
+    })
 
     ; Read as bytes, convert to i so we can compare lists
     (loopfor i 0 (< i (length pubmote-remote-mac)) (+ i 1) {
