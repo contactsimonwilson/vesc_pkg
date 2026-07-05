@@ -85,15 +85,22 @@
 })
 
 (defun should-send-message () {
-    (and 
-        (= pairing-state PAIR_STATE_IDLE) 
+    (and
+        (= pairing-state PAIR_STATE_IDLE)
         (!= (pubmote-get-cfg 'pubmote-remote-mac-a) -1)
         (< (secs-since pubmote-last-activity-time) 1.0)
     )
 })
 
+; Valid destination for esp-now-send: 6 bytes and not the BLE placeholder MAC
+(defun is-valid-espnow-mac (mac) {
+    (and (= (length mac) 6) (not-eq mac '(0 0 0 0 0 0)))
+})
+
 (defun should-process-message (src data) {
-    (and (= pairing-state PAIR_STATE_IDLE) (eq pubmote-remote-mac src) (= (bufget-i32 data 1 'little-endian) (pubmote-get-cfg 'pubmote-secret-code)))
+    ; Length check must come before bufget-i32: an out-of-range bufget raises
+    ; an eval error which would kill the event handler thread
+    (and (= pairing-state PAIR_STATE_IDLE) (>= (buflen data) 5) (eq pubmote-remote-mac src) (= (bufget-i32 data 1 'little-endian) (pubmote-get-cfg 'pubmote-secret-code)))
 })
 
 (defun reset-last-activity-time () {
@@ -108,7 +115,8 @@
     (if is-ble {
         (send-data send-buf 8)
     } {
-        (if wifi-enabled-on-boot {
+        ; Never attempt an ESP-NOW send to the BLE placeholder (all-zeros) MAC
+        (if (and wifi-enabled-on-boot (is-valid-espnow-mac dest-mac)) {
             (esp-now-send dest-mac send-buf)
         })
     })

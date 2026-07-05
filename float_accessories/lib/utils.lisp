@@ -27,11 +27,22 @@
     )
 )
 
+; Dispatch handlers are wrapped in trap so a malformed packet can never kill
+; the event thread - an unhandled eval error would otherwise cost a >=1s
+; control/telemetry blackout while the restart monitor respawns it.
+(defun dispatch-trapped (name res)
+    (if (eq (ix res 0) 'exit-error)
+        (print (str-merge name " error: " (to-str (ix res 1))))
+    )
+)
+
 (defun event-handler ()
     (loopwhile t
         (recv
-            ((event-esp-now-rx (? src) (? des) (? data) (? rssi)) (pubmote-rx src des data rssi))
-            ((event-data-rx . (? data)) (command-rx data))
+            ((event-esp-now-rx (? src) (? des) (? data) (? rssi))
+                (dispatch-trapped "pubmote-rx" (trap (pubmote-rx src des data rssi))))
+            ((event-data-rx . (? data))
+                (dispatch-trapped "command-rx" (trap (command-rx data))))
             (_ nil)
         )
     )

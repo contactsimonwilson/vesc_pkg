@@ -61,9 +61,26 @@
         (spawn monitor-fn))
 })
 
+; The event handler must be registered with the worker thread's id each time it
+; is (re)spawned: events are delivered to the registered thread's mailbox, and
+; a recv only consumes matching messages. Registering the monitor thread (whose
+; recv only matches exit messages) would silently swallow every event.
+(defun spawn-event-handler-with-restart () {
+    (spawn (fn ()
+        (loopwhile t {
+            (event-register-handler (spawn-trap event-handler))
+            (recv   ((exit-error (? tid) (? e))
+                        (print (str-merge "event-handler error: " (to-str e)))
+                    )
+                    ((exit-ok (? tid) (? v)) 'ok))
+            (sleep 1.0)
+        })
+    ))
+})
+
 (defun setup () {
     (var fw-num (+ (first (sysinfo 'fw-ver)) (* (second (sysinfo 'fw-ver)) 0.01)))
-    (event-register-handler (spawn-with-restart "event-handler" nil event-handler))
+    (spawn-event-handler-with-restart)
     (event-enable 'event-data-rx)
     (event-enable 'event-esp-now-rx)
     (if (!= (str-cmp (to-str (sysinfo 'hw-type)) "hw-express") 0) {
