@@ -431,4 +431,15 @@
     })
 })
 
+(defun input-state () {
+    (var input-string "input-state ")
+    (setq input-string (str-merge input-string (str-from-n (is-pubmote-connected) "%d ")))
+    (setq input-string (str-merge input-string (str-from-n pubmote-last-jsy "%.3f ")))
+    (setq input-string (str-merge input-string (str-from-n pubmote-last-jsx "%.3f ")))
+    (setq input-string (str-merge input-string (str-from-n pubmote-last-bt-c "%d ")))
+    (setq input-string (str-merge input-string (str-from-n pubmote-last-bt-z "%d ")))
+    (setq input-string (str-merge input-string (str-from-n pubmote-last-is-rev "%d")))
+    (send-data input-string)
+})
+
 @const-end

@@ -125,6 +125,11 @@
         (setup-pubmote
             VEHICLE_TYPE_ONEWHEEL
             (fn (jsy jsx bt-c bt-z is-rev) {
+                (setq pubmote-last-jsy jsy)
+                (setq pubmote-last-jsx jsx)
+                (setq pubmote-last-bt-c bt-c)
+                (setq pubmote-last-bt-z bt-z)
+                (setq pubmote-last-is-rev is-rev)
                 (if (>= (get-config 'can-id) 0) {
                     (can-cmd (get-config 'can-id) (str-replace (to-str (list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
                 })

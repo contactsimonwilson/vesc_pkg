@@ -265,6 +265,14 @@ Item {
     property int loggerRunning: 0
     property string pubmoteVersionStr: "Unknown"
 
+    // Live remote input preview state
+    property bool pubmoteInputConnected: false
+    property real pubmoteInputJsy: 0
+    property real pubmoteInputJsx: 0
+    property bool pubmoteInputBtC: false
+    property bool pubmoteInputBtZ: false
+    property bool pubmoteInputRev: false
+
     Component.onCompleted: {
         if (VescIf.getLastFwRxParams().hwTypeStr() !== "Custom Module") {
             VescIf.emitMessageDialog("Float Accessories", "Warning: It doesn't look like this is installed on a VESC Express.", false, false)
@@ -290,6 +298,17 @@ Item {
             if (lastStatusTime > 60) {
                 wasConnected = false
             }
+        }
+    }
+
+    // Polls the remote's input state while the preview section is visible and toggled on
+    Timer {
+        id: inputPreviewTimer
+        interval: 100 // 10 Hz
+        repeat: true
+        running: inputPreviewSection.visible && inputPreviewEnabled.checked
+        onTriggered: {
+            sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(input-state)")
         }
     }
 
@@ -2291,6 +2310,118 @@ Item {
                                         }
                                     }
                                 }
+
+                            }
+                        }
+
+                        GroupBox {
+                            id: inputPreviewSection
+                            title: "Input Preview"
+                            Layout.fillWidth: true
+                            background: Loader { sourceComponent: cardBg }
+                            label: Loader { sourceComponent: cardTitleLabel; onLoaded: item.title = "Input Preview" }
+                            topPadding: cardStyle.topPadding; leftPadding: cardStyle.sidePadding; rightPadding: cardStyle.sidePadding; bottomPadding: cardStyle.bottomPadding
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: 10
+
+                                Switch {
+                                    id: inputPreviewEnabled
+                                    text: "Live Preview"
+                                    checked: false
+                                }
+
+                                Text {
+                                    visible: inputPreviewEnabled.checked
+                                    text: pubmoteInputConnected ? "Pubmote connected" : "Pubmote not connected"
+                                    color: pubmoteInputConnected ? "cyan" : Utility.getAppHexColor("lightText")
+                                    Layout.alignment: Qt.AlignHCenter
+                                }
+
+                                ColumnLayout {
+                                    visible: inputPreviewEnabled.checked
+                                    spacing: 10
+                                    Layout.alignment: Qt.AlignHCenter
+
+                                    Rectangle {
+                                        id: joystickPad
+                                        Layout.alignment: Qt.AlignHCenter
+                                        Layout.preferredWidth: 160
+                                        Layout.preferredHeight: 160
+                                        color: "transparent"
+                                        border.color: Qt.rgba(1, 1, 1, 0.3)
+                                        border.width: 1
+                                        radius: 8
+
+                                        Rectangle {
+                                            width: 1
+                                            height: parent.height - 2
+                                            anchors.centerIn: parent
+                                            color: Qt.rgba(1, 1, 1, 0.15)
+                                        }
+                                        Rectangle {
+                                            width: parent.width - 2
+                                            height: 1
+                                            anchors.centerIn: parent
+                                            color: Qt.rgba(1, 1, 1, 0.15)
+                                        }
+
+                                        Rectangle {
+                                            width: 14
+                                            height: 14
+                                            radius: 7
+                                            color: pubmoteInputConnected ? "cyan" : "gray"
+                                            x: (parent.width - width) / 2 + Math.max(-1, Math.min(1, pubmoteInputJsx)) * (parent.width - width) / 2
+                                            y: (parent.height - height) / 2 - Math.max(-1, Math.min(1, pubmoteInputJsy)) * (parent.height - height) / 2
+                                        }
+                                    }
+
+                                    Text {
+                                        text: "Y: " + pubmoteInputJsy.toFixed(3) + "    X: " + pubmoteInputJsx.toFixed(3)
+                                        color: Utility.getAppHexColor("lightText")
+                                        Layout.alignment: Qt.AlignHCenter
+                                    }
+
+                                    RowLayout {
+                                        spacing: 10
+                                        Layout.alignment: Qt.AlignHCenter
+
+                                        Rectangle {
+                                            Layout.preferredWidth: 70
+                                            Layout.preferredHeight: 32
+                                            radius: 6
+                                            color: pubmoteInputBtC ? "cyan" : Qt.rgba(1, 1, 1, 0.1)
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: "C"
+                                                color: pubmoteInputBtC ? "black" : "white"
+                                            }
+                                        }
+                                        Rectangle {
+                                            Layout.preferredWidth: 70
+                                            Layout.preferredHeight: 32
+                                            radius: 6
+                                            color: pubmoteInputBtZ ? "cyan" : Qt.rgba(1, 1, 1, 0.1)
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: "Z"
+                                                color: pubmoteInputBtZ ? "black" : "white"
+                                            }
+                                        }
+                                        Rectangle {
+                                            Layout.preferredWidth: 70
+                                            Layout.preferredHeight: 32
+                                            radius: 6
+                                            color: pubmoteInputRev ? "cyan" : Qt.rgba(1, 1, 1, 0.1)
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: "REV"
+                                                color: pubmoteInputRev ? "black" : "white"
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -3345,6 +3476,14 @@ Item {
             } else if (str.startsWith("pairing-status")) {
                 var tokens = str.split(" ");
                 pubmotePairingState = Number(tokens[1]);
+            } else if (str.startsWith("input-state")) {
+                var tokens = str.split(" ");
+                pubmoteInputConnected = !!Number(tokens[1]);
+                pubmoteInputJsy = parseFloat(tokens[2]);
+                pubmoteInputJsx = parseFloat(tokens[3]);
+                pubmoteInputBtC = !!Number(tokens[4]);
+                pubmoteInputBtZ = !!Number(tokens[5]);
+                pubmoteInputRev = !!Number(tokens[6]);
             }
         }
     }
