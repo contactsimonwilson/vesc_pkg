@@ -37,6 +37,8 @@
 
 #include "vesc_c_if.h"
 
+#include <string.h>
+
 HEADER
 
 #define ESPLED_SEG_MAX     8
@@ -91,14 +93,24 @@ typedef struct {
 	uint8_t spd;       // 0..255
 	uint8_t size;      // chase head / comet tail length
 	uint8_t level;     // gauge fill 0..255
+	uint16_t offset;   // pixel offset within the pin's chain
 	uint32_t color;    // packed 0xWWRRGGBB
 	uint32_t phase;    // frames since effect start
 
-	// Wire bytes, len * 4. Per segment: the firmware LED driver transmits
-	// asynchronously from the caller's buffer, so a segment's buffer must
-	// stay untouched until the next transmission waits for it.
-	uint8_t *txbuf;
+	int group;         // pin group index, assigned at init
 } seg_t;
+
+// Segments sharing a pin form one chain, rendered into one buffer and
+// transmitted once per frame (the segment offsets place them along the
+// chain). Per group buffer: the firmware LED driver transmits
+// asynchronously from the caller's memory, so a group's buffer must stay
+// untouched until the next transmission waits for it.
+typedef struct {
+	uint8_t pin;
+	uint8_t colors;      // bytes per pixel of the chain
+	uint16_t chain_len;  // pixels
+	uint8_t *txbuf;      // chain_len * colors bytes
+} group_t;
 
 typedef struct {
 	lib_thread thread;
@@ -107,6 +119,9 @@ typedef struct {
 
 	seg_t seg[ESPLED_SEG_MAX];
 	int seg_count;
+
+	group_t group[ESPLED_SEG_MAX];
+	int group_count;
 
 	uint8_t master_bri;
 	bool auto_white;
@@ -264,11 +279,13 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 
 // ---- Render thread ------------------------------------------------------
 
+// Render one segment into its place in the pin group's chain buffer.
 static void render_seg(espled_t *st, seg_t *s) {
+	group_t *g = &st->group[s->group];
 	int n = s->len;
 	uint32_t *work = st->work;
-	uint8_t *tx = s->txbuf;
-	int colors = s->type >= TYPE_GRBW ? 4 : 3;
+	int colors = g->colors;
+	uint8_t *tx = g->txbuf + (uint32_t)s->offset * colors;
 
 	fx_render(s, work);
 
@@ -328,26 +345,34 @@ static void render_thd(void *arg) {
 	espled_t *st = (espled_t*)arg;
 
 	while (!VESC_IF->should_terminate()) {
-		for (int i = 0; i < st->seg_count; i++) {
-			seg_t *s = &st->seg[i];
+		for (int gi = 0; gi < st->group_count; gi++) {
+			group_t *g = &st->group[gi];
 
 			VESC_IF->mutex_lock(st->lock);
-			bool active = s->defined && s->on && s->txbuf != NULL
-				&& s->len > 0 && s->len <= st->buf_len;
-			int tx_bytes = 0;
-			int pin = s->pin;
-			uint8_t *tx = s->txbuf;
-			if (active) {
-				render_seg(st, s);
-				s->phase++;
-				tx_bytes = s->len * (s->type >= TYPE_GRBW ? 4 : 3);
+			bool any = false;
+			for (int i = 0; i < st->seg_count; i++) {
+				seg_t *s = &st->seg[i];
+				if (s->defined && s->group == gi && s->len > 0
+					&& s->len <= st->buf_len) {
+					if (s->on) {
+						render_seg(st, s);
+					} else {
+						memset(g->txbuf + (uint32_t)s->offset * g->colors,
+							0, (uint32_t)s->len * g->colors);
+					}
+					s->phase++;
+					any = true;
+				}
 			}
+			int pin = g->pin;
+			uint8_t *tx = g->txbuf;
+			int tx_bytes = g->chain_len * g->colors;
 			VESC_IF->mutex_unlock(st->lock);
 
 			// Hardware IO outside the lock - the firmware driver can block
 			// while a previous transmission finishes. Re-init is a no-op
 			// when the pin is unchanged.
-			if (active && VESC_IF->rgbled_init(pin)) {
+			if (any && VESC_IF->rgbled_init(pin)) {
 				VESC_IF->rgbled_update(tx, tx_bytes);
 			}
 		}
@@ -380,19 +405,24 @@ static seg_t *seg_arg(espled_t *st, lbm_value v) {
 
 // ---- Extensions ---------------------------------------------------------
 
-// (ext-espled-seg-def i pin type len) - define segment i before ext-espled-init.
-// type: 0 GRB, 1 RGB, 2 GRBW, 3 RGBW
+// (ext-espled-seg-def i pin type len [offset]) - define segment i before
+// ext-espled-init. type: 0 GRB, 1 RGB, 2 GRBW, 3 RGBW. Segments on the
+// same pin form one chain; offset is the segment's pixel position in it.
 static lbm_value ext_seg_def(lbm_value *args, lbm_uint argn) {
 	espled_t *st = state();
-	if (!check_num_args(args, argn, 4)) return VESC_IF->lbm_enc_sym_terror;
+	if (argn != 4 && argn != 5) return VESC_IF->lbm_enc_sym_terror;
+	for (lbm_uint i = 0; i < argn; i++) {
+		if (!VESC_IF->lbm_is_number(args[i])) return VESC_IF->lbm_enc_sym_terror;
+	}
 
 	seg_t *s = seg_arg(st, args[0]);
 	int pin = VESC_IF->lbm_dec_as_i32(args[1]);
 	int type = VESC_IF->lbm_dec_as_i32(args[2]);
 	int len = VESC_IF->lbm_dec_as_i32(args[3]);
+	int offset = argn == 5 ? VESC_IF->lbm_dec_as_i32(args[4]) : 0;
 
 	if (!s || pin < 0 || pin > 255 || type < 0 || type > TYPE_RGBW
-		|| len < 1 || len > 1024) {
+		|| len < 1 || len > 1024 || offset < 0 || offset > 1024) {
 		return VESC_IF->lbm_enc_sym_terror;
 	}
 
@@ -408,6 +438,7 @@ static lbm_value ext_seg_def(lbm_value *args, lbm_uint argn) {
 	s->pin = (uint8_t)pin;
 	s->type = (uint8_t)type;
 	s->len = (uint16_t)len;
+	s->offset = (uint16_t)offset;
 	s->reverse = false;
 	s->fx = FX_SOLID;
 	s->pal = 0;
@@ -443,37 +474,75 @@ static lbm_value ext_init(lbm_value *args, lbm_uint argn) {
 		if (st->seg[i].len > max_len) max_len = st->seg[i].len;
 	}
 
+	// Build pin groups: segments on the same pin share one chain buffer.
+	// All segments of a chain must have the same bytes-per-pixel.
+	st->group_count = 0;
+	for (int i = 0; i < n; i++) {
+		seg_t *s = &st->seg[i];
+		int colors = s->type >= TYPE_GRBW ? 4 : 3;
+		uint16_t end = s->offset + s->len;
+
+		s->group = -1;
+		for (int gi = 0; gi < st->group_count; gi++) {
+			if (st->group[gi].pin == s->pin) {
+				s->group = gi;
+				break;
+			}
+		}
+
+		if (s->group < 0) {
+			s->group = st->group_count++;
+			st->group[s->group].pin = s->pin;
+			st->group[s->group].colors = (uint8_t)colors;
+			st->group[s->group].chain_len = end;
+			st->group[s->group].txbuf = NULL;
+		} else {
+			if (st->group[s->group].colors != colors) {
+				VESC_IF->lbm_set_error_reason(
+					"Segments on one pin must have the same color depth");
+				return VESC_IF->lbm_enc_sym_eerror;
+			}
+			if (end > st->group[s->group].chain_len) {
+				st->group[s->group].chain_len = end;
+			}
+		}
+	}
+
 	bool alloc_ok = true;
 	st->work = VESC_IF->malloc(max_len * sizeof(uint32_t));
 	alloc_ok = st->work != NULL;
-	for (int i = 0; i < n && alloc_ok; i++) {
-		st->seg[i].txbuf = VESC_IF->malloc(st->seg[i].len * 4);
-		alloc_ok = st->seg[i].txbuf != NULL;
+	for (int gi = 0; gi < st->group_count && alloc_ok; gi++) {
+		group_t *g = &st->group[gi];
+		uint32_t bytes = (uint32_t)g->chain_len * g->colors;
+		g->txbuf = VESC_IF->malloc(bytes);
+		if (g->txbuf) {
+			memset(g->txbuf, 0, bytes);
+		} else {
+			alloc_ok = false;
+		}
+	}
+
+	if (alloc_ok) {
+		st->buf_len = max_len;
+		st->seg_count = n;
+		st->thread = VESC_IF->spawn(render_thd, 3072, "espled_render", st);
+		alloc_ok = st->thread != NULL;
 	}
 
 	if (!alloc_ok) {
 		if (st->work) { VESC_IF->free(st->work); st->work = NULL; }
-		for (int i = 0; i < n; i++) {
-			if (st->seg[i].txbuf) {
-				VESC_IF->free(st->seg[i].txbuf);
-				st->seg[i].txbuf = NULL;
+		for (int gi = 0; gi < st->group_count; gi++) {
+			if (st->group[gi].txbuf) {
+				VESC_IF->free(st->group[gi].txbuf);
+				st->group[gi].txbuf = NULL;
 			}
 		}
+		st->group_count = 0;
+		st->seg_count = 0;
+		st->buf_len = 0;
 		return VESC_IF->lbm_enc_sym_merror;
 	}
-	st->buf_len = max_len;
-	st->seg_count = n;
 
-	st->thread = VESC_IF->spawn(render_thd, 3072, "espled_render", st);
-	if (!st->thread) {
-		VESC_IF->free(st->work); st->work = NULL;
-		for (int i = 0; i < n; i++) {
-			VESC_IF->free(st->seg[i].txbuf);
-			st->seg[i].txbuf = NULL;
-		}
-		st->seg_count = 0;
-		return VESC_IF->lbm_enc_sym_eerror;
-	}
 	st->running = true;
 
 	return VESC_IF->lbm_enc_sym_true;
@@ -489,12 +558,13 @@ static void espled_stop(espled_t *st) {
 	VESC_IF->rgbled_deinit();
 
 	VESC_IF->free(st->work); st->work = NULL;
-	for (int i = 0; i < ESPLED_SEG_MAX; i++) {
-		if (st->seg[i].txbuf) {
-			VESC_IF->free(st->seg[i].txbuf);
-			st->seg[i].txbuf = NULL;
+	for (int gi = 0; gi < st->group_count; gi++) {
+		if (st->group[gi].txbuf) {
+			VESC_IF->free(st->group[gi].txbuf);
+			st->group[gi].txbuf = NULL;
 		}
 	}
+	st->group_count = 0;
 	st->buf_len = 0;
 	st->seg_count = 0;
 }

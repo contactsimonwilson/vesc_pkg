@@ -27,10 +27,13 @@ import sys
 R_XTENSA_NONE = 0
 R_XTENSA_32 = 1
 R_XTENSA_ASM_EXPAND = 11
+R_XTENSA_ASM_SIMPLIFY = 12
 R_XTENSA_SLOT0_OP = 20
 
-# Types that need no load-time patching: PC-relative or informational.
-NO_PATCH_TYPES = {R_XTENSA_NONE, R_XTENSA_ASM_EXPAND, R_XTENSA_SLOT0_OP}
+# Types that need no load-time patching: PC-relative or informational
+# (the ASM_* types just annotate longcall sequences for linker relaxation).
+NO_PATCH_TYPES = {R_XTENSA_NONE, R_XTENSA_ASM_EXPAND, R_XTENSA_ASM_SIMPLIFY,
+                  R_XTENSA_SLOT0_OP}
 
 SHF_ALLOC = 0x2
 SHF_EXECINSTR = 0x4

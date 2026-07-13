@@ -12,7 +12,7 @@ The package includes a VESC Tool page for testing: configure pin / LED count / s
 
 | Extension | Args | Notes |
 |---|---|---|
-| `ext-espled-seg-def` | `(i pin type len)` | define segment `i` (type: 0 GRB, 1 RGB, 2 GRBW, 3 RGBW) |
+| `ext-espled-seg-def` | `(i pin type len [offset])` | define segment `i` (type: 0 GRB, 1 RGB, 2 GRBW, 3 RGBW). Segments on the same pin form one chained strip; `offset` is the segment's pixel position in the chain |
 | `ext-espled-init` | `(n)` | start rendering the first `n` segments |
 | `ext-espled-deinit` | `()` | stop rendering and release the LED driver |
 | `ext-espled-seg-look` | `(i fx pal color spd bri)` | full appearance in one call |
