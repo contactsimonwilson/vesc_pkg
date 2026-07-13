@@ -32,8 +32,10 @@ The package includes a VESC Tool page for testing: configure pin / LED count / s
 | `ext-espled-auto-white` | `(en)` | derive W from RGB on RGBW strips |
 | `ext-espled-ablimit` | `(ma)` | adaptive current cap in mA (0 = off) |
 
-Effects: 0 solid, 1 breathe, 2 chase, 3 rainbow, 4 sparkle, 5 comet, 6 gauge (fill by `level`, battery gradient when color is 0, pulses when `spd` > 0), 7 strobe, 8 larson/knight-rider, 9 felony (halves alternate red/blue).
-Palettes: 0 rgbw-ish, 1 fire, 2 ocean, 3 neon, 4 ember, 5 traffic, 6 strobe, 7 police-blue.
+Effects: 0 solid, 1 breathe, 2 chase, 3 rainbow, 4 sparkle, 5 comet, 6 gauge (fill by `level`, pulses when `spd` > 0), 7 strobe, 8 larson/knight-rider, 9 felony (halves alternate red/blue).
+
+Color semantics: a segment color of 0 means "take color from the palette" - breathe, chase, sparkle, comet, strobe and larson then cycle their color through the palette, and rainbow always draws the palette. Exceptions: solid with color 0 is black (so segments can be blanked), gauge with color 0 draws a battery-style red-to-green gradient, and felony has fixed red/blue.
+Palettes: 0 spectrum, 1 fire, 2 ocean, 3 neon, 4 ember, 5 traffic, 6 b&w flash, 7 police-blue.
 
 ## Example
 

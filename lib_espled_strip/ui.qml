@@ -109,7 +109,7 @@ Item {
                     Label { text: "Effect" }
                     ComboBox {
                         id: fxBox
-                        model: ["Solid", "Breathe", "Chase", "Rainbow", "Sparkle", "Comet"]
+                        model: ["Solid", "Breathe", "Chase", "Rainbow", "Sparkle", "Comet", "Gauge", "Strobe", "Larson", "Felony"]
                         Layout.fillWidth: true
                         onActivated: sendCode("(ext-espled-seg-fx 0 " + currentIndex + ")")
                     }
@@ -117,9 +117,22 @@ Item {
                     Label { text: "Palette" }
                     ComboBox {
                         id: palBox
-                        model: ["RGBW", "Fire", "Ocean", "Neon", "Ember", "Traffic", "Strobe", "Police"]
+                        model: ["Spectrum", "Fire", "Ocean", "Neon", "Ember", "Traffic", "B&W Flash", "Police Blue"]
                         Layout.fillWidth: true
-                        onActivated: sendCode("(ext-espled-seg-pal 0 " + currentIndex + ")")
+                        // Color 0 = "take color from the palette", so clear
+                        // the color when a palette is picked.
+                        onActivated: {
+                            sendCode("(ext-espled-seg-pal 0 " + currentIndex + ")")
+                            sendCode("(ext-espled-seg-col 0 0)")
+                        }
+                    }
+
+                    Label { text: "" }
+                    Label {
+                        text: "Palettes color the effect while no color is set; picking a color overrides them. Rainbow always draws the palette."
+                        font.italic: true
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
                     }
 
                     Label { text: "Speed " + spdSlider.value.toFixed(0) }
@@ -138,6 +151,15 @@ Item {
                         stepSize: 1
                         Layout.fillWidth: true
                         onPressedChanged: if (!pressed) sendCode("(ext-espled-seg-size 0 " + value.toFixed(0) + ")")
+                    }
+
+                    Label { text: "Level " + lvlSlider.value.toFixed(0) }
+                    Slider {
+                        id: lvlSlider
+                        from: 0; to: 255; value: 255
+                        stepSize: 1
+                        Layout.fillWidth: true
+                        onPressedChanged: if (!pressed) sendCode("(ext-espled-seg-level 0 " + value.toFixed(0) + ")")
                     }
                 }
             }

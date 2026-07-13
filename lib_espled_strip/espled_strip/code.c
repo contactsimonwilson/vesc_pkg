@@ -185,10 +185,15 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 	uint32_t spd = s->spd ? s->spd : 32;
 	int size = s->size ? s->size : 8;
 
+	// Effects take their color from the color param; a color of 0 means
+	// "from the palette" (cycling with the animation phase). Rainbow always
+	// renders the palette, solid keeps 0 = black so segments can be
+	// blanked, and gauge uses its battery gradient for 0.
 	switch (s->fx) {
 	case FX_BREATHE: {
 		uint32_t b = triangle((ph * spd) / 32);
-		uint32_t c = scale(s->color, b);
+		uint32_t c0 = s->color ? s->color : palette_at(s->pal, (uint8_t)(ph / 4));
+		uint32_t c = scale(c0, b);
 		for (int i = 0; i < n; i++) work[i] = c;
 	} break;
 
@@ -212,10 +217,11 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 	} break;
 
 	case FX_SPARKLE: {
-		uint32_t c = s->color ? s->color : 0xFFFFFF;
 		for (int i = 0; i < n; i++) {
 			// Deterministic twinkle from phase + index
 			uint32_t h = ((uint32_t)i * 2654435761u) ^ (ph * 40503u);
+			uint32_t c = s->color ? s->color
+				: palette_at(s->pal, (uint8_t)(h >> 16));
 			work[i] = ((h >> 8) & 0xFF) < (spd / 2 + 1) ? c : 0;
 		}
 	} break;
@@ -254,8 +260,10 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 	} break;
 
 	case FX_STROBE: {
-		uint32_t c = s->color ? s->color : 0xFFFFFF;
-		bool lit = ((ph * spd) / 64) & 1;
+		uint32_t flash = (ph * spd) / 64;
+		uint32_t c = s->color ? s->color
+			: palette_at(s->pal, (uint8_t)(flash * 61)); // new hue per flash
+		bool lit = flash & 1;
 		for (int i = 0; i < n; i++) work[i] = lit ? c : 0;
 	} break;
 
@@ -263,7 +271,7 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 		int span = n > 1 ? n - 1 : 1;
 		int pos = (int)((ph * spd / 16) % (uint32_t)(2 * span));
 		if (pos > span) pos = 2 * span - pos;
-		uint32_t c = s->color ? s->color : 0xFF0000;
+		uint32_t c = s->color ? s->color : palette_at(s->pal, (uint8_t)(ph / 4));
 		for (int i = 0; i < n; i++) {
 			int d = i > pos ? i - pos : pos - i;
 			uint32_t b = d < size ? 255 - (d * 255) / size : 0;
