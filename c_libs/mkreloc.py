@@ -126,14 +126,53 @@ def main():
     if entry_vma & 3:
         fail("init is not 4-byte aligned (0x%X)" % entry_vma)
 
+    # Region split: executable sections form the code region at the start
+    # of the address space, everything else (led by .program_ptr) the data
+    # region. The loader places them in different kinds of RAM: code in
+    # any executable block (word-access only), data in any byte-accessible
+    # block. Stored words are rewritten to region-relative offsets so the
+    # loader just adds the matching region base.
+    exec_secs = [s for s in alloc_sections if s["flags"] & SHF_EXECINSTR]
+    data_secs = [s for s in alloc_sections if not s["flags"] & SHF_EXECINSTR]
+    if not exec_secs or not data_secs:
+        fail("expected both code and data sections")
+
+    code_end = max(s["addr"] + s["size"] for s in exec_secs)
+    data_start = min(s["addr"] for s in data_secs)
+    data_end = max(s["addr"] + s["size"] for s in data_secs)
+    if data_start < code_end:
+        fail("data sections overlap the code region - check link_esp32s3.ld "
+             "section order")
+    for s in exec_secs:
+        if s["addr"] + s["size"] > data_start:
+            fail("code section %s extends into the data region" % s["name"])
+    pp = [s for s in data_secs if s["name"] == ".program_ptr"]
+    if not pp or pp[0]["addr"] != data_start:
+        fail(".program_ptr must lead the data region")
+
+    if entry_vma >= code_end:
+        fail("init is not in the code region")
+
+    code_size = (code_end + 3) & ~3
+    data_size = ((data_end - data_start + 3) & ~3) + 4  # + inner magic
+
+    def region_of(addr):
+        # One-past-the-end pointers of the last code section still count
+        # as code; anything from data_start on is data.
+        if addr <= code_end:
+            return "code", addr
+        if data_start <= addr <= data_end:
+            return "data", addr - data_start + 4
+        fail("address 0x%X falls between the code and data regions" % addr)
+
     # The linker fully resolves every R_XTENSA_32 word in the binary, but
     # the relocation entries emitted by ld -q can carry stale addends (not
     # adjusted for input-section placement). So the relocation entry is
     # only trusted for WHERE an absolute word lives (r_offset); the target
-    # address is read from the resolved word itself and classified by the
-    # section it falls in. Addresses are link-time (base 0), so the loader
-    # just adds the load address.
-    image_end = max(s["addr"] + s["size"] for s in alloc_sections)
+    # address is read from the resolved word itself.
+    image_bin = bytearray(image_bin)
+    if len(image_bin) < data_end:
+        image_bin += b"\x00" * (data_end - len(image_bin))  # .bss
 
     relocs = []
     for s in sections:
@@ -160,34 +199,44 @@ def main():
                 fail("relocation at 0x%X is outside the binary" % r_offset)
 
             target_addr, = struct.unpack_from("<I", image_bin, r_offset)
-            if target_addr > image_end:
-                fail("word at 0x%X points at 0x%X, outside the image - "
-                     "not a load-address-relative pointer"
-                     % (r_offset, target_addr))
+            tgt_region, tgt_off = region_of(target_addr)
+            site_region, site_off = region_of(r_offset)
+            if site_off >= 1 << 30:
+                fail("relocation offset 0x%X too large" % site_off)
 
-            image_off = r_offset + 4  # image starts with the magic word
-            entry = image_off | (0x80000000 if addr_is_exec(target_addr) else 0)
+            # Rewrite the word to its region-relative target offset.
+            struct.pack_into("<I", image_bin, r_offset, tgt_off)
+
+            entry = site_off
+            if site_region == "data":
+                entry |= 0x40000000
+            if tgt_region == "code":
+                entry |= 0x80000000
             relocs.append(entry)
 
     relocs = sorted(set(relocs), key=lambda e: e & 0x7FFFFFFF)
-    offs = [e & 0x7FFFFFFF for e in relocs]
+    offs = [(e & 0x7FFFFFFF) for e in relocs]
     if len(offs) != len(set(offs)):
-        fail("conflicting code/data classification for one relocation offset")
+        fail("conflicting classification for one relocation offset")
 
+    code_img = bytes(image_bin[:code_end])
+    code_img += b"\x00" * (code_size - len(code_img))
     # Magic words are stored as big-endian bytes (CA FE BA Bx), matching
-    # the existing XIP container convention.
-    image = struct.pack(">I", NATIVE_LIB_MAGIC) + image_bin
-    # Word-aligned image size so the firmware can patch with u32 access.
-    image += b"\x00" * (-len(image) % 4)
+    # the existing XIP container convention. The data region carries the
+    # inner magic so prog_ptr lands at data base + 4.
+    data_img = struct.pack(">I", NATIVE_LIB_MAGIC) \
+        + bytes(image_bin[data_start:data_end])
+    data_img += b"\x00" * (data_size - len(data_img))
 
     out = struct.pack(">I", NATIVE_LIB_RELOC_MAGIC)
-    out += struct.pack("<3I", len(image), entry_vma + 4, len(relocs))
+    out += struct.pack("<5I", 2, code_size, data_size, entry_vma, len(relocs))
     out += b"".join(struct.pack("<I", e) for e in relocs)
-    out += image
+    out += code_img
+    out += data_img
 
     open(out_path, "wb").write(out)
-    print("mkreloc.py: %s: image %d bytes, entry at 0x%X, %d relocations"
-          % (out_path, len(image), entry_vma + 4, len(relocs)))
+    print("mkreloc.py: %s: code %d B, data %d B, entry at 0x%X, %d relocations"
+          % (out_path, code_size, data_size, entry_vma, len(relocs)))
 
 
 if __name__ == "__main__":

@@ -9,13 +9,20 @@
  * accessible DRAM alias.
  */
 
+/* The image is loaded in two parts: the code region (executable RAM,
+   word-access only is fine) and the data region (byte-accessible RAM).
+   Code sections come first, then the data sections with .program_ptr
+   leading the data region (the loader expects it at data base + 4). */
+
 SECTIONS
 {
     . = 0;
-    .program_ptr : ALIGN(4) { *(.program_ptr) } /* offset 0 */
+    /* code region */
     .init_fun : ALIGN(4) { *(.init_fun.literal) *(.init_fun) }
-
     .text : ALIGN(4) { *(.literal) *(.text) *(.literal.*) *(.text.*) }
+
+    /* data region */
+    .program_ptr : ALIGN(4) { *(.program_ptr) }
     .rodata : ALIGN(4) { *(.rodata*) *(.srodata*) }
     .data : ALIGN(4) { *(.data*) *(.sdata*) }
     .bss : ALIGN(4) { *(.bss*) *(.sbss*) *(COMMON) }
