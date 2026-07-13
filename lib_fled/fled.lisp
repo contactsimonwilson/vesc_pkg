@@ -28,10 +28,16 @@
 })
 
 ; The test UI sends lisp expressions as custom app data - evaluate them.
+; Other UIs (e.g. a FloWLED page stored on the device) send binary
+; commands on the same channel - ignore anything that is not a lisp
+; expression instead of raising read errors.
 (defun event-handler ()
     (loopwhile t
         (recv
-            ((event-data-rx . (? data)) (trap (eval (read data))))
+            ((event-data-rx . (? data))
+                (if (and (> (buflen data) 0) (= (bufget-u8 data 0) 40)) ; '('
+                    (trap (eval (read data)))
+            ))
             (_ nil)
 )))
 
