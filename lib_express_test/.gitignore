@@ -1,0 +1,7 @@
+express_test/*.bin
+express_test/*.lisp
+express_test/*.elf
+express_test/*.list
+express_test/*.map
+express_test/*.o
+express_test/*.d
