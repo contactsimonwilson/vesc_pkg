@@ -8,7 +8,7 @@ This version of the package differs from the original in two ways:
 
 <ul>
   <li><b>LEDs are rendered by the ESPLED Strip native library</b> (lib_espled_strip). The library owns the framebuffers, a background render thread and the LED driver; the package only drives high-level segment state (effect, color, brightness). Strips that share one pin are chained automatically. Highbeams are fully supported: "Standard + PWM Highbeam" drives a separate highbeam pin, and the embedded-highbeam strip types (Highbeam LED First, JetFleet H4/GT, Fungineers GTFO) drive the in-strip highbeam LEDs as overlay pixels.</li>
-  <li><b>All settings live in a VESC custom config</b> ("Float Accessories Cfg" in VESC Tool's parameter UI), provided by the fa_cfg native lib and described by conf/settings.xml. The firmware persists the config; the old in-package eeprom layout, magic numbers and CRC handling are gone, as is the settings editor that used to be part of this QML page. Edit settings in VESC Tool and they apply live.</li>
+  <li><b>All settings live in a VESC custom config</b> ("Float Accessories Cfg" in VESC Tool's parameter UI), provided by the fa_cfg native lib and described by conf/settings.xml. The firmware persists the config; the old in-package eeprom layout, magic numbers and CRC handling are gone. The package's own settings page keeps working like before (it reads and writes the same config), so you can use either it or VESC Tool's parameter pages - edits from both apply live.</li>
 </ul>
 
 Requires VESC Express firmware with native lib support (load-native-lib, custom configs and (sysinfo 'hw-target)). Works on ESP32-C3, C6, S3 and P4; on the S3 the firmware must be built with CONFIG_ESP_SYSTEM_MEMPROT_FEATURE=n.

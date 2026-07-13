@@ -120,6 +120,171 @@
     })
 )
 
+; Wire order of the settings string for the QML page. This matches the
+; original package's eeprom layout order (token index = position + 1), so
+; the original UI keeps working unchanged. magic/crc and the removed
+; legacy params are constant placeholder slots.
+(def qml-config-params '(
+    (magic i) (crc i) (can-id i) (accept-tos b) (led-enabled b) (bms-enabled b)
+    (pubmote-enabled b) (led-on b) (led-highbeam-on b) (led-mode i)
+    (led-mode-idle i) (led-mode-status i) (led-mode-startup i)
+    (led-mode-button i) (led-mode-footpad i) (led-mall-grab-enabled b)
+    (led-brake-light-enabled b) (led-brake-light-min-amps f) (idle-timeout i)
+    (idle-timeout-shutoff i) (led-brightness f) (led-brightness-highbeam f)
+    (led-brightness-idle f) (led-brightness-status f) (led-status-pin i)
+    (led-status-num i) (led-status-type i) (led-status-reversed b)
+    (led-front-pin i) (led-front-num i) (led-front-type i)
+    (led-front-reversed b) (led-front-strip-type b) (led-rear-pin i)
+    (led-rear-num i) (led-rear-type i) (led-rear-reversed b)
+    (led-rear-strip-type b) (led-button-pin b) (led-button-strip-type b)
+    (led-footpad-pin i) (led-footpad-num i) (led-footpad-type i)
+    (led-footpad-reversed b) (led-footpad-strip-type b)
+    (pubmote-remote-mac-a i) (pubmote-remote-mac-b i) (pubmote-secret-code i)
+    (bms-rs485-di-pin i) (bms-rs485-ro-pin i) (bms-rs485-dere-pin i)
+    (bms-wakeup-pin i) (bms-override-soc i) (bms-rs485-chip b)
+    (bms-key-a i) (bms-key-b i) (bms-key-c i) (bms-key-d i)
+    (bms-counter-a i) (bms-counter-b i) (bms-counter-c i) (bms-counter-d i)
+    (led-loop-delay i) (bms-loop-delay i) (pubmote-loop-delay i)
+    (can-loop-delay i) (led-startup-timeout i)
+    (led-dim-on-highbeam-ratio f) (bms-type i) (led-status-strip-type i)
+    (bms-charge-only b) (led-show-battery-charging b)
+    (led-front-highbeam-pin i) (led-rear-highbeam-pin i) (bms-buff-size i)
+    (led-max-brightness f) (soc-type i) (cell-type i)
+    (led-update-not-running b) (log-enabled b) (log-rate f)
+    (log-append-gnss b) (humidity-enabled b) (humidity-sda-pin i)
+    (humidity-slc-pin i)
+))
+
+(defun send-config () {
+    (var config-string "settings ")
+
+    (loopforeach p qml-config-params {
+        (var name (first p))
+        (var type (second p))
+        (var value (cond
+            ((eq name 'magic) 445)
+            ((eq name 'crc) 0)
+            (t (get-config name))
+        ))
+        (setq config-string
+            (str-merge config-string
+                (if (eq type 'f)
+                    (str-from-n (to-float value) "%.2f ")
+                    (str-from-n (to-i value) "%d ")
+                )
+            )
+        )
+    })
+
+    (send-data config-string)
+    (send-status "Settings loaded")
+})
+
+; Full settings write from the QML settings page. Same signature as the
+; original package minus the removed legacy params (blend count, led
+; fix).
+(defun recv-config (in-led-enabled in-bms-enabled in-pubmote-enabled in-led-on in-led-highbeam-on in-led-mode in-led-mode-idle in-led-mode-status
+    in-led-mode-startup in-led-mode-button in-led-mode-footpad in-led-mall-grab-enabled in-led-brake-light-enabled in-led-brake-light-min-amps
+    in-idle-timeout in-idle-timeout-shutoff in-led-brightness in-led-brightness-highbeam in-led-brightness-idle in-led-brightness-status
+    in-led-status-pin in-led-status-num in-led-status-type in-led-status-reversed in-led-front-pin in-led-front-num in-led-front-type
+    in-led-front-reversed in-led-front-strip-type in-led-rear-pin in-led-rear-num in-led-rear-type in-led-rear-reversed in-led-rear-strip-type
+    in-led-button-pin in-led-button-strip-type in-led-footpad-pin in-led-footpad-num in-led-footpad-type in-led-footpad-reversed
+    in-led-footpad-strip-type in-bms-rs485-di-pin in-bms-rs485-ro-pin in-bms-rs485-dere-pin in-bms-wakeup-pin in-bms-override-soc in-bms-rs485-chip
+    in-led-loop-delay in-bms-loop-delay in-pubmote-loop-delay in-can-loop-delay in-led-startup-timeout
+    in-led-dim-on-highbeam-ratio in-bms-type in-led-status-strip-type in-bms-charge-only in-led-show-battery-charging
+    in-led-front-highbeam-pin in-led-rear-highbeam-pin in-bms-buff-size in-led-max-brightness in-soc-type in-cell-type in-led-update-not-running
+    in-log-enabled in-log-rate in-log-append-gnss in-humidity-enabled in-humidity-sda-pin in-humidity-slc-pin
+) {
+    (set-config 'led-enabled (to-i in-led-enabled))
+    (set-config 'bms-enabled (to-i in-bms-enabled))
+    (set-config 'pubmote-enabled (to-i in-pubmote-enabled))
+
+    (if (or (!= (to-i soc-type) (to-i in-soc-type)) (!= (to-i cell-type) (to-i in-cell-type))) {
+        (apply-battery-config in-soc-type in-cell-type)
+    })
+
+    (set-config 'led-on (to-i in-led-on))
+    (set-config 'led-highbeam-on (to-i in-led-highbeam-on))
+    (set-config 'led-mode (to-i in-led-mode))
+    (set-config 'led-mode-idle (to-i in-led-mode-idle))
+    (set-config 'led-mode-status (to-i in-led-mode-status))
+    (set-config 'led-mode-startup (to-i in-led-mode-startup))
+    (set-config 'led-mode-button (to-i in-led-mode-button))
+    (set-config 'led-mode-footpad (to-i in-led-mode-footpad))
+    (set-config 'led-mall-grab-enabled (to-i in-led-mall-grab-enabled))
+    (set-config 'led-brake-light-enabled (to-i in-led-brake-light-enabled))
+    (set-config 'led-brake-light-min-amps (to-float in-led-brake-light-min-amps))
+    (set-config 'idle-timeout (to-i in-idle-timeout))
+    (set-config 'idle-timeout-shutoff (to-i in-idle-timeout-shutoff))
+    (set-config 'led-brightness (to-float in-led-brightness))
+    (set-config 'led-brightness-highbeam (to-float in-led-brightness-highbeam))
+    (set-config 'led-brightness-idle (to-float in-led-brightness-idle))
+    (set-config 'led-brightness-status (to-float in-led-brightness-status))
+
+    (set-config 'led-status-pin (to-i in-led-status-pin))
+    (set-config 'led-status-num (to-i in-led-status-num))
+    (set-config 'led-status-type (to-i in-led-status-type))
+    (set-config 'led-status-reversed (to-i in-led-status-reversed))
+    (set-config 'led-status-strip-type (to-i in-led-status-strip-type))
+
+    (set-config 'led-front-pin (to-i in-led-front-pin))
+    (set-config 'led-front-num (to-i in-led-front-num))
+    (set-config 'led-front-type (to-i in-led-front-type))
+    (set-config 'led-front-reversed (to-i in-led-front-reversed))
+    (set-config 'led-front-strip-type (to-i in-led-front-strip-type))
+    (set-config 'led-front-highbeam-pin (to-i in-led-front-highbeam-pin))
+
+    (set-config 'led-rear-pin (to-i in-led-rear-pin))
+    (set-config 'led-rear-num (to-i in-led-rear-num))
+    (set-config 'led-rear-type (to-i in-led-rear-type))
+    (set-config 'led-rear-reversed (to-i in-led-rear-reversed))
+    (set-config 'led-rear-strip-type (to-i in-led-rear-strip-type))
+    (set-config 'led-rear-highbeam-pin (to-i in-led-rear-highbeam-pin))
+
+    (set-config 'led-button-pin (to-i in-led-button-pin))
+    (set-config 'led-button-strip-type (to-i in-led-button-strip-type))
+
+    (set-config 'led-footpad-pin (to-i in-led-footpad-pin))
+    (set-config 'led-footpad-num (to-i in-led-footpad-num))
+    (set-config 'led-footpad-type (to-i in-led-footpad-type))
+    (set-config 'led-footpad-reversed (to-i in-led-footpad-reversed))
+    (set-config 'led-footpad-strip-type (to-i in-led-footpad-strip-type))
+
+    (set-config 'bms-rs485-di-pin (to-i in-bms-rs485-di-pin))
+    (set-config 'bms-rs485-ro-pin (to-i in-bms-rs485-ro-pin))
+    (set-config 'bms-rs485-dere-pin (to-i in-bms-rs485-dere-pin))
+    (set-config 'bms-wakeup-pin (to-i in-bms-wakeup-pin))
+    (set-config 'bms-override-soc (to-i in-bms-override-soc))
+    (set-config 'bms-rs485-chip (to-i in-bms-rs485-chip))
+
+    (set-config 'led-loop-delay (to-i in-led-loop-delay))
+    (set-config 'bms-loop-delay (to-i in-bms-loop-delay))
+    (set-config 'pubmote-loop-delay (to-i in-pubmote-loop-delay))
+    (set-config 'can-loop-delay (to-i in-can-loop-delay))
+    (set-config 'led-startup-timeout (to-i in-led-startup-timeout))
+    (set-config 'led-dim-on-highbeam-ratio (to-float in-led-dim-on-highbeam-ratio))
+
+    (set-config 'bms-type (to-i in-bms-type))
+    (set-config 'bms-charge-only (to-i in-bms-charge-only))
+    (set-config 'led-show-battery-charging (to-i in-led-show-battery-charging))
+    (set-config 'bms-buff-size (to-i in-bms-buff-size))
+    (set-config 'led-max-brightness (to-float in-led-max-brightness))
+    (set-config 'soc-type (to-i in-soc-type))
+    (set-config 'cell-type (to-i in-cell-type))
+    (set-config 'led-update-not-running (to-i in-led-update-not-running))
+
+    (set-config 'log-enabled (to-i in-log-enabled))
+    (set-config 'log-rate (to-float in-log-rate))
+    (set-config 'log-append-gnss (to-i in-log-append-gnss))
+    (set-config 'humidity-enabled (to-i in-humidity-enabled))
+    (set-config 'humidity-sda-pin (to-i in-humidity-sda-pin))
+    (set-config 'humidity-slc-pin (to-i in-humidity-slc-pin))
+
+    (ext-facfg-store)
+    (apply-config)
+    (send-config)
+})
+
 ; Quick controls from the QML page (brightness / on-off), persisted.
 (defun recv-control (in-led-on in-led-highbeam-on in-led-brightness in-led-brightness-highbeam in-led-brightness-idle in-led-brightness-status in-bms-charge-state) {
     (setq led-on (to-i in-led-on))
@@ -204,10 +369,6 @@
     (setq status-string (str-merge status-string (str-from-n (get-bms-val 'bms-hum) "%.0f ")))
     (setq status-string (str-merge status-string (str-from-n (get-bms-val 'bms-temp-hum) "%.0f ")))
     (setq status-string (str-merge status-string (str-from-n (if log-running 1 0) "%d ")))
-    (setq status-string (str-merge status-string (str-from-n (to-i (get-config 'accept-tos)) "%d ")))
-    (setq status-string (str-merge status-string (str-from-n (to-i led-on) "%d ")))
-    (setq status-string (str-merge status-string (str-from-n (to-i led-highbeam-on) "%d ")))
-    (setq status-string (str-merge status-string (str-from-n led-brightness "%.2f ")))
     (send-data status-string)
 
     (if (= (is-pubmote-connected) 1) {
