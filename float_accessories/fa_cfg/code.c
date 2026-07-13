@@ -142,19 +142,19 @@ static bool name_eq(const char *a, const char *b) {
 	return *a == *b;
 }
 
-static const cfg_field_t *find_field(lbm_value name_arg) {
+static int find_field(lbm_value name_arg) {
 	char *name = VESC_IF->lbm_dec_str(name_arg);
 	if (!name) {
-		return NULL;
+		return -1;
 	}
 
-	for (unsigned int i = 0; i < CFG_FIELD_COUNT; i++) {
-		if (name_eq(name, cfg_fields[i].name)) {
-			return &cfg_fields[i];
+	for (int i = 0; i < (int)CFG_FIELD_COUNT; i++) {
+		if (name_eq(name, cfg_names[i])) {
+			return i;
 		}
 	}
 
-	return NULL;
+	return -1;
 }
 
 // (ext-facfg-get name-str) -> value
@@ -165,14 +165,14 @@ static lbm_value ext_facfg_get(lbm_value *args, lbm_uint argn) {
 		return VESC_IF->lbm_enc_sym_terror;
 	}
 
-	const cfg_field_t *f = find_field(args[0]);
-	if (!f) {
+	int f = find_field(args[0]);
+	if (f < 0) {
 		VESC_IF->lbm_set_error_reason("Unknown config parameter");
 		return VESC_IF->lbm_enc_sym_eerror;
 	}
 
-	const uint8_t *p = (const uint8_t *)&d->cfg + f->offset;
-	switch (f->type) {
+	const uint8_t *p = (const uint8_t *)&d->cfg + cfg_offsets[f];
+	switch (cfg_types[f]) {
 	case CFG_F32: {
 		float v;
 		memcpy(&v, p, sizeof(v));
@@ -198,14 +198,14 @@ static lbm_value ext_facfg_set(lbm_value *args, lbm_uint argn) {
 		return VESC_IF->lbm_enc_sym_terror;
 	}
 
-	const cfg_field_t *f = find_field(args[0]);
-	if (!f) {
+	int f = find_field(args[0]);
+	if (f < 0) {
 		VESC_IF->lbm_set_error_reason("Unknown config parameter");
 		return VESC_IF->lbm_enc_sym_eerror;
 	}
 
-	uint8_t *p = (uint8_t *)&d->cfg + f->offset;
-	switch (f->type) {
+	uint8_t *p = (uint8_t *)&d->cfg + cfg_offsets[f];
+	switch (cfg_types[f]) {
 	case CFG_F32: {
 		float v = VESC_IF->lbm_dec_as_float(args[1]);
 		memcpy(p, &v, sizeof(v));

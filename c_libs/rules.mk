@@ -84,7 +84,10 @@ else ifeq ($(ARCH),esp32)
 #  VESC Express   Native-lib rules (PIC blob for LispBM)
 #  - RISC-V targets (esp32c3 default, esp32c6, esp32p4): position-
 #    independent blob, executed in place from flash (XIP). Writes to
-#    .data/.bss do not work - keep state in allocated memory.
+#    .data/.bss do not work - keep state in allocated memory. Statically
+#    initialized POINTERS (e.g. const char *tab[] = {"a", ...}) hold
+#    meaningless link-time addresses at runtime - store names as
+#    fixed-size char arrays and use index/offset tables instead.
 #  - Xtensa target (esp32s3): Xtensa cannot generate position-independent
 #    code, so the lib is linked at 0 with relocations kept and packaged
 #    with a relocation table (mkreloc.py). The firmware copies it into
