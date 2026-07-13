@@ -1,7 +1,7 @@
-(import "fled/fled_esp32c3.bin" 'lib-esp32c3)
-(import "fled/fled_esp32c6.bin" 'lib-esp32c6)
-(import "fled/fled_esp32s3.bin" 'lib-esp32s3)
-(import "fled/fled_esp32p4.bin" 'lib-esp32p4)
+(import "espled_strip/espled_strip_esp32c3.bin" 'lib-esp32c3)
+(import "espled_strip/espled_strip_esp32c6.bin" 'lib-esp32c6)
+(import "espled_strip/espled_strip_esp32s3.bin" 'lib-esp32s3)
+(import "espled_strip/espled_strip_esp32p4.bin" 'lib-esp32p4)
 
 ; Native libs only run on the chip they were built for. Requires firmware
 ; with support for (sysinfo 'hw-target).
@@ -21,10 +21,10 @@
 )
 
 ; Convenience used by the test UI: single strip on one pin as segment 0.
-(defun fled-setup (pin len type) {
-    (ext-fled-deinit)
-    (ext-fled-seg-def 0 pin type len)
-    (ext-fled-init 1)
+(defun espled-setup (pin len type) {
+    (ext-espled-deinit)
+    (ext-espled-seg-def 0 pin type len)
+    (ext-espled-init 1)
 })
 
 ; The test UI sends lisp expressions as custom app data - evaluate them.

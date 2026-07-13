@@ -17,9 +17,9 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// ext-fled-*: segmented addressable-LED effect engine as a native library.
+// ext-espled-*: segmented addressable-LED strip engine as a native library.
 //
-// Modeled on the in-firmware fled module: Lisp sets high-level segment /
+// Lisp sets high-level segment /
 // effect state and a background render thread animates, applies
 // brightness / auto-white / an adaptive current limit and pushes pixels.
 // The hardware path is the firmware rgbled driver through the C interface
@@ -39,8 +39,8 @@
 
 HEADER
 
-#define FLED_SEG_MAX     8
-#define FLED_RENDER_MS   33  // ~30 fps
+#define ESPLED_SEG_MAX     8
+#define ESPLED_RENDER_MS   33  // ~30 fps
 
 // Effects
 enum {
@@ -100,7 +100,7 @@ typedef struct {
 	lib_mutex lock;
 	volatile bool running;
 
-	seg_t seg[FLED_SEG_MAX];
+	seg_t seg[ESPLED_SEG_MAX];
 	int seg_count;
 
 	uint8_t master_bri;
@@ -109,10 +109,10 @@ typedef struct {
 
 	uint16_t buf_len;    // pixels the work buffer holds
 	uint32_t *work;      // packed 0xWWRRGGBB, buf_len entries
-} fled_t;
+} espled_t;
 
-static fled_t *state(void) {
-	return (fled_t*)ARG;
+static espled_t *state(void) {
+	return (espled_t*)ARG;
 }
 
 // ---- Color helpers ------------------------------------------------------
@@ -210,7 +210,7 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 
 // ---- Render thread ------------------------------------------------------
 
-static void render_seg(fled_t *st, seg_t *s) {
+static void render_seg(espled_t *st, seg_t *s) {
 	int n = s->len;
 	uint32_t *work = st->work;
 	uint8_t *tx = s->txbuf;
@@ -271,7 +271,7 @@ static void render_seg(fled_t *st, seg_t *s) {
 }
 
 static void render_thd(void *arg) {
-	fled_t *st = (fled_t*)arg;
+	espled_t *st = (espled_t*)arg;
 
 	while (!VESC_IF->should_terminate()) {
 		for (int i = 0; i < st->seg_count; i++) {
@@ -298,7 +298,7 @@ static void render_thd(void *arg) {
 			}
 		}
 
-		VESC_IF->sleep_ms(FLED_RENDER_MS);
+		VESC_IF->sleep_ms(ESPLED_RENDER_MS);
 	}
 }
 
@@ -316,9 +316,9 @@ static bool check_num_args(lbm_value *args, lbm_uint argn, lbm_uint n) {
 	return true;
 }
 
-static seg_t *seg_arg(fled_t *st, lbm_value v) {
+static seg_t *seg_arg(espled_t *st, lbm_value v) {
 	int i = VESC_IF->lbm_dec_as_i32(v);
-	if (i < 0 || i >= FLED_SEG_MAX) {
+	if (i < 0 || i >= ESPLED_SEG_MAX) {
 		return NULL;
 	}
 	return &st->seg[i];
@@ -326,10 +326,10 @@ static seg_t *seg_arg(fled_t *st, lbm_value v) {
 
 // ---- Extensions ---------------------------------------------------------
 
-// (ext-fled-seg-def i pin type len) - define segment i before ext-fled-init.
+// (ext-espled-seg-def i pin type len) - define segment i before ext-espled-init.
 // type: 0 GRB, 1 RGB, 2 GRBW, 3 RGBW
 static lbm_value ext_seg_def(lbm_value *args, lbm_uint argn) {
-	fled_t *st = state();
+	espled_t *st = state();
 	if (!check_num_args(args, argn, 4)) return VESC_IF->lbm_enc_sym_terror;
 
 	seg_t *s = seg_arg(st, args[0]);
@@ -344,7 +344,7 @@ static lbm_value ext_seg_def(lbm_value *args, lbm_uint argn) {
 
 	if (st->running) {
 		VESC_IF->lbm_set_error_reason(
-			"Stop with ext-fled-deinit before redefining segments");
+			"Stop with ext-espled-deinit before redefining segments");
 		return VESC_IF->lbm_enc_sym_eerror;
 	}
 
@@ -367,13 +367,13 @@ static lbm_value ext_seg_def(lbm_value *args, lbm_uint argn) {
 	return VESC_IF->lbm_enc_sym_true;
 }
 
-// (ext-fled-init n) - start rendering the first n segments.
+// (ext-espled-init n) - start rendering the first n segments.
 static lbm_value ext_init(lbm_value *args, lbm_uint argn) {
-	fled_t *st = state();
+	espled_t *st = state();
 	if (!check_num_args(args, argn, 1)) return VESC_IF->lbm_enc_sym_terror;
 
 	int n = VESC_IF->lbm_dec_as_i32(args[0]);
-	if (n < 1 || n > FLED_SEG_MAX) return VESC_IF->lbm_enc_sym_terror;
+	if (n < 1 || n > ESPLED_SEG_MAX) return VESC_IF->lbm_enc_sym_terror;
 
 	if (st->running) {
 		VESC_IF->lbm_set_error_reason("Already running");
@@ -410,7 +410,7 @@ static lbm_value ext_init(lbm_value *args, lbm_uint argn) {
 	st->buf_len = max_len;
 	st->seg_count = n;
 
-	st->thread = VESC_IF->spawn(render_thd, 3072, "fled_render", st);
+	st->thread = VESC_IF->spawn(render_thd, 3072, "espled_render", st);
 	if (!st->thread) {
 		VESC_IF->free(st->work); st->work = NULL;
 		for (int i = 0; i < n; i++) {
@@ -425,7 +425,7 @@ static lbm_value ext_init(lbm_value *args, lbm_uint argn) {
 	return VESC_IF->lbm_enc_sym_true;
 }
 
-static void fled_stop(fled_t *st) {
+static void espled_stop(espled_t *st) {
 	if (!st->running) {
 		return;
 	}
@@ -435,7 +435,7 @@ static void fled_stop(fled_t *st) {
 	VESC_IF->rgbled_deinit();
 
 	VESC_IF->free(st->work); st->work = NULL;
-	for (int i = 0; i < FLED_SEG_MAX; i++) {
+	for (int i = 0; i < ESPLED_SEG_MAX; i++) {
 		if (st->seg[i].txbuf) {
 			VESC_IF->free(st->seg[i].txbuf);
 			st->seg[i].txbuf = NULL;
@@ -445,16 +445,16 @@ static void fled_stop(fled_t *st) {
 	st->seg_count = 0;
 }
 
-// (ext-fled-deinit)
+// (ext-espled-deinit)
 static lbm_value ext_deinit(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
-	fled_stop(state());
+	espled_stop(state());
 	return VESC_IF->lbm_enc_sym_true;
 }
 
-// (ext-fled-seg-look i fx pal color spd bri) - full appearance in one call.
+// (ext-espled-seg-look i fx pal color spd bri) - full appearance in one call.
 static lbm_value ext_seg_look(lbm_value *args, lbm_uint argn) {
-	fled_t *st = state();
+	espled_t *st = state();
 	if (!check_num_args(args, argn, 6)) return VESC_IF->lbm_enc_sym_terror;
 
 	seg_t *s = seg_arg(st, args[0]);
@@ -490,7 +490,7 @@ static void seg_set(seg_t *s, int field, uint32_t v) {
 }
 
 static lbm_value set_one(lbm_value *args, lbm_uint argn, int field) {
-	fled_t *st = state();
+	espled_t *st = state();
 	if (!check_num_args(args, argn, 2)) return VESC_IF->lbm_enc_sym_terror;
 
 	seg_t *s = seg_arg(st, args[0]);
@@ -503,48 +503,48 @@ static lbm_value set_one(lbm_value *args, lbm_uint argn, int field) {
 }
 
 static lbm_value set_all(lbm_value *args, lbm_uint argn, int field) {
-	fled_t *st = state();
+	espled_t *st = state();
 	if (!check_num_args(args, argn, 1)) return VESC_IF->lbm_enc_sym_terror;
 
 	VESC_IF->mutex_lock(st->lock);
-	for (int i = 0; i < FLED_SEG_MAX; i++) {
+	for (int i = 0; i < ESPLED_SEG_MAX; i++) {
 		seg_set(&st->seg[i], field, VESC_IF->lbm_dec_as_u32(args[0]));
 	}
 	VESC_IF->mutex_unlock(st->lock);
 	return VESC_IF->lbm_enc_sym_true;
 }
 
-// (ext-fled-seg-fx i fx) / (ext-fled-fx fx)
+// (ext-espled-seg-fx i fx) / (ext-espled-fx fx)
 static lbm_value ext_seg_fx(lbm_value *a, lbm_uint n) { return set_one(a, n, SET_FX); }
 static lbm_value ext_fx(lbm_value *a, lbm_uint n) { return set_all(a, n, SET_FX); }
 
-// (ext-fled-seg-pal i pal) / (ext-fled-pal pal)
+// (ext-espled-seg-pal i pal) / (ext-espled-pal pal)
 static lbm_value ext_seg_pal(lbm_value *a, lbm_uint n) { return set_one(a, n, SET_PAL); }
 static lbm_value ext_pal(lbm_value *a, lbm_uint n) { return set_all(a, n, SET_PAL); }
 
-// (ext-fled-seg-bri i bri)
+// (ext-espled-seg-bri i bri)
 static lbm_value ext_seg_bri(lbm_value *a, lbm_uint n) { return set_one(a, n, SET_BRI); }
 
-// (ext-fled-seg-spd i spd)
+// (ext-espled-seg-spd i spd)
 static lbm_value ext_seg_spd(lbm_value *a, lbm_uint n) { return set_one(a, n, SET_SPD); }
 
-// (ext-fled-seg-size i size) - chase head / comet tail length
+// (ext-espled-seg-size i size) - chase head / comet tail length
 static lbm_value ext_seg_size(lbm_value *a, lbm_uint n) { return set_one(a, n, SET_SIZE); }
 
-// (ext-fled-seg-col i color) / (ext-fled-col color) - packed 0xWWRRGGBB
+// (ext-espled-seg-col i color) / (ext-espled-col color) - packed 0xWWRRGGBB
 static lbm_value ext_seg_col(lbm_value *a, lbm_uint n) { return set_one(a, n, SET_COLOR); }
 static lbm_value ext_col(lbm_value *a, lbm_uint n) { return set_all(a, n, SET_COLOR); }
 
-// (ext-fled-seg-on i on)
+// (ext-espled-seg-on i on)
 static lbm_value ext_seg_on(lbm_value *a, lbm_uint n) { return set_one(a, n, SET_ON); }
 
-// (ext-fled-seg-reverse i rev)
+// (ext-espled-seg-reverse i rev)
 static lbm_value ext_seg_reverse(lbm_value *a, lbm_uint n) { return set_one(a, n, SET_REVERSE); }
 
-// (ext-fled-col-rgb r g b) / (ext-fled-col-rgbw r g b w) - solid color on
+// (ext-espled-col-rgb r g b) / (ext-espled-col-rgbw r g b w) - solid color on
 // all segments, like fled-col-rgb.
 static lbm_value ext_col_rgbw(lbm_value *args, lbm_uint argn) {
-	fled_t *st = state();
+	espled_t *st = state();
 	if (argn != 3 && argn != 4) return VESC_IF->lbm_enc_sym_terror;
 	for (lbm_uint i = 0; i < argn; i++) {
 		if (!VESC_IF->lbm_is_number(args[i])) return VESC_IF->lbm_enc_sym_terror;
@@ -557,7 +557,7 @@ static lbm_value ext_col_rgbw(lbm_value *args, lbm_uint argn) {
 	uint32_t c = pack(r, g, b, w);
 
 	VESC_IF->mutex_lock(st->lock);
-	for (int i = 0; i < FLED_SEG_MAX; i++) {
+	for (int i = 0; i < ESPLED_SEG_MAX; i++) {
 		st->seg[i].color = c;
 		st->seg[i].fx = FX_SOLID;
 	}
@@ -565,25 +565,25 @@ static lbm_value ext_col_rgbw(lbm_value *args, lbm_uint argn) {
 	return VESC_IF->lbm_enc_sym_true;
 }
 
-// (ext-fled-bri b) - master brightness 0..255
+// (ext-espled-bri b) - master brightness 0..255
 static lbm_value ext_bri(lbm_value *args, lbm_uint argn) {
-	fled_t *st = state();
+	espled_t *st = state();
 	if (!check_num_args(args, argn, 1)) return VESC_IF->lbm_enc_sym_terror;
 	st->master_bri = (uint8_t)VESC_IF->lbm_dec_as_i32(args[0]);
 	return VESC_IF->lbm_enc_sym_true;
 }
 
-// (ext-fled-auto-white en) - derive W from RGB on RGBW strips
+// (ext-espled-auto-white en) - derive W from RGB on RGBW strips
 static lbm_value ext_auto_white(lbm_value *args, lbm_uint argn) {
-	fled_t *st = state();
+	espled_t *st = state();
 	if (!check_num_args(args, argn, 1)) return VESC_IF->lbm_enc_sym_terror;
 	st->auto_white = VESC_IF->lbm_dec_as_i32(args[0]) != 0;
 	return VESC_IF->lbm_enc_sym_true;
 }
 
-// (ext-fled-ablimit ma) - adaptive current cap in mA, 0 = off
+// (ext-espled-ablimit ma) - adaptive current cap in mA, 0 = off
 static lbm_value ext_ablimit(lbm_value *args, lbm_uint argn) {
-	fled_t *st = state();
+	espled_t *st = state();
 	if (!check_num_args(args, argn, 1)) return VESC_IF->lbm_enc_sym_terror;
 	int ma = VESC_IF->lbm_dec_as_i32(args[0]);
 	st->ablimit_ma = ma < 0 ? 0 : (uint32_t)ma;
@@ -593,26 +593,26 @@ static lbm_value ext_ablimit(lbm_value *args, lbm_uint argn) {
 // ---- Lifecycle ----------------------------------------------------------
 
 static void stop(void *arg) {
-	fled_t *st = (fled_t*)arg;
+	espled_t *st = (espled_t*)arg;
 
 	if (st) {
-		fled_stop(st);
+		espled_stop(st);
 		VESC_IF->free(st->lock);
 		VESC_IF->free(st);
 	}
 
-	VESC_IF->printf("fled lib stopped");
+	VESC_IF->printf("espled-strip lib stopped");
 }
 
 INIT_FUN(lib_info *info) {
 	INIT_START
 
-	fled_t *st = VESC_IF->malloc(sizeof(fled_t));
+	espled_t *st = VESC_IF->malloc(sizeof(espled_t));
 	if (!st) {
 		return false;
 	}
 
-	for (unsigned int i = 0; i < sizeof(fled_t); i++) {
+	for (unsigned int i = 0; i < sizeof(espled_t); i++) {
 		((uint8_t*)st)[i] = 0;
 	}
 
@@ -626,28 +626,28 @@ INIT_FUN(lib_info *info) {
 	info->arg = st;
 	info->stop_fun = stop;
 
-	VESC_IF->lbm_add_extension("ext-fled-seg-def", ext_seg_def);
-	VESC_IF->lbm_add_extension("ext-fled-init", ext_init);
-	VESC_IF->lbm_add_extension("ext-fled-deinit", ext_deinit);
-	VESC_IF->lbm_add_extension("ext-fled-seg-look", ext_seg_look);
-	VESC_IF->lbm_add_extension("ext-fled-seg-fx", ext_seg_fx);
-	VESC_IF->lbm_add_extension("ext-fled-fx", ext_fx);
-	VESC_IF->lbm_add_extension("ext-fled-seg-pal", ext_seg_pal);
-	VESC_IF->lbm_add_extension("ext-fled-pal", ext_pal);
-	VESC_IF->lbm_add_extension("ext-fled-seg-bri", ext_seg_bri);
-	VESC_IF->lbm_add_extension("ext-fled-seg-spd", ext_seg_spd);
-	VESC_IF->lbm_add_extension("ext-fled-seg-size", ext_seg_size);
-	VESC_IF->lbm_add_extension("ext-fled-seg-col", ext_seg_col);
-	VESC_IF->lbm_add_extension("ext-fled-col", ext_col);
-	VESC_IF->lbm_add_extension("ext-fled-seg-on", ext_seg_on);
-	VESC_IF->lbm_add_extension("ext-fled-seg-reverse", ext_seg_reverse);
-	VESC_IF->lbm_add_extension("ext-fled-col-rgb", ext_col_rgbw);
-	VESC_IF->lbm_add_extension("ext-fled-col-rgbw", ext_col_rgbw);
-	VESC_IF->lbm_add_extension("ext-fled-bri", ext_bri);
-	VESC_IF->lbm_add_extension("ext-fled-auto-white", ext_auto_white);
-	VESC_IF->lbm_add_extension("ext-fled-ablimit", ext_ablimit);
+	VESC_IF->lbm_add_extension("ext-espled-seg-def", ext_seg_def);
+	VESC_IF->lbm_add_extension("ext-espled-init", ext_init);
+	VESC_IF->lbm_add_extension("ext-espled-deinit", ext_deinit);
+	VESC_IF->lbm_add_extension("ext-espled-seg-look", ext_seg_look);
+	VESC_IF->lbm_add_extension("ext-espled-seg-fx", ext_seg_fx);
+	VESC_IF->lbm_add_extension("ext-espled-fx", ext_fx);
+	VESC_IF->lbm_add_extension("ext-espled-seg-pal", ext_seg_pal);
+	VESC_IF->lbm_add_extension("ext-espled-pal", ext_pal);
+	VESC_IF->lbm_add_extension("ext-espled-seg-bri", ext_seg_bri);
+	VESC_IF->lbm_add_extension("ext-espled-seg-spd", ext_seg_spd);
+	VESC_IF->lbm_add_extension("ext-espled-seg-size", ext_seg_size);
+	VESC_IF->lbm_add_extension("ext-espled-seg-col", ext_seg_col);
+	VESC_IF->lbm_add_extension("ext-espled-col", ext_col);
+	VESC_IF->lbm_add_extension("ext-espled-seg-on", ext_seg_on);
+	VESC_IF->lbm_add_extension("ext-espled-seg-reverse", ext_seg_reverse);
+	VESC_IF->lbm_add_extension("ext-espled-col-rgb", ext_col_rgbw);
+	VESC_IF->lbm_add_extension("ext-espled-col-rgbw", ext_col_rgbw);
+	VESC_IF->lbm_add_extension("ext-espled-bri", ext_bri);
+	VESC_IF->lbm_add_extension("ext-espled-auto-white", ext_auto_white);
+	VESC_IF->lbm_add_extension("ext-espled-ablimit", ext_ablimit);
 
-	VESC_IF->printf("fled lib loaded");
+	VESC_IF->printf("espled-strip lib loaded");
 
 	return true;
 }

@@ -31,7 +31,7 @@ Item {
 
     property Commands mCommands: VescIf.commands()
 
-    // The fled.lisp script evaluates expressions sent as custom app data.
+    // The espled_strip.lisp script evaluates expressions sent as custom app data.
     function sendCode(str) {
         mCommands.sendCustomAppData(str + "\0")
     }
@@ -41,7 +41,7 @@ Item {
     }
 
     function sendColor() {
-        sendCode("(ext-fled-seg-col 0 " + packedColor() + ")")
+        sendCode("(ext-espled-seg-col 0 " + packedColor() + ")")
     }
 
     ScrollView {
@@ -87,13 +87,13 @@ Item {
                     Button {
                         text: "Start"
                         Layout.fillWidth: true
-                        onClicked: sendCode("(fled-setup " + pinBox.value + " " +
+                        onClicked: sendCode("(espled-setup " + pinBox.value + " " +
                                             lenBox.value + " " + typeBox.currentIndex + ")")
                     }
                     Button {
                         text: "Stop"
                         Layout.fillWidth: true
-                        onClicked: sendCode("(ext-fled-deinit)")
+                        onClicked: sendCode("(ext-espled-deinit)")
                     }
                 }
             }
@@ -111,7 +111,7 @@ Item {
                         id: fxBox
                         model: ["Solid", "Breathe", "Chase", "Rainbow", "Sparkle", "Comet"]
                         Layout.fillWidth: true
-                        onActivated: sendCode("(ext-fled-seg-fx 0 " + currentIndex + ")")
+                        onActivated: sendCode("(ext-espled-seg-fx 0 " + currentIndex + ")")
                     }
 
                     Label { text: "Palette" }
@@ -119,7 +119,7 @@ Item {
                         id: palBox
                         model: ["RGBW", "Fire", "Ocean", "Neon", "Ember", "Traffic", "Strobe", "Police"]
                         Layout.fillWidth: true
-                        onActivated: sendCode("(ext-fled-seg-pal 0 " + currentIndex + ")")
+                        onActivated: sendCode("(ext-espled-seg-pal 0 " + currentIndex + ")")
                     }
 
                     Label { text: "Speed " + spdSlider.value.toFixed(0) }
@@ -128,7 +128,7 @@ Item {
                         from: 1; to: 255; value: 32
                         stepSize: 1
                         Layout.fillWidth: true
-                        onPressedChanged: if (!pressed) sendCode("(ext-fled-seg-spd 0 " + value.toFixed(0) + ")")
+                        onPressedChanged: if (!pressed) sendCode("(ext-espled-seg-spd 0 " + value.toFixed(0) + ")")
                     }
 
                     Label { text: "Size " + sizeSlider.value.toFixed(0) }
@@ -137,7 +137,7 @@ Item {
                         from: 1; to: 64; value: 8
                         stepSize: 1
                         Layout.fillWidth: true
-                        onPressedChanged: if (!pressed) sendCode("(ext-fled-seg-size 0 " + value.toFixed(0) + ")")
+                        onPressedChanged: if (!pressed) sendCode("(ext-espled-seg-size 0 " + value.toFixed(0) + ")")
                     }
                 }
             }
@@ -195,27 +195,27 @@ Item {
                         Button {
                             text: "Red"
                             Layout.fillWidth: true
-                            onClicked: sendCode("(ext-fled-col-rgb 255 0 0)")
+                            onClicked: sendCode("(ext-espled-col-rgb 255 0 0)")
                         }
                         Button {
                             text: "Green"
                             Layout.fillWidth: true
-                            onClicked: sendCode("(ext-fled-col-rgb 0 255 0)")
+                            onClicked: sendCode("(ext-espled-col-rgb 0 255 0)")
                         }
                         Button {
                             text: "Blue"
                             Layout.fillWidth: true
-                            onClicked: sendCode("(ext-fled-col-rgb 0 0 255)")
+                            onClicked: sendCode("(ext-espled-col-rgb 0 0 255)")
                         }
                         Button {
                             text: "White"
                             Layout.fillWidth: true
-                            onClicked: sendCode("(ext-fled-col-rgb 255 255 255)")
+                            onClicked: sendCode("(ext-espled-col-rgb 255 255 255)")
                         }
                         Button {
                             text: "Off"
                             Layout.fillWidth: true
-                            onClicked: sendCode("(ext-fled-col 0)")
+                            onClicked: sendCode("(ext-espled-col 0)")
                         }
                     }
                 }
@@ -235,13 +235,13 @@ Item {
                         from: 0; to: 255; value: 255
                         stepSize: 1
                         Layout.fillWidth: true
-                        onPressedChanged: if (!pressed) sendCode("(ext-fled-bri " + value.toFixed(0) + ")")
+                        onPressedChanged: if (!pressed) sendCode("(ext-espled-bri " + value.toFixed(0) + ")")
                     }
 
                     Label { text: "Auto white" }
                     Switch {
                         id: awSwitch
-                        onToggled: sendCode("(ext-fled-auto-white " + (checked ? 1 : 0) + ")")
+                        onToggled: sendCode("(ext-espled-auto-white " + (checked ? 1 : 0) + ")")
                     }
 
                     Label { text: "Current limit (mA)" }
@@ -251,7 +251,7 @@ Item {
                         stepSize: 100
                         editable: true
                         Layout.fillWidth: true
-                        onValueModified: sendCode("(ext-fled-ablimit " + value + ")")
+                        onValueModified: sendCode("(ext-espled-ablimit " + value + ")")
                     }
                 }
             }

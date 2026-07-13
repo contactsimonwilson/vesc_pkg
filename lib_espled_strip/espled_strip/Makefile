@@ -1,7 +1,7 @@
 ESP_TARGET ?= esp32c3
 
 ARCH = esp32
-TARGET = fled_$(ESP_TARGET)
+TARGET = espled_strip_$(ESP_TARGET)
 
 SOURCES = code.c
 
