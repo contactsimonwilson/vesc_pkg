@@ -23,13 +23,14 @@ The package includes a VESC Tool page for testing: configure pin / LED count / s
 | `ext-espled-seg-bri` | `(i bri)` | per-segment brightness 0..255 |
 | `ext-espled-seg-spd` | `(i spd)` | animation speed 0..255 |
 | `ext-espled-seg-size` | `(i size)` | chase head / comet tail length |
+| `ext-espled-seg-level` | `(i level)` | gauge fill level 0..255 |
 | `ext-espled-seg-on` | `(i on)` | enable/disable a segment |
 | `ext-espled-seg-reverse` | `(i rev)` | reverse pixel order |
 | `ext-espled-bri` | `(b)` | master brightness 0..255 |
 | `ext-espled-auto-white` | `(en)` | derive W from RGB on RGBW strips |
 | `ext-espled-ablimit` | `(ma)` | adaptive current cap in mA (0 = off) |
 
-Effects: 0 solid, 1 breathe, 2 chase, 3 rainbow, 4 sparkle, 5 comet.
+Effects: 0 solid, 1 breathe, 2 chase, 3 rainbow, 4 sparkle, 5 comet, 6 gauge (fill by `level`, battery gradient when color is 0, pulses when `spd` > 0), 7 strobe, 8 larson/knight-rider, 9 felony (halves alternate red/blue).
 Palettes: 0 rgbw-ish, 1 fire, 2 ocean, 3 neon, 4 ember, 5 traffic, 6 strobe, 7 police-blue.
 
 ## Example

@@ -50,6 +50,10 @@ enum {
 	FX_RAINBOW,
 	FX_SPARKLE,
 	FX_COMET,
+	FX_GAUGE,   // fill by the level param; battery gradient when color = 0
+	FX_STROBE,  // hard on/off flash
+	FX_LARSON,  // bouncing eye with tail (knight rider)
+	FX_FELONY,  // halves alternate red/blue
 };
 
 // Color byte layouts on the wire
@@ -86,6 +90,7 @@ typedef struct {
 	uint8_t bri;       // per-segment brightness 0..255
 	uint8_t spd;       // 0..255
 	uint8_t size;      // chase head / comet tail length
+	uint8_t level;     // gauge fill 0..255
 	uint32_t color;    // packed 0xWWRRGGBB
 	uint32_t phase;    // frames since effect start
 
@@ -198,6 +203,55 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 			uint32_t b = d < size ? 255 - (d * 255) / size : 0;
 			uint32_t c = s->color ? s->color : palette_at(s->pal, (uint8_t)ph);
 			work[i] = scale(c, b);
+		}
+	} break;
+
+	case FX_GAUGE: {
+		// Fill the first level/255 of the strip. With color 0 the fill is
+		// a battery-style gradient: red when nearly empty, green when
+		// full. spd > 0 pulses the fill (e.g. while charging).
+		int lit = (n * s->level + 254) / 255;
+		if (s->level > 0 && lit < 1) lit = 1;
+		uint32_t b = s->spd ? 140 + triangle((ph * s->spd) / 32) * 115 / 255
+			: 255;
+		uint32_t c;
+		if (s->color) {
+			c = s->color;
+		} else if (s->level < 51) { // < 20%: red
+			c = 0xFF0000;
+		} else {
+			uint32_t g = ((uint32_t)s->level * 255) / 204; // level/0.8
+			if (g > 255) g = 255;
+			c = pack(255 - g, g, 0, 0);
+		}
+		c = scale(c, b);
+		for (int i = 0; i < n; i++) work[i] = i < lit ? c : 0;
+	} break;
+
+	case FX_STROBE: {
+		uint32_t c = s->color ? s->color : 0xFFFFFF;
+		bool lit = ((ph * spd) / 64) & 1;
+		for (int i = 0; i < n; i++) work[i] = lit ? c : 0;
+	} break;
+
+	case FX_LARSON: {
+		int span = n > 1 ? n - 1 : 1;
+		int pos = (int)((ph * spd / 16) % (uint32_t)(2 * span));
+		if (pos > span) pos = 2 * span - pos;
+		uint32_t c = s->color ? s->color : 0xFF0000;
+		for (int i = 0; i < n; i++) {
+			int d = i > pos ? i - pos : pos - i;
+			uint32_t b = d < size ? 255 - (d * 255) / size : 0;
+			work[i] = scale(c, b);
+		}
+	} break;
+
+	case FX_FELONY: {
+		bool swap = ((ph * spd) / 48) & 1;
+		uint32_t c1 = swap ? 0x0000FF : 0xFF0000;
+		uint32_t c2 = swap ? 0xFF0000 : 0x0000FF;
+		for (int i = 0; i < n; i++) {
+			work[i] = i < n / 2 ? c1 : c2;
 		}
 	} break;
 
@@ -474,11 +528,11 @@ static lbm_value ext_seg_look(lbm_value *args, lbm_uint argn) {
 
 // Setters shared by the per-segment and all-segment variants. Field ids
 // keep one implementation for all the small setters.
-enum { SET_FX = 0, SET_PAL, SET_BRI, SET_SPD, SET_COLOR, SET_ON, SET_REVERSE, SET_SIZE };
+enum { SET_FX = 0, SET_PAL, SET_BRI, SET_SPD, SET_COLOR, SET_ON, SET_REVERSE, SET_SIZE, SET_LEVEL };
 
 static void seg_set(seg_t *s, int field, uint32_t v) {
 	switch (field) {
-	case SET_FX:      s->fx = (uint8_t)v; s->phase = 0; break;
+	case SET_FX:      if (s->fx != (uint8_t)v) { s->fx = (uint8_t)v; s->phase = 0; } break;
 	case SET_PAL:     s->pal = (uint8_t)v; break;
 	case SET_BRI:     s->bri = (uint8_t)v; break;
 	case SET_SPD:     s->spd = (uint8_t)v; break;
@@ -486,6 +540,7 @@ static void seg_set(seg_t *s, int field, uint32_t v) {
 	case SET_ON:      s->on = v != 0; break;
 	case SET_REVERSE: s->reverse = v != 0; break;
 	case SET_SIZE:    s->size = (uint8_t)v; break;
+	case SET_LEVEL:   s->level = (uint8_t)v; break;
 	}
 }
 
@@ -530,6 +585,9 @@ static lbm_value ext_seg_spd(lbm_value *a, lbm_uint n) { return set_one(a, n, SE
 
 // (ext-espled-seg-size i size) - chase head / comet tail length
 static lbm_value ext_seg_size(lbm_value *a, lbm_uint n) { return set_one(a, n, SET_SIZE); }
+
+// (ext-espled-seg-level i level) - gauge fill 0..255
+static lbm_value ext_seg_level(lbm_value *a, lbm_uint n) { return set_one(a, n, SET_LEVEL); }
 
 // (ext-espled-seg-col i color) / (ext-espled-col color) - packed 0xWWRRGGBB
 static lbm_value ext_seg_col(lbm_value *a, lbm_uint n) { return set_one(a, n, SET_COLOR); }
@@ -637,6 +695,7 @@ INIT_FUN(lib_info *info) {
 	VESC_IF->lbm_add_extension("ext-espled-seg-bri", ext_seg_bri);
 	VESC_IF->lbm_add_extension("ext-espled-seg-spd", ext_seg_spd);
 	VESC_IF->lbm_add_extension("ext-espled-seg-size", ext_seg_size);
+	VESC_IF->lbm_add_extension("ext-espled-seg-level", ext_seg_level);
 	VESC_IF->lbm_add_extension("ext-espled-seg-col", ext_seg_col);
 	VESC_IF->lbm_add_extension("ext-espled-col", ext_col);
 	VESC_IF->lbm_add_extension("ext-espled-seg-on", ext_seg_on);
