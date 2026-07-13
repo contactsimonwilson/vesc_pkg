@@ -300,7 +300,7 @@ typedef enum {
 	CFG_PARAM_si_battery_cells,
 	CFG_PARAM_si_battery_ah,
 	CFG_PARAM_si_motor_nl_current,
-
+	
 	// Motor FOC Parameters
 	CFG_PARAM_foc_motor_r,
 	CFG_PARAM_foc_motor_l,
@@ -341,8 +341,8 @@ typedef struct {
 	lbm_value (*lbm_list_destructive_reverse)(lbm_value list);
 	bool (*lbm_create_byte_array)(lbm_value *value, lbm_uint num_elt);
 
-	int (*lbm_add_symbol_const)(char *, lbm_uint *);
-	int (*lbm_get_symbol_by_name)(char *name, lbm_uint* id);
+	int (*lbm_add_symbol_const)(const char *, lbm_uint *);
+	int (*lbm_get_symbol_by_name)(const char *name, lbm_uint* id);
 
 	lbm_value (*lbm_enc_i)(lbm_int x);
 	lbm_value (*lbm_enc_u)(lbm_uint x);
@@ -726,7 +726,35 @@ typedef struct {
 #ifdef ESP_PLATFORM
 // System tick rate. Can be used to convert system ticks to time
 #define SYSTEM_TICK_RATE_HZ 1000
+
+/*
+ * Address of the firmware-side C interface table. It must match the address
+ * of the .libif section in main/linker_libif_<target>.ld for the target the
+ * firmware (and the native library) is built for.
+ *
+ * The firmware build picks the target up from sdkconfig automatically. When
+ * building a native library out of tree, define the CONFIG_IDF_TARGET_*
+ * macro matching the hardware you are building for, e.g.
+ * -DCONFIG_IDF_TARGET_ESP32C3=1. A library only works on the target it was
+ * built for.
+ */
+#if defined(__has_include)
+#if __has_include("sdkconfig.h")
+#include "sdkconfig.h"
+#endif
+#endif
+
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
 #define VESC_IF		((vesc_c_if*)(0x3FCCF800))
+#elif defined(CONFIG_IDF_TARGET_ESP32S3)
+#define VESC_IF		((vesc_c_if*)(0x3FCE8800))
+#elif defined(CONFIG_IDF_TARGET_ESP32C6)
+#define VESC_IF		((vesc_c_if*)(0x4087B800))
+#elif defined(CONFIG_IDF_TARGET_ESP32P4)
+#define VESC_IF		((vesc_c_if*)(0x4FF3A000))
+#else
+#error "Unknown ESP target. Define CONFIG_IDF_TARGET_ESP32C3, -S3, -C6 or -P4 when building a native library."
+#endif
 #else
 // System tick rate. Can be used to convert system ticks to time
 #define SYSTEM_TICK_RATE_HZ 10000

@@ -81,11 +81,46 @@ clean:
 	rm -f $(OBJECTS) $(TARGET).elf $(TARGET).list $(TARGET).lisp $(TARGET).bin
 else ifeq ($(ARCH),esp32)
 # ======================================================================
-#  ESP32-C3   Native-lib rules (PIC blob for LispBM)
-#  - RISC-V (rv32imc / ilp32, software float)
+#  VESC Express   Native-lib rules (PIC blob for LispBM)
+#  - RISC-V targets: esp32c3 (default), esp32c6, esp32p4
+#  - march/mabi must match the firmware ABI of the chip, and the
+#    resulting binary only runs on the chip it was built for
 #  - Section GC + (optional) LTO
 #  - Generates: .elf, .bin (with header), .lisp, .list, .map
+#
+#  esp32s3 is not supported: Xtensa GCC cannot generate position-
+#  independent code without load-time relocation (address literals are
+#  absolute), which the execute-in-place loading scheme does not provide.
 # ======================================================================
+
+# ---- target chip selection ---------------------------------------------
+ESP_TARGET ?= esp32c3
+
+ifeq ($(ESP_TARGET),esp32c3)
+  MARCH          := rv32imc_zicsr_zifencei
+  MABI           := ilp32
+  ESP_TARGET_DEF := CONFIG_IDF_TARGET_ESP32C3
+  USE_RVFP       := yes
+else ifeq ($(ESP_TARGET),esp32c6)
+  MARCH          := rv32imac_zicsr_zifencei
+  MABI           := ilp32
+  ESP_TARGET_DEF := CONFIG_IDF_TARGET_ESP32C6
+  USE_RVFP       := yes
+else ifeq ($(ESP_TARGET),esp32p4)
+  MARCH          := rv32imafc_zicsr_zifencei
+  MABI           := ilp32f
+  ESP_TARGET_DEF := CONFIG_IDF_TARGET_ESP32P4
+  USE_RVFP       := no    # hardware single-precision FPU
+else ifeq ($(ESP_TARGET),esp32s3)
+  $(error esp32s3 native libs are not supported: Xtensa GCC cannot produce \
+position-independent XIP code (absolute address literals need load-time \
+relocation, which the firmware does not perform))
+else
+  $(error Unknown ESP_TARGET=$(ESP_TARGET); use esp32c3, esp32c6 or esp32p4)
+endif
+
+# Run 'make clean' when switching ESP_TARGET - objects are not
+# target-suffixed.
 
 # ---- toolchain (override CROSS if needed) -----------------------------
 CROSS     ?= riscv32-esp-elf-
@@ -105,12 +140,16 @@ SOURCES  ?=
 VESC_C_LIB_PATH ?= ../..
 LINKER_SCRIPT   ?= $(VESC_C_LIB_PATH)/link_esp32.ld
 
-# ---- RVfplib (required) -----------------------------------------------
-# Expect RVfplib sources at $(VESC_C_LIB_PATH)RVfplib/
-# Always produce and link $(VESC_C_LIB_PATH)librvfp.a
+# ---- RVfplib (soft-float targets only) ---------------------------------
+# Expect RVfplib sources at $(VESC_C_LIB_PATH)/RVfplib/
+# Not used on esp32p4, which has a hardware FPU (ilp32f ABI).
 RVFP_SRC_DIR   := $(VESC_C_LIB_PATH)/RVfplib
 RVFP_VARIANT   ?= rvfp_nd_s
-RVFP_LIB := $(RVFP_SRC_DIR)/build/lib/lib$(RVFP_VARIANT).a
+ifeq ($(USE_RVFP),yes)
+  RVFP_LIB := $(RVFP_SRC_DIR)/build/lib/lib$(RVFP_VARIANT).a
+else
+  RVFP_LIB :=
+endif
 
 # ---- toggles ----------------------------------------------------------
 USE_LTO      ?= no        # Use LTO if your riscv32-esp-elf toolchain supports it
@@ -126,7 +165,8 @@ CFLAGS_COMMON = \
   -fPIC -fvisibility=hidden \
   -I$(VESC_C_LIB_PATH) -DIS_VESC_LIB \
   -DESP_PLATFORM=true \
-  -march=rv32imc_zicsr_zifencei -mabi=ilp32 \
+  -D$(ESP_TARGET_DEF)=1 \
+  -march=$(MARCH) -mabi=$(MABI) \
   -mno-save-restore \
   -mcmodel=medany \
   -msmall-data-limit=0 \
@@ -173,8 +213,12 @@ ifeq ($(VERBOSE_LINK),yes)
 endif
 
 # ---- required soft-float libs (group avoids cyclic deps) --------------
-# Always link the locally-built librvfp.a first
-LDGROUP := -Wl,--start-group $(RVFP_LIB) -Wl,--end-group
+# Link the locally-built librvfp.a first on soft-float targets
+ifeq ($(USE_RVFP),yes)
+  LDGROUP := -Wl,--start-group $(RVFP_LIB) -Wl,--end-group
+else
+  LDGROUP :=
+endif
 
 # ---- derived names ----------------------------------------------------
 OBJECTS := $(SOURCES:.c=.o)
@@ -192,11 +236,13 @@ default: $(TARGET)
 all:     default
 
 # ---- auto-build librvfp.a (no checks; assumes RVfplib exists) --------
+ifeq ($(USE_RVFP),yes)
 $(RVFP_LIB):
 	@echo ">> Building RVfplib ($(RVFP_VARIANT)) with $(CROSS)"
 	$(MAKE) -C "$(RVFP_SRC_DIR)" \
 		RISCV_PREFIX=$(CROSS) ARCH=rv32imc ABI=ilp32 \
 		CC=$(CC) AR=$(AR) NM=$(NM) OBJDUMP=$(OBJDUMP)
+endif
 
 rvfp: $(RVFP_LIB)
 

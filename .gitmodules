@@ -1,3 +1,3 @@
 [submodule "c_libs/RVfplib"]
 	path = c_libs/RVfplib
-	url = git@github.com:pulp-platform/RVfplib.git
+	url = https://github.com/pulp-platform/RVfplib.git

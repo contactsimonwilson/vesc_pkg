@@ -91,10 +91,12 @@ make clean
 make VESC_TOOL=/path/to/vesc_tool
 ```
 
-For building native libraries for VESC Express with c_libs you will need to specify the architecture:
+For building native libraries for VESC Express with c_libs you will need to specify the architecture and the chip the library should run on (`esp32c3` is the default):
 ```sh
-make ARCH=esp32
+make ARCH=esp32 ESP_TARGET=esp32c3   # or esp32c6, esp32p4
 ```
+
+A library only runs on the chip it was built for, as both the interface table address and the instruction set differ between chips. Run `make clean` when switching `ESP_TARGET`. The ESP32-S3 is not supported for native libraries, because Xtensa GCC cannot generate position-independent code for the execute-in-place loading scheme. The RISC-V builds need the `c_libs/RVfplib` submodule (`git submodule update --init`).
 
 ### Notes
 
