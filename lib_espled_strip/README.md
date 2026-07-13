@@ -24,6 +24,8 @@ The package includes a VESC Tool page for testing: configure pin / LED count / s
 | `ext-espled-seg-spd` | `(i spd)` | animation speed 0..255 |
 | `ext-espled-seg-size` | `(i size)` | chase head / comet tail length |
 | `ext-espled-seg-level` | `(i level)` | gauge fill level 0..255 |
+| `ext-espled-seg-overlay-def` | `(i idx...)` | define up to 8 fixed overlay pixel positions (e.g. embedded highbeam LEDs) before init; effect pixels flow around them. No indices clears the overlay |
+| `ext-espled-seg-overlay` | `(i color bri)` | overlay color and brightness at runtime (bri 0 = off) |
 | `ext-espled-seg-on` | `(i on)` | enable/disable a segment |
 | `ext-espled-seg-reverse` | `(i rev)` | reverse pixel order |
 | `ext-espled-bri` | `(b)` | master brightness 0..255 |

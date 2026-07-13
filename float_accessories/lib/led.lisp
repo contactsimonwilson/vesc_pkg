@@ -7,9 +7,11 @@
 ; and sets per-segment effect/color/brightness through the ext-espled-*
 ; extensions. Strips on the same pin are chained with segment offsets.
 ;
-; Compared to the rgbled-based implementation this drops the special
-; interleaved-highbeam strip types (JetFleet/GTFO); "Standard + PWM
-; Highbeam" with a separate highbeam pin is supported.
+; Highbeams: strip type 2 drives a separate PWM highbeam pin; types 3-6
+; have highbeam LEDs embedded in the strip (one prepended, or the
+; JetFleet H4/GT and Fungineers GTFO positions), driven as espled overlay
+; pixels. The strip facing the direction of travel lights its highbeam
+; and dims by the configured ratio.
 
 (defun load-led-settings () {
     (setq led-enabled (get-config 'led-enabled))
@@ -89,13 +91,34 @@
         (setq seg-status idx)
         (setq idx (+ idx 1))
     })
+    ; Embedded highbeam LED positions per strip type (segment-relative).
+    ; 3: one highbeam LED first; 4-6: light bars with 4 embedded highbeams.
+    (var overlay-def-for-type (fn (seg strip-type) {
+        (cond
+            ((= strip-type 3) (ext-espled-seg-overlay-def seg 0))
+            ((= strip-type 4) (ext-espled-seg-overlay-def seg 3 8 14 19)) ; JetFleet H4
+            ((= strip-type 5) (ext-espled-seg-overlay-def seg 1 4 10 13)) ; JetFleet GT
+            ((= strip-type 6) (ext-espled-seg-overlay-def seg 3 6 9 13))  ; Fungineers GTFO
+        )
+    }))
+    ; Footprint on the chain includes the embedded highbeam pixels
+    (var footprint-for-type (fn (num strip-type) {
+        (cond
+            ((= strip-type 3) (+ num 1))
+            ((and (>= strip-type 4) (<= strip-type 6)) (+ num 4))
+            (t num)
+        )
+    }))
+
     (if (and (> led-front-strip-type 0) (>= led-front-pin 0) (> led-front-num 0)) {
-        (ext-espled-seg-def idx led-front-pin led-front-type led-front-num (next-offset led-front-pin led-front-num))
+        (ext-espled-seg-def idx led-front-pin led-front-type led-front-num (next-offset led-front-pin (footprint-for-type led-front-num led-front-strip-type)))
+        (overlay-def-for-type idx led-front-strip-type)
         (setq seg-front idx)
         (setq idx (+ idx 1))
     })
     (if (and (> led-rear-strip-type 0) (>= led-rear-pin 0) (> led-rear-num 0)) {
-        (ext-espled-seg-def idx led-rear-pin led-rear-type led-rear-num (next-offset led-rear-pin led-rear-num))
+        (ext-espled-seg-def idx led-rear-pin led-rear-type led-rear-num (next-offset led-rear-pin (footprint-for-type led-rear-num led-rear-strip-type)))
+        (overlay-def-for-type idx led-rear-strip-type)
         (setq seg-rear idx)
         (setq idx (+ idx 1))
     })
@@ -162,59 +185,59 @@
 )
 
 ; Head/tail pattern per LED mode. head-seg faces the direction of travel.
-(defun apply-drive-mode (mode head-seg tail-seg bri) {
+(defun apply-drive-mode (mode head-seg tail-seg head-bri tail-bri) {
     (cond
         ((= mode 0) { ; White / Red
-            (seg-apply head-seg FX-SOLID 0 0xFFFFFFFFu32 32 bri)
-            (seg-apply tail-seg FX-SOLID 0 0x00FF0000u32 32 bri)
+            (seg-apply head-seg FX-SOLID 0 0xFFFFFFFFu32 32 head-bri)
+            (seg-apply tail-seg FX-SOLID 0 0x00FF0000u32 32 tail-bri)
         })
         ((= mode 1) { ; Battery
-            (seg-gauge head-seg (to-i (* 255.0 battery-percent-remaining)) (if bms-is-charging 32 0) bri)
-            (seg-gauge tail-seg (to-i (* 255.0 battery-percent-remaining)) (if bms-is-charging 32 0) bri)
+            (seg-gauge head-seg (to-i (* 255.0 battery-percent-remaining)) (if bms-is-charging 32 0) head-bri)
+            (seg-gauge tail-seg (to-i (* 255.0 battery-percent-remaining)) (if bms-is-charging 32 0) tail-bri)
         })
         ((= mode 2) { ; Cyan / Magenta
-            (seg-apply head-seg FX-SOLID 0 0x0000FFFFu32 32 bri)
-            (seg-apply tail-seg FX-SOLID 0 0x00FF00FFu32 32 bri)
+            (seg-apply head-seg FX-SOLID 0 0x0000FFFFu32 32 head-bri)
+            (seg-apply tail-seg FX-SOLID 0 0x00FF00FFu32 32 tail-bri)
         })
         ((= mode 3) { ; Blue / Green
-            (seg-apply head-seg FX-SOLID 0 0x000000FFu32 32 bri)
-            (seg-apply tail-seg FX-SOLID 0 0x0000FF00u32 32 bri)
+            (seg-apply head-seg FX-SOLID 0 0x000000FFu32 32 head-bri)
+            (seg-apply tail-seg FX-SOLID 0 0x0000FF00u32 32 tail-bri)
         })
         ((= mode 4) { ; Yellow / Green
-            (seg-apply head-seg FX-SOLID 0 0x00FFFF00u32 32 bri)
-            (seg-apply tail-seg FX-SOLID 0 0x0000FF00u32 32 bri)
+            (seg-apply head-seg FX-SOLID 0 0x00FFFF00u32 32 head-bri)
+            (seg-apply tail-seg FX-SOLID 0 0x0000FF00u32 32 tail-bri)
         })
         ((= mode 5) { ; Rainbow
-            (seg-apply head-seg FX-RAINBOW 0 0 32 bri)
-            (seg-apply tail-seg FX-RAINBOW 0 0 32 bri)
+            (seg-apply head-seg FX-RAINBOW 0 0 32 head-bri)
+            (seg-apply tail-seg FX-RAINBOW 0 0 32 tail-bri)
         })
         ((= mode 6) { ; Strobe
-            (seg-apply head-seg FX-STROBE 0 0xFFFFFFFFu32 128 bri)
-            (seg-apply tail-seg FX-STROBE 0 0xFFFFFFFFu32 128 bri)
+            (seg-apply head-seg FX-STROBE 0 0xFFFFFFFFu32 128 head-bri)
+            (seg-apply tail-seg FX-STROBE 0 0xFFFFFFFFu32 128 tail-bri)
         })
         ((= mode 7) { ; Rave
-            (seg-apply head-seg FX-RAINBOW 3 0 220 bri)
-            (seg-apply tail-seg FX-RAINBOW 3 0 220 bri)
+            (seg-apply head-seg FX-RAINBOW 3 0 220 head-bri)
+            (seg-apply tail-seg FX-RAINBOW 3 0 220 tail-bri)
         })
         ((= mode 8) { ; Rave directional
-            (seg-apply head-seg FX-SOLID 0 0xFFFFFFFFu32 32 bri)
-            (seg-apply tail-seg FX-RAINBOW 3 0 220 bri)
+            (seg-apply head-seg FX-SOLID 0 0xFFFFFFFFu32 32 head-bri)
+            (seg-apply tail-seg FX-RAINBOW 3 0 220 tail-bri)
         })
         ((= mode 9) { ; Knight Rider
-            (seg-apply head-seg FX-LARSON 0 0x00FF0000u32 48 bri)
-            (seg-apply tail-seg FX-LARSON 0 0x00FF0000u32 48 bri)
+            (seg-apply head-seg FX-LARSON 0 0x00FF0000u32 48 head-bri)
+            (seg-apply tail-seg FX-LARSON 0 0x00FF0000u32 48 tail-bri)
         })
         ((= mode 10) { ; Felony
-            (seg-apply head-seg FX-FELONY 0 0 128 bri)
-            (seg-apply tail-seg FX-FELONY 0 0 128 bri)
+            (seg-apply head-seg FX-FELONY 0 0 128 head-bri)
+            (seg-apply tail-seg FX-FELONY 0 0 128 tail-bri)
         })
         ((= mode 11) { ; Trans pride (slow rainbow sweep)
-            (seg-apply head-seg FX-RAINBOW 0 0 8 bri)
-            (seg-apply tail-seg FX-RAINBOW 0 0 8 bri)
+            (seg-apply head-seg FX-RAINBOW 0 0 8 head-bri)
+            (seg-apply tail-seg FX-RAINBOW 0 0 8 tail-bri)
         })
         (t {
-            (seg-apply head-seg FX-SOLID 0 0xFFFFFFFFu32 32 bri)
-            (seg-apply tail-seg FX-SOLID 0 0x00FF0000u32 32 bri)
+            (seg-apply head-seg FX-SOLID 0 0xFFFFFFFFu32 32 head-bri)
+            (seg-apply tail-seg FX-SOLID 0 0x00FF0000u32 32 tail-bri)
         })
     )
 })
@@ -393,27 +416,30 @@
                 (setq led-smoothed-brightness (max led-current-brightness (- led-smoothed-brightness brightness-step)))
             )
 
-            ; PWM highbeams + dimming while they are on
+            ; Highbeams: the strip facing the direction of travel lights its
+            ; highbeam (PWM pin for type 2, embedded overlay pixels for
+            ; types 3-6) and the rest of that strip dims by the configured
+            ; ratio (0 = fully off, like the original).
             (var highbeam-active (and (= led-on 1) (= led-highbeam-on 1) (running-state) (!= state 5)))
-            (var main-bri led-smoothed-brightness)
+            (var hb-front (and highbeam-active (>= direction 0) (>= led-front-strip-type 2)))
+            (var hb-rear (and highbeam-active (< direction 0) (>= led-rear-strip-type 2)))
+            (var hb-bri (bri255 (min led-brightness-highbeam led-max-brightness)))
+            (var front-bri (bri255 (* led-smoothed-brightness (if hb-front led-dim-on-highbeam-ratio 1.0))))
+            (var rear-bri (bri255 (* led-smoothed-brightness (if hb-rear led-dim-on-highbeam-ratio 1.0))))
+
             (if (and (= led-front-strip-type 2) (>= led-front-highbeam-pin 0)) {
-                (if (and highbeam-active (>= direction 0)) {
-                    (pwm-set-duty (min led-brightness-highbeam led-max-brightness) 0)
-                    (if (> led-dim-on-highbeam-ratio 0.0) (setq main-bri (* led-smoothed-brightness led-dim-on-highbeam-ratio)))
-                }{
-                    (pwm-set-duty 0.0 0)
-                })
+                (pwm-set-duty (if hb-front (min led-brightness-highbeam led-max-brightness) 0.0) 0)
             })
             (if (and (= led-rear-strip-type 2) (>= led-rear-highbeam-pin 0)) {
-                (if (and highbeam-active (< direction 0)) {
-                    (pwm-set-duty (min led-brightness-highbeam led-max-brightness) 1)
-                    (if (> led-dim-on-highbeam-ratio 0.0) (setq main-bri (* led-smoothed-brightness led-dim-on-highbeam-ratio)))
-                }{
-                    (pwm-set-duty 0.0 1)
-                })
+                (pwm-set-duty (if hb-rear (min led-brightness-highbeam led-max-brightness) 0.0) 1)
+            })
+            (if (and (>= led-front-strip-type 3) (<= led-front-strip-type 6) (>= seg-front 0)) {
+                (ext-espled-seg-overlay seg-front 0xFFFFFFFFu32 (if hb-front hb-bri 0))
+            })
+            (if (and (>= led-rear-strip-type 3) (<= led-rear-strip-type 6) (>= seg-rear 0)) {
+                (ext-espled-seg-overlay seg-rear 0xFFFFFFFFu32 (if hb-rear hb-bri 0))
             })
 
-            (var bri (bri255 main-bri))
             (var status-bri (bri255 (min led-brightness-status led-max-brightness)))
 
             (update-status-leds can-last-activity-time-sec status-bri)
@@ -421,45 +447,48 @@
             (if (= led-on 1) {
                 (var head-seg (if (> direction 0) seg-front seg-rear))
                 (var tail-seg (if (> direction 0) seg-rear seg-front))
+                (var head-bri (if (> direction 0) front-bri rear-bri))
+                (var tail-bri (if (> direction 0) rear-bri front-bri))
+                (var aux-bri (bri255 led-smoothed-brightness))
                 (var frozen (and (running-state) (= led-update-not-running 1) (> (secs-since led-run-start-time) 1)))
 
                 (cond
                     ((= state 15) {
-                        (seg-apply seg-front FX-SOLID 0 0x00FF0000u32 32 bri)
-                        (seg-apply seg-rear FX-SOLID 0 0x00FF0000u32 32 bri)
+                        (seg-apply seg-front FX-SOLID 0 0x00FF0000u32 32 front-bri)
+                        (seg-apply seg-rear FX-SOLID 0 0x00FF0000u32 32 rear-bri)
                     })
                     (handtest-mode {
-                        (seg-apply seg-front FX-BREATHE 0 0x000000FFu32 64 bri)
-                        (seg-apply seg-rear FX-BREATHE 0 0x000000FFu32 64 bri)
+                        (seg-apply seg-front FX-BREATHE 0 0x000000FFu32 64 front-bri)
+                        (seg-apply seg-rear FX-BREATHE 0 0x000000FFu32 64 rear-bri)
                     })
                     ((and (> last-activity-sec idle-timeout-shutoff) (< can-last-activity-time-sec 1) (!= state 5)) {
                         (seg-apply seg-front FX-SOLID 0 0 32 0)
                         (seg-apply seg-rear FX-SOLID 0 0 32 0)
                     })
                     ((and (or (= current-led-mode 1) (= led-mall-grab 1)) (< can-last-activity-time-sec 1)) {
-                        (seg-gauge seg-front (to-i (* 255.0 battery-percent-remaining)) (if bms-is-charging 32 0) bri)
-                        (seg-gauge seg-rear (to-i (* 255.0 battery-percent-remaining)) (if bms-is-charging 32 0) bri)
+                        (seg-gauge seg-front (to-i (* 255.0 battery-percent-remaining)) (if bms-is-charging 32 0) front-bri)
+                        (seg-gauge seg-rear (to-i (* 255.0 battery-percent-remaining)) (if bms-is-charging 32 0) rear-bri)
                     })
                     ((or (and (> can-last-activity-time-sec 1) (> (secs-since 0) led-startup-timeout)) frozen) {
                         ; No telemetry or frozen: plain white/red
-                        (apply-drive-mode 0 head-seg tail-seg bri)
+                        (apply-drive-mode 0 head-seg tail-seg head-bri tail-bri)
                     })
                     (t {
-                        (apply-drive-mode current-led-mode head-seg tail-seg bri)
+                        (apply-drive-mode current-led-mode head-seg tail-seg head-bri tail-bri)
                     })
                 )
 
                 ; Brake light: strobe the tail red while braking
                 (if (and (= led-brake-light-enabled 1) (running-state) (!= state 5) (<= tot-current led-brake-light-min-amps) (= led-update-not-running 0)) {
-                    (seg-apply tail-seg FX-STROBE 0 0x00FF0000u32 200 bri)
+                    (seg-apply tail-seg FX-STROBE 0 0x00FF0000u32 200 tail-bri)
                 })
 
                 (if (display-battery-charging) {
-                    (seg-gauge seg-front (to-i (* 255.0 battery-percent-remaining)) 32 bri)
-                    (seg-gauge seg-rear (to-i (* 255.0 battery-percent-remaining)) 32 bri)
+                    (seg-gauge seg-front (to-i (* 255.0 battery-percent-remaining)) 32 front-bri)
+                    (seg-gauge seg-rear (to-i (* 255.0 battery-percent-remaining)) 32 rear-bri)
                 })
 
-                (update-aux-leds bri)
+                (update-aux-leds aux-bri)
             }{
                 ; LEDs off: blank the drive/aux strips, keep the status bar
                 (seg-apply seg-front FX-SOLID 0 0 32 0)

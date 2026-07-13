@@ -21,7 +21,11 @@ LED_MODES = [
     "Felony", "Trans Pride",
 ]
 COLOR_ORDERS = ["GRB", "RGB", "GRBW", "RGBW"]
-STRIP_TYPES = ["Disabled", "Standard", "Standard + PWM Highbeam"]
+# Front/rear strips. Types 3-6 have highbeam LEDs embedded in the strip
+# itself, driven as espled overlay pixels at fixed positions.
+STRIP_TYPES = ["Disabled", "Standard", "Standard + PWM Highbeam",
+               "Highbeam LED First", "JetFleet H4", "JetFleet GT",
+               "Fungineers GTFO"]
 STATUS_STRIP_TYPES = ["Disabled", "Standard"]
 
 PARAMS = [

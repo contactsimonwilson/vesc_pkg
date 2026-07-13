@@ -42,6 +42,7 @@
 HEADER
 
 #define ESPLED_SEG_MAX     8
+#define ESPLED_OV_MAX      8   // overlay pixels per segment
 #define ESPLED_RENDER_MS   33  // ~30 fps
 
 // Effects
@@ -96,6 +97,15 @@ typedef struct {
 	uint16_t offset;   // pixel offset within the pin's chain
 	uint32_t color;    // packed 0xWWRRGGBB
 	uint32_t phase;    // frames since effect start
+
+	// Overlay pixels: physical LEDs at fixed positions inside the strip
+	// (e.g. embedded highbeams) that show ov_color at ov_bri while the
+	// effect pixels flow around them. Positions are relative to the
+	// segment and extend its footprint to len + ov_count pixels.
+	uint8_t ov_count;
+	uint8_t ov_idx[ESPLED_OV_MAX];
+	uint32_t ov_color;
+	uint8_t ov_bri;
 
 	int group;         // pin group index, assigned at init
 } seg_t;
@@ -323,8 +333,30 @@ static void render_seg(espled_t *st, seg_t *s) {
 		}
 	}
 
-	for (int i = 0; i < n; i++) {
-		uint32_t c = work[s->reverse ? n - 1 - i : i];
+	// Pack the wire bytes. Overlay pixels take their footprint positions,
+	// effect pixels fill the remaining slots in order (reverse applies to
+	// the effect pixels only - overlay positions are fixed hardware).
+	int total = n + s->ov_count;
+	int src = 0;
+	for (int i = 0; i < total; i++) {
+		bool is_ov = false;
+		for (int k = 0; k < s->ov_count; k++) {
+			if (s->ov_idx[k] == i) {
+				is_ov = true;
+				break;
+			}
+		}
+
+		uint32_t c;
+		if (is_ov) {
+			c = scale(s->ov_color, s->ov_bri);
+		} else if (src < n) {
+			c = work[s->reverse ? n - 1 - src : src];
+			src++;
+		} else {
+			c = 0;
+		}
+
 		uint32_t w = (c >> 24) & 0xFF;
 		uint32_t r = (c >> 16) & 0xFF;
 		uint32_t g = (c >> 8) & 0xFF;
@@ -358,7 +390,7 @@ static void render_thd(void *arg) {
 						render_seg(st, s);
 					} else {
 						memset(g->txbuf + (uint32_t)s->offset * g->colors,
-							0, (uint32_t)s->len * g->colors);
+							0, (uint32_t)(s->len + s->ov_count) * g->colors);
 					}
 					s->phase++;
 					any = true;
@@ -447,6 +479,67 @@ static lbm_value ext_seg_def(lbm_value *args, lbm_uint argn) {
 	s->size = 8;
 	s->color = 0;
 	s->phase = 0;
+	s->ov_count = 0;
+	s->ov_color = 0;
+	s->ov_bri = 0;
+	VESC_IF->mutex_unlock(st->lock);
+
+	return VESC_IF->lbm_enc_sym_true;
+}
+
+// (ext-espled-seg-overlay-def i idx0 idx1 ...) - define up to 8 overlay
+// pixel positions for segment i, before ext-espled-init. Positions are
+// segment-relative and extend the segment's footprint by one pixel each
+// (effect pixels flow around them). No indices clears the overlay.
+static lbm_value ext_seg_overlay_def(lbm_value *args, lbm_uint argn) {
+	espled_t *st = state();
+	if (argn < 1 || argn > 1 + ESPLED_OV_MAX) return VESC_IF->lbm_enc_sym_terror;
+	for (lbm_uint i = 0; i < argn; i++) {
+		if (!VESC_IF->lbm_is_number(args[i])) return VESC_IF->lbm_enc_sym_terror;
+	}
+
+	seg_t *s = seg_arg(st, args[0]);
+	if (!s || !s->defined) return VESC_IF->lbm_enc_sym_terror;
+
+	if (st->running) {
+		VESC_IF->lbm_set_error_reason(
+			"Stop with ext-espled-deinit before redefining segments");
+		return VESC_IF->lbm_enc_sym_eerror;
+	}
+
+	int count = argn - 1;
+	uint8_t idx[ESPLED_OV_MAX];
+	for (int k = 0; k < count; k++) {
+		int v = VESC_IF->lbm_dec_as_i32(args[k + 1]);
+		if (v < 0 || v >= s->len + count) {
+			VESC_IF->lbm_set_error_reason("Overlay index outside the strip");
+			return VESC_IF->lbm_enc_sym_terror;
+		}
+		idx[k] = (uint8_t)v;
+	}
+
+	VESC_IF->mutex_lock(st->lock);
+	s->ov_count = (uint8_t)count;
+	for (int k = 0; k < count; k++) {
+		s->ov_idx[k] = idx[k];
+	}
+	VESC_IF->mutex_unlock(st->lock);
+
+	return VESC_IF->lbm_enc_sym_true;
+}
+
+// (ext-espled-seg-overlay i color bri) - set the overlay color and
+// brightness at runtime (bri 0 turns the overlay pixels off).
+static lbm_value ext_seg_overlay(lbm_value *args, lbm_uint argn) {
+	espled_t *st = state();
+	if (!check_num_args(args, argn, 3)) return VESC_IF->lbm_enc_sym_terror;
+
+	seg_t *s = seg_arg(st, args[0]);
+	if (!s) return VESC_IF->lbm_enc_sym_terror;
+
+	VESC_IF->mutex_lock(st->lock);
+	s->ov_color = VESC_IF->lbm_dec_as_u32(args[1]);
+	s->ov_bri = (uint8_t)VESC_IF->lbm_dec_as_i32(args[2]);
 	VESC_IF->mutex_unlock(st->lock);
 
 	return VESC_IF->lbm_enc_sym_true;
@@ -480,7 +573,7 @@ static lbm_value ext_init(lbm_value *args, lbm_uint argn) {
 	for (int i = 0; i < n; i++) {
 		seg_t *s = &st->seg[i];
 		int colors = s->type >= TYPE_GRBW ? 4 : 3;
-		uint16_t end = s->offset + s->len;
+		uint16_t end = s->offset + s->len + s->ov_count;
 
 		s->group = -1;
 		for (int gi = 0; gi < st->group_count; gi++) {
@@ -755,6 +848,8 @@ INIT_FUN(lib_info *info) {
 	info->stop_fun = stop;
 
 	VESC_IF->lbm_add_extension("ext-espled-seg-def", ext_seg_def);
+	VESC_IF->lbm_add_extension("ext-espled-seg-overlay-def", ext_seg_overlay_def);
+	VESC_IF->lbm_add_extension("ext-espled-seg-overlay", ext_seg_overlay);
 	VESC_IF->lbm_add_extension("ext-espled-init", ext_init);
 	VESC_IF->lbm_add_extension("ext-espled-deinit", ext_deinit);
 	VESC_IF->lbm_add_extension("ext-espled-seg-look", ext_seg_look);

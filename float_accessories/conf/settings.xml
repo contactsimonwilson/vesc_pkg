@@ -426,6 +426,10 @@
             <enumNames>Disabled</enumNames>
             <enumNames>Standard</enumNames>
             <enumNames>Standard + PWM Highbeam</enumNames>
+            <enumNames>Highbeam LED First</enumNames>
+            <enumNames>JetFleet H4</enumNames>
+            <enumNames>JetFleet GT</enumNames>
+            <enumNames>Fungineers GTFO</enumNames>
         </led_front_strip_type>
         <led_front_pin>
             <longName>Front Pin</longName>
@@ -505,6 +509,10 @@
             <enumNames>Disabled</enumNames>
             <enumNames>Standard</enumNames>
             <enumNames>Standard + PWM Highbeam</enumNames>
+            <enumNames>Highbeam LED First</enumNames>
+            <enumNames>JetFleet H4</enumNames>
+            <enumNames>JetFleet GT</enumNames>
+            <enumNames>Fungineers GTFO</enumNames>
         </led_rear_strip_type>
         <led_rear_pin>
             <longName>Rear Pin</longName>
