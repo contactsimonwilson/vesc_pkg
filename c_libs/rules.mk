@@ -82,48 +82,55 @@ clean:
 else ifeq ($(ARCH),esp32)
 # ======================================================================
 #  VESC Express   Native-lib rules (PIC blob for LispBM)
-#  - RISC-V targets: esp32c3 (default), esp32c6, esp32p4
+#  - RISC-V targets (esp32c3 default, esp32c6, esp32p4): position-
+#    independent blob, executed in place from flash (XIP). Writes to
+#    .data/.bss do not work - keep state in allocated memory.
+#  - Xtensa target (esp32s3): Xtensa cannot generate position-independent
+#    code, so the lib is linked at 0 with relocations kept and packaged
+#    with a relocation table (mkreloc.py). The firmware copies it into
+#    RAM and patches it at load time. .data/.bss work on this target.
 #  - march/mabi must match the firmware ABI of the chip, and the
 #    resulting binary only runs on the chip it was built for
 #  - Section GC + (optional) LTO
 #  - Generates: .elf, .bin (with header), .lisp, .list, .map
-#
-#  esp32s3 is not supported: Xtensa GCC cannot generate position-
-#  independent code without load-time relocation (address literals are
-#  absolute), which the execute-in-place loading scheme does not provide.
 # ======================================================================
 
 # ---- target chip selection ---------------------------------------------
 ESP_TARGET ?= esp32c3
 
 ifeq ($(ESP_TARGET),esp32c3)
-  MARCH          := rv32imc_zicsr_zifencei
-  MABI           := ilp32
+  LOAD_MODEL     := xip
+  ARCH_CFLAGS    := -march=rv32imc_zicsr_zifencei -mabi=ilp32
   ESP_TARGET_DEF := CONFIG_IDF_TARGET_ESP32C3
   USE_RVFP       := yes
 else ifeq ($(ESP_TARGET),esp32c6)
-  MARCH          := rv32imac_zicsr_zifencei
-  MABI           := ilp32
+  LOAD_MODEL     := xip
+  ARCH_CFLAGS    := -march=rv32imac_zicsr_zifencei -mabi=ilp32
   ESP_TARGET_DEF := CONFIG_IDF_TARGET_ESP32C6
   USE_RVFP       := yes
 else ifeq ($(ESP_TARGET),esp32p4)
-  MARCH          := rv32imafc_zicsr_zifencei
-  MABI           := ilp32f
+  LOAD_MODEL     := xip
+  ARCH_CFLAGS    := -march=rv32imafc_zicsr_zifencei -mabi=ilp32f
   ESP_TARGET_DEF := CONFIG_IDF_TARGET_ESP32P4
   USE_RVFP       := no    # hardware single-precision FPU
 else ifeq ($(ESP_TARGET),esp32s3)
-  $(error esp32s3 native libs are not supported: Xtensa GCC cannot produce \
-position-independent XIP code (absolute address literals need load-time \
-relocation, which the firmware does not perform))
+  LOAD_MODEL     := ram
+  ARCH_CFLAGS    :=
+  ESP_TARGET_DEF := CONFIG_IDF_TARGET_ESP32S3
+  USE_RVFP       := no    # hardware single-precision FPU
 else
-  $(error Unknown ESP_TARGET=$(ESP_TARGET); use esp32c3, esp32c6 or esp32p4)
+  $(error Unknown ESP_TARGET=$(ESP_TARGET); use esp32c3, esp32c6, esp32p4 or esp32s3)
 endif
 
 # Run 'make clean' when switching ESP_TARGET - objects are not
 # target-suffixed.
 
 # ---- toolchain (override CROSS if needed) -----------------------------
+ifeq ($(ESP_TARGET),esp32s3)
+CROSS     ?= xtensa-esp32s3-elf-
+else
 CROSS     ?= riscv32-esp-elf-
+endif
 CC        := $(CROSS)gcc
 AR        := $(CROSS)ar
 OBJDUMP   := $(CROSS)objdump
@@ -138,7 +145,11 @@ SOURCES  ?=
 
 # ---- paths ------------------------------------------------------------
 VESC_C_LIB_PATH ?= ../..
+ifeq ($(LOAD_MODEL),ram)
+LINKER_SCRIPT   ?= $(VESC_C_LIB_PATH)/link_esp32s3.ld
+else
 LINKER_SCRIPT   ?= $(VESC_C_LIB_PATH)/link_esp32.ld
+endif
 
 # ---- RVfplib (soft-float targets only) ---------------------------------
 # Expect RVfplib sources at $(VESC_C_LIB_PATH)/RVfplib/
@@ -162,19 +173,25 @@ ENTRY_SYMS ?= init
 CFLAGS_COMMON = \
   -Os -Wall -Wextra -Wundef -std=gnu99 \
   -ffunction-sections -fdata-sections \
-  -fPIC -fvisibility=hidden \
   -I$(VESC_C_LIB_PATH) -DIS_VESC_LIB \
   -DESP_PLATFORM=true \
   -D$(ESP_TARGET_DEF)=1 \
-  -march=$(MARCH) -mabi=$(MABI) \
-  -mno-save-restore \
-  -mcmodel=medany \
-  -msmall-data-limit=0 \
+  $(ARCH_CFLAGS) \
   -Wdouble-promotion -Wfloat-conversion \
   -Werror=implicit-function-declaration \
   -Werror=incompatible-pointer-types \
   -Werror=int-conversion \
   -Werror=return-type
+
+ifeq ($(LOAD_MODEL),ram)
+  # Xtensa: absolute addressing, fixed up at load time. Merged string
+  # sections are disabled because they corrupt emitted relocation addends.
+  CFLAGS_COMMON += -mtext-section-literals -mlongcalls -fno-merge-constants
+else
+  # RISC-V: truly position-independent code, executed in place.
+  CFLAGS_COMMON += -fPIC -fvisibility=hidden \
+    -mno-save-restore -mcmodel=medany -msmall-data-limit=0
+endif
 
 ifeq ($(USE_LTO),yes)
   CFLAGS_COMMON += -flto
@@ -192,19 +209,28 @@ CFLAGS += $(CFLAGS_COMMON) $(CFLAGS_DEPS)
 LDFLAGS = \
   -static \
   -Wl,--gc-sections \
-  -Wl,--no-relax \
   -Wl,--no-warn-rwx-segments \
   -T $(LINKER_SCRIPT) \
   -Wl,-Map=$(TARGET).map \
   $(LDFLAGS_LTO)
 
+ifeq ($(LOAD_MODEL),ram)
+  # Keep relocations in the output so mkreloc.py can build the load-time
+  # fixup table.
+  LDFLAGS += -Wl,-q
+else
+  LDFLAGS += -Wl,--no-relax
+endif
+
 # Keep required entry points
 LDFLAGS += $(foreach s,$(ENTRY_SYMS),-Wl,--undefined=$(s))
 
+ifeq ($(USE_RVFP),yes)
 # Helpful traces (you can comment these out if too chatty)
 LDFLAGS += -Wl,--trace-symbol=__mulsf3 -Wl,--trace-symbol=__divsf3
 LDFLAGS += -Wl,--trace-symbol=__addsf3 -Wl,--trace-symbol=__subsf3
 LDFLAGS += -Wl,--trace-symbol=__eqsf2  -Wl,--trace-symbol=__nesf2
+endif
 
 # Diagnostics
 ifeq ($(VERBOSE_LINK),yes)
@@ -247,12 +273,22 @@ endif
 rvfp: $(RVFP_LIB)
 
 # ---- build rules ------------------------------------------------------
+ifeq ($(LOAD_MODEL),ram)
+# Xtensa: raw binary + relocation table container (see mkreloc.py)
+$(TARGET): $(ELF)
+	$(OBJCOPY) -O binary --gap-fill 0x00 $< $@.temp
+	$(PYTHON) $(VESC_C_LIB_PATH)/mkreloc.py $< $@.temp $@.bin
+	rm $@.temp
+	$(PYTHON) $(VESC_C_LIB_PATH)/conv.py -f $@.bin -n $(TARGET) > $(LISP)
+else
+# RISC-V: XIP image, magic word + raw binary
 $(TARGET): $(ELF)
 	$(OBJCOPY) -O binary $< $@.temp
 	echo 'cafebabe' | xxd -r -p > $@.bin
 	cat $@.temp >> $@.bin
 	rm $@.temp
 	$(PYTHON) $(VESC_C_LIB_PATH)/conv.py -f $@.bin -n $(TARGET) > $(LISP)
+endif
 
 $(ELF): $(OBJECTS) $(RVFP_LIB)
 	$(CC) $(OBJECTS) $(CFLAGS) $(LDFLAGS) $(LDGROUP) -o $@

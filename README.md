@@ -93,10 +93,13 @@ make VESC_TOOL=/path/to/vesc_tool
 
 For building native libraries for VESC Express with c_libs you will need to specify the architecture and the chip the library should run on (`esp32c3` is the default):
 ```sh
-make ARCH=esp32 ESP_TARGET=esp32c3   # or esp32c6, esp32p4
+make ARCH=esp32 ESP_TARGET=esp32c3   # or esp32c6, esp32p4, esp32s3
 ```
 
-A library only runs on the chip it was built for, as both the interface table address and the instruction set differ between chips. Run `make clean` when switching `ESP_TARGET`. The ESP32-S3 is not supported for native libraries, because Xtensa GCC cannot generate position-independent code for the execute-in-place loading scheme. The RISC-V builds need the `c_libs/RVfplib` submodule (`git submodule update --init`).
+A library only runs on the chip it was built for, as both the interface table address and the instruction set differ between chips. Run `make clean` when switching `ESP_TARGET`. Note some differences between the chips:
+
+* On the RISC-V chips (C3, C6, P4) the library is position-independent and executes in place from flash, so writes to `.data`/`.bss` do not work - keep mutable state in allocated memory. The C3 and C6 builds need the `c_libs/RVfplib` submodule (`git submodule update --init`); the P4 uses its hardware FPU.
+* On the ESP32-S3 (Xtensa) position-independent code is not possible, so the library is linked at 0 and packaged together with a relocation table (`c_libs/mkreloc.py`). The firmware copies it into RAM and patches it at load time, which also means `.data`/`.bss` work normally on this target. Requires firmware with `CONFIG_ESP_SYSTEM_MEMPROT_FEATURE=n`.
 
 ### Notes
 
