@@ -135,8 +135,6 @@
 
     (if (> idx 0) {
         (ext-espled-init idx)
-        ; This loop smooths brightness itself - no lib-side easing on top
-        (ext-espled-fade 0)
         (if (>= seg-status 0) (ext-espled-seg-reverse seg-status led-status-reversed))
         (if (>= seg-front 0) (ext-espled-seg-reverse seg-front led-front-reversed))
         (if (>= seg-rear 0) (ext-espled-seg-reverse seg-rear led-rear-reversed))
@@ -411,13 +409,8 @@
                 (setq current-led-mode led-mode-startup)
             })
 
-            ; Smooth brightness toward the target
-            (var brightness-step (* 5.0 led-loop-delay-sec))
-            (if (> led-current-brightness led-smoothed-brightness)
-                (setq led-smoothed-brightness (min led-current-brightness (+ led-smoothed-brightness brightness-step)))
-                (setq led-smoothed-brightness (max led-current-brightness (- led-smoothed-brightness brightness-step)))
-            )
-
+            ; Brightness transitions are handled by the espled lib
+            ; (ext-espled-fade), so targets are set directly here.
             ; Highbeams: the strip facing the direction of travel lights its
             ; highbeam (PWM pin for type 2, embedded overlay pixels for
             ; types 3-6) and the rest of that strip dims by the configured
@@ -426,8 +419,8 @@
             (var hb-front (and highbeam-active (>= direction 0) (>= led-front-strip-type 2)))
             (var hb-rear (and highbeam-active (< direction 0) (>= led-rear-strip-type 2)))
             (var hb-bri (bri255 (min led-brightness-highbeam led-max-brightness)))
-            (var front-bri (bri255 (* led-smoothed-brightness (if hb-front led-dim-on-highbeam-ratio 1.0))))
-            (var rear-bri (bri255 (* led-smoothed-brightness (if hb-rear led-dim-on-highbeam-ratio 1.0))))
+            (var front-bri (bri255 (* led-current-brightness (if hb-front led-dim-on-highbeam-ratio 1.0))))
+            (var rear-bri (bri255 (* led-current-brightness (if hb-rear led-dim-on-highbeam-ratio 1.0))))
 
             (if (and (= led-front-strip-type 2) (>= led-front-highbeam-pin 0)) {
                 (pwm-set-duty (if hb-front (min led-brightness-highbeam led-max-brightness) 0.0) 0)
@@ -451,7 +444,7 @@
                 (var tail-seg (if (> direction 0) seg-rear seg-front))
                 (var head-bri (if (> direction 0) front-bri rear-bri))
                 (var tail-bri (if (> direction 0) rear-bri front-bri))
-                (var aux-bri (bri255 led-smoothed-brightness))
+                (var aux-bri (bri255 led-current-brightness))
                 (var frozen (and (running-state) (= led-update-not-running 1) (> (secs-since led-run-start-time) 1)))
 
                 (cond

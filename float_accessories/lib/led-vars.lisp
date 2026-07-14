@@ -64,7 +64,6 @@
 
 ;runtime vars
 (def led-current-brightness 0.0)
-(def led-smoothed-brightness 0.0)
 (def direction 1)
 (def led-mall-grab 0)
 

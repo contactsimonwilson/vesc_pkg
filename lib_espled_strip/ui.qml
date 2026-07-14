@@ -397,7 +397,7 @@ Item {
                         sourceComponent: customValueSlider
                         Layout.fillWidth: true
                         onLoaded: {
-                            item.from = 0; item.to = 32; item.value = 8
+                            item.from = 0; item.to = 32; item.value = 15
                             hookSlider(item, "fade", function(v) {
                                 return "(ext-espled-fade " + v.toFixed(0) + ")"
                             })

@@ -888,7 +888,7 @@ INIT_FUN(lib_info *info) {
 
 	st->master_bri = 255;
 	st->master_cur = 255;
-	st->fade = 8; // close 25% of the gap per frame (~0.3 s to settle)
+	st->fade = 15; // close ~half the gap per frame (~0.2 s to settle)
 	st->lock = VESC_IF->mutex_create();
 	if (!st->lock) {
 		VESC_IF->free(st);
