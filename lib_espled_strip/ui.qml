@@ -263,17 +263,15 @@ Item {
                         from: 0; to: 255; value: 255
                         stepSize: 1
                         Layout.fillWidth: true
-                        onValueChanged: if (pressed) queueSend("bri", "(ext-espled-bri " + value.toFixed(0) + ")")
-                        onPressedChanged: if (!pressed) sendCode("(ext-espled-bri " + value.toFixed(0) + ")")
+                        onValueChanged: briAnim = value
                     }
 
-                    Label { text: "Fade " + fadeSlider.value.toFixed(0) }
+                    Label { text: "Fade " + fadeSlider.value.toFixed(0) + " ms" }
                     Slider {
                         id: fadeSlider
-                        from: 0; to: 32; value: 8
-                        stepSize: 1
+                        from: 0; to: 1000; value: 250
+                        stepSize: 10
                         Layout.fillWidth: true
-                        onPressedChanged: if (!pressed) sendCode("(ext-espled-fade " + value.toFixed(0) + ")")
                     }
 
                     Label { text: "Auto white" }
