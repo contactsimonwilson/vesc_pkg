@@ -184,8 +184,10 @@ static uint32_t triangle(uint32_t x) {
 
 static void fx_render(const seg_t *s, uint32_t *work) {
 	int n = s->len;
+	// The phase accumulates spd per frame (see render_thd), so changing
+	// the speed only changes the rate from here on - animations speed up
+	// or slow down in place instead of jumping to a new position.
 	uint32_t ph = s->phase;
-	uint32_t spd = s->spd ? s->spd : 32;
 	int size = s->size ? s->size : 8;
 
 	// Effects take their color from the color param; a color of 0 means
@@ -194,14 +196,14 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 	// blanked, and gauge uses its battery gradient for 0.
 	switch (s->fx) {
 	case FX_BREATHE: {
-		uint32_t b = triangle((ph * spd) / 32);
-		uint32_t c0 = s->color ? s->color : palette_at(s->pal, (uint8_t)(ph / 4));
+		uint32_t b = triangle(ph / 32);
+		uint32_t c0 = s->color ? s->color : palette_at(s->pal, (uint8_t)(ph / 128));
 		uint32_t c = scale(c0, b);
 		for (int i = 0; i < n; i++) work[i] = c;
 	} break;
 
 	case FX_CHASE: {
-		int head = (int)((ph * spd / 32) % (uint32_t)(n > 0 ? n : 1));
+		int head = (int)((ph / 32) % (uint32_t)(n > 0 ? n : 1));
 		for (int i = 0; i < n; i++) {
 			int d = i - head;
 			if (d < 0) d += n;
@@ -214,7 +216,7 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 
 	case FX_RAINBOW: {
 		for (int i = 0; i < n; i++) {
-			uint8_t pos = (uint8_t)((i * 255) / (n ? n : 1) + (ph * spd) / 32);
+			uint8_t pos = (uint8_t)((i * 255) / (n ? n : 1) + ph / 32);
 			work[i] = palette_at(s->pal, pos);
 		}
 	} break;
@@ -222,20 +224,20 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 	case FX_SPARKLE: {
 		for (int i = 0; i < n; i++) {
 			// Deterministic twinkle from phase + index
-			uint32_t h = ((uint32_t)i * 2654435761u) ^ (ph * 40503u);
+			uint32_t h = ((uint32_t)i * 2654435761u) ^ ((ph / 32) * 40503u);
 			uint32_t c = s->color ? s->color
 				: palette_at(s->pal, (uint8_t)(h >> 16));
-			work[i] = ((h >> 8) & 0xFF) < (spd / 2 + 1) ? c : 0;
+			work[i] = ((h >> 8) & 0xFF) < ((uint32_t)(s->spd ? s->spd : 32) / 2 + 1) ? c : 0;
 		}
 	} break;
 
 	case FX_COMET: {
-		int head = (int)((ph * spd / 32) % (uint32_t)(n > 0 ? n : 1));
+		int head = (int)((ph / 32) % (uint32_t)(n > 0 ? n : 1));
 		for (int i = 0; i < n; i++) {
 			int d = head - i;
 			if (d < 0) d += n;
 			uint32_t b = d < size ? 255 - (d * 255) / size : 0;
-			uint32_t c = s->color ? s->color : palette_at(s->pal, (uint8_t)ph);
+			uint32_t c = s->color ? s->color : palette_at(s->pal, (uint8_t)(ph / 32));
 			work[i] = scale(c, b);
 		}
 	} break;
@@ -246,7 +248,7 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 		// full. spd > 0 pulses the fill (e.g. while charging).
 		int lit = (n * s->level + 254) / 255;
 		if (s->level > 0 && lit < 1) lit = 1;
-		uint32_t b = s->spd ? 140 + triangle((ph * s->spd) / 32) * 115 / 255
+		uint32_t b = s->spd ? 140 + triangle(ph / 32) * 115 / 255
 			: 255;
 		uint32_t c;
 		if (s->color) {
@@ -263,7 +265,7 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 	} break;
 
 	case FX_STROBE: {
-		uint32_t flash = (ph * spd) / 64;
+		uint32_t flash = ph / 64;
 		uint32_t c = s->color ? s->color
 			: palette_at(s->pal, (uint8_t)(flash * 61)); // new hue per flash
 		bool lit = flash & 1;
@@ -272,9 +274,9 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 
 	case FX_LARSON: {
 		int span = n > 1 ? n - 1 : 1;
-		int pos = (int)((ph * spd / 16) % (uint32_t)(2 * span));
+		int pos = (int)((ph / 16) % (uint32_t)(2 * span));
 		if (pos > span) pos = 2 * span - pos;
-		uint32_t c = s->color ? s->color : palette_at(s->pal, (uint8_t)(ph / 4));
+		uint32_t c = s->color ? s->color : palette_at(s->pal, (uint8_t)(ph / 128));
 		for (int i = 0; i < n; i++) {
 			int d = i > pos ? i - pos : pos - i;
 			uint32_t b = d < size ? 255 - (d * 255) / size : 0;
@@ -283,7 +285,7 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 	} break;
 
 	case FX_FELONY: {
-		bool swap = ((ph * spd) / 48) & 1;
+		bool swap = ((ph / 48) & 1);
 		uint32_t c1 = swap ? 0x0000FF : 0xFF0000;
 		uint32_t c2 = swap ? 0xFF0000 : 0x0000FF;
 		for (int i = 0; i < n; i++) {
@@ -430,7 +432,9 @@ static void render_thd(void *arg) {
 						memset(g->txbuf + (uint32_t)s->offset * g->colors,
 							0, (uint32_t)(s->len + s->ov_count) * g->colors);
 					}
-					s->phase++;
+					// Accumulate speed so speed changes take effect
+					// in place, without moving the animation position.
+					s->phase += s->spd ? s->spd : 32;
 					any = true;
 				}
 			}
