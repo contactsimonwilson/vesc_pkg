@@ -36,12 +36,113 @@ Item {
         mCommands.sendCustomAppData(str + "\0")
     }
 
+    // Throttled sends for live slider dragging: the first change goes out
+    // immediately, further changes are coalesced per control at 20 Hz and
+    // the final value is flushed on release. The strip itself smooths
+    // brightness changes (ext-espled-fade).
+    property var txPending: ({})
+
+    function flushTx() {
+        for (var k in txPending) {
+            sendCode(txPending[k])
+        }
+        txPending = ({})
+    }
+
+    function queueSend(key, str) {
+        txPending[key] = str
+        if (!txTimer.running) {
+            flushTx()
+            txTimer.start()
+        }
+    }
+
+    Timer {
+        id: txTimer
+        interval: 50
+        repeat: true
+        onTriggered: {
+            if (Object.keys(txPending).length > 0) {
+                flushTx()
+            } else {
+                stop()
+            }
+        }
+    }
+
+    // Slider with a value bubble over the handle while dragging, updating
+    // the UI immediately and emitting through the throttle.
+    Component {
+        id: customValueSlider
+
+        Slider {
+            id: slider
+            from: 0
+            to: 100
+            value: 50
+            stepSize: 1
+            property bool hideBubble: true
+            signal interactionReleased()
+
+            onPressedChanged: {
+                if (!pressed) {
+                    interactionReleased()
+                }
+            }
+            property var formatValue: function(val) {
+                return val.toFixed(0)
+            }
+
+            Item {
+                parent: slider.handle
+                width: parent.width
+                height: parent.height
+
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottom: parent.top
+                    anchors.bottomMargin: 8
+                    width: valueText.width + 8
+                    height: 20
+                    radius: 4
+                    color: palette.toolTipBase
+                    visible: true
+                    opacity: slider.pressed || !hideBubble ? 1.0 : 0.0
+                    Behavior on opacity { NumberAnimation { duration: 150 } }
+
+                    Text {
+                        id: valueText
+                        anchors.centerIn: parent
+                        text: slider.formatValue(slider.value)
+                        color: palette.toolTipText
+                        font.pixelSize: 12
+                        font.bold: true
+                    }
+                }
+            }
+        }
+    }
+
     function packedColor() {
-        return (rSlider.value << 16) | (gSlider.value << 8) | bSlider.value
+        var r = rLoader.item ? rLoader.item.value : 0
+        var g = gLoader.item ? gLoader.item.value : 0
+        var b = bLoader.item ? bLoader.item.value : 0
+        return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b)
     }
 
     function sendColor() {
-        sendCode("(ext-espled-seg-col 0 " + packedColor() + ")")
+        queueSend("color", "(ext-espled-seg-col 0 " + packedColor() + ")")
+    }
+
+    // Wire a loaded customValueSlider to the throttle: live queued sends on
+    // any change and a flush on release.
+    function hookSlider(item, key, makeCmd) {
+        item.valueChanged.connect(function() {
+            queueSend(key, makeCmd(item.value))
+        })
+        item.interactionReleased.connect(function() {
+            queueSend(key, makeCmd(item.value))
+        })
     }
 
     ScrollView {
@@ -135,34 +236,43 @@ Item {
                         Layout.fillWidth: true
                     }
 
-                    Label { text: "Speed " + spdSlider.value.toFixed(0) }
-                    Slider {
-                        id: spdSlider
-                        from: 1; to: 255; value: 32
-                        stepSize: 1
+                    Label { text: "Speed" }
+                    Loader {
+                        id: spdLoader
+                        sourceComponent: customValueSlider
                         Layout.fillWidth: true
-                        onValueChanged: if (pressed) queueSend("spd", "(ext-espled-seg-spd 0 " + value.toFixed(0) + ")")
-                        onPressedChanged: if (!pressed) sendCode("(ext-espled-seg-spd 0 " + value.toFixed(0) + ")")
+                        onLoaded: {
+                            item.from = 1; item.to = 255; item.value = 32
+                            hookSlider(item, "spd", function(v) {
+                                return "(ext-espled-seg-spd 0 " + v.toFixed(0) + ")"
+                            })
+                        }
                     }
 
-                    Label { text: "Size " + sizeSlider.value.toFixed(0) }
-                    Slider {
-                        id: sizeSlider
-                        from: 1; to: 64; value: 8
-                        stepSize: 1
+                    Label { text: "Size" }
+                    Loader {
+                        id: sizeLoader
+                        sourceComponent: customValueSlider
                         Layout.fillWidth: true
-                        onValueChanged: if (pressed) queueSend("size", "(ext-espled-seg-size 0 " + value.toFixed(0) + ")")
-                        onPressedChanged: if (!pressed) sendCode("(ext-espled-seg-size 0 " + value.toFixed(0) + ")")
+                        onLoaded: {
+                            item.from = 1; item.to = 64; item.value = 8
+                            hookSlider(item, "size", function(v) {
+                                return "(ext-espled-seg-size 0 " + v.toFixed(0) + ")"
+                            })
+                        }
                     }
 
-                    Label { text: "Level " + lvlSlider.value.toFixed(0) }
-                    Slider {
-                        id: lvlSlider
-                        from: 0; to: 255; value: 255
-                        stepSize: 1
+                    Label { text: "Level" }
+                    Loader {
+                        id: lvlLoader
+                        sourceComponent: customValueSlider
                         Layout.fillWidth: true
-                        onValueChanged: if (pressed) queueSend("level", "(ext-espled-seg-level 0 " + value.toFixed(0) + ")")
-                        onPressedChanged: if (!pressed) sendCode("(ext-espled-seg-level 0 " + value.toFixed(0) + ")")
+                        onLoaded: {
+                            item.from = 0; item.to = 255; item.value = 255
+                            hookSlider(item, "level", function(v) {
+                                return "(ext-espled-seg-level 0 " + v.toFixed(0) + ")"
+                            })
+                        }
                     }
                 }
             }
@@ -178,7 +288,12 @@ Item {
                         Layout.fillWidth: true
                         height: 24
                         radius: 4
-                        color: Qt.rgba(rSlider.value / 255, gSlider.value / 255, bSlider.value / 255, 1)
+                        color: {
+                            var r = rLoader.item ? rLoader.item.value : 0
+                            var g = gLoader.item ? gLoader.item.value : 0
+                            var b = bLoader.item ? bLoader.item.value : 0
+                            return Qt.rgba(r / 255, g / 255, b / 255, 1)
+                        }
                         border.color: "#808080"
                     }
 
@@ -186,34 +301,40 @@ Item {
                         Layout.fillWidth: true
                         columns: 2
 
-                        Label { text: "R " + rSlider.value.toFixed(0) }
-                        Slider {
-                            id: rSlider
-                            from: 0; to: 255; value: 255
-                            stepSize: 1
+                        Label { text: "R" }
+                        Loader {
+                            id: rLoader
+                            sourceComponent: customValueSlider
                             Layout.fillWidth: true
-                            onValueChanged: if (pressed) queueSend("color", "(ext-espled-seg-col 0 " + packedColor() + ")")
-                            onPressedChanged: if (!pressed) sendColor()
+                            onLoaded: {
+                                item.from = 0; item.to = 255; item.value = 255
+                                item.valueChanged.connect(sendColor)
+                                item.interactionReleased.connect(sendColor)
+                            }
                         }
 
-                        Label { text: "G " + gSlider.value.toFixed(0) }
-                        Slider {
-                            id: gSlider
-                            from: 0; to: 255; value: 0
-                            stepSize: 1
+                        Label { text: "G" }
+                        Loader {
+                            id: gLoader
+                            sourceComponent: customValueSlider
                             Layout.fillWidth: true
-                            onValueChanged: if (pressed) queueSend("color", "(ext-espled-seg-col 0 " + packedColor() + ")")
-                            onPressedChanged: if (!pressed) sendColor()
+                            onLoaded: {
+                                item.from = 0; item.to = 255; item.value = 0
+                                item.valueChanged.connect(sendColor)
+                                item.interactionReleased.connect(sendColor)
+                            }
                         }
 
-                        Label { text: "B " + bSlider.value.toFixed(0) }
-                        Slider {
-                            id: bSlider
-                            from: 0; to: 255; value: 0
-                            stepSize: 1
+                        Label { text: "B" }
+                        Loader {
+                            id: bLoader
+                            sourceComponent: customValueSlider
                             Layout.fillWidth: true
-                            onValueChanged: if (pressed) queueSend("color", "(ext-espled-seg-col 0 " + packedColor() + ")")
-                            onPressedChanged: if (!pressed) sendColor()
+                            onLoaded: {
+                                item.from = 0; item.to = 255; item.value = 0
+                                item.valueChanged.connect(sendColor)
+                                item.interactionReleased.connect(sendColor)
+                            }
                         }
                     }
 
@@ -257,21 +378,30 @@ Item {
                     anchors.fill: parent
                     columns: 2
 
-                    Label { text: "Brightness " + briSlider.value.toFixed(0) }
-                    Slider {
-                        id: briSlider
-                        from: 0; to: 255; value: 255
-                        stepSize: 1
+                    Label { text: "Brightness" }
+                    Loader {
+                        id: briLoader
+                        sourceComponent: customValueSlider
                         Layout.fillWidth: true
-                        onValueChanged: briAnim = value
+                        onLoaded: {
+                            item.from = 0; item.to = 255; item.value = 255
+                            hookSlider(item, "bri", function(v) {
+                                return "(ext-espled-bri " + v.toFixed(0) + ")"
+                            })
+                        }
                     }
 
-                    Label { text: "Fade " + fadeSlider.value.toFixed(0) + " ms" }
-                    Slider {
-                        id: fadeSlider
-                        from: 0; to: 1000; value: 250
-                        stepSize: 10
+                    Label { text: "Fade" }
+                    Loader {
+                        id: fadeLoader
+                        sourceComponent: customValueSlider
                         Layout.fillWidth: true
+                        onLoaded: {
+                            item.from = 0; item.to = 32; item.value = 8
+                            hookSlider(item, "fade", function(v) {
+                                return "(ext-espled-fade " + v.toFixed(0) + ")"
+                            })
+                        }
                     }
 
                     Label { text: "Auto white" }
