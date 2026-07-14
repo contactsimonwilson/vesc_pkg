@@ -300,15 +300,22 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 
 // ---- Render thread ------------------------------------------------------
 
-// Move cur toward target by at most step (0 = jump immediately).
-static uint8_t ease_u8(uint8_t cur, uint8_t target, uint8_t step) {
-	if (step == 0) {
+// Move cur toward target proportionally: close fade/32 of the remaining
+// gap per frame (at least 1), so large changes track quickly while the
+// tail of the fade stays smooth. 0 = jump immediately.
+static uint8_t ease_u8(uint8_t cur, uint8_t target, uint8_t fade) {
+	if (fade == 0) {
 		return target;
 	}
 	int d = (int)target - (int)cur;
-	if (d > step) return cur + step;
-	if (d < -step) return cur - step;
-	return target;
+	if (d == 0) {
+		return cur;
+	}
+	int mag = d > 0 ? d : -d;
+	int step = (mag * fade) / 32;
+	if (step < 1) step = 1;
+	if (step > mag) step = mag;
+	return d > 0 ? cur + step : cur - step;
 }
 
 // Render one segment into its place in the pin group's chain buffer.
@@ -826,9 +833,9 @@ static lbm_value ext_bri(lbm_value *args, lbm_uint argn) {
 	return VESC_IF->lbm_enc_sym_true;
 }
 
-// (ext-espled-fade rate) - brightness easing in steps per frame
-// (0 = instant, higher = faster). Applies to master and segment
-// brightness changes.
+// (ext-espled-fade rate) - brightness easing: fraction of the remaining
+// gap closed per frame, in 32nds (0 = instant, 8 = 25%/frame, 32 = full).
+// Applies to master and segment brightness changes.
 static lbm_value ext_fade(lbm_value *args, lbm_uint argn) {
 	espled_t *st = state();
 	if (!check_num_args(args, argn, 1)) return VESC_IF->lbm_enc_sym_terror;
@@ -881,7 +888,7 @@ INIT_FUN(lib_info *info) {
 
 	st->master_bri = 255;
 	st->master_cur = 255;
-	st->fade = 12; // ~0.5 s for a half-range change at 30 fps
+	st->fade = 8; // close 25% of the gap per frame (~0.3 s to settle)
 	st->lock = VESC_IF->mutex_create();
 	if (!st->lock) {
 		VESC_IF->free(st);

@@ -270,7 +270,7 @@ Item {
                     Label { text: "Fade " + fadeSlider.value.toFixed(0) }
                     Slider {
                         id: fadeSlider
-                        from: 0; to: 64; value: 12
+                        from: 0; to: 32; value: 8
                         stepSize: 1
                         Layout.fillWidth: true
                         onPressedChanged: if (!pressed) sendCode("(ext-espled-fade " + value.toFixed(0) + ")")

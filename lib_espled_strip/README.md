@@ -29,7 +29,7 @@ The package includes a VESC Tool page for testing: configure pin / LED count / s
 | `ext-espled-seg-on` | `(i on)` | enable/disable a segment |
 | `ext-espled-seg-reverse` | `(i rev)` | reverse pixel order |
 | `ext-espled-bri` | `(b)` | master brightness 0..255 |
-| `ext-espled-fade` | `(rate)` | brightness easing in steps per frame toward new brightness targets (0 = instant, default 12) |
+| `ext-espled-fade` | `(rate)` | brightness easing: fraction of the remaining gap closed per frame in 32nds (0 = instant, default 8 = 25%/frame) |
 | `ext-espled-auto-white` | `(en)` | derive W from RGB on RGBW strips |
 | `ext-espled-ablimit` | `(ma)` | adaptive current cap in mA (0 = off) |
 
