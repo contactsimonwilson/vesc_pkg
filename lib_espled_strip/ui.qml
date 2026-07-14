@@ -185,11 +185,19 @@ Item {
                         Layout.fillWidth: true
                     }
 
+                    Label { text: "Timing" }
+                    ComboBox {
+                        id: timingBox
+                        model: ["Universal", "WS2812B", "WS2815", "SK6812", "SK6815"]
+                        Layout.fillWidth: true
+                    }
+
                     Button {
                         text: "Start"
                         Layout.fillWidth: true
                         onClicked: sendCode("(espled-setup " + pinBox.value + " " +
-                                            lenBox.value + " " + typeBox.currentIndex + ")")
+                                            lenBox.value + " " + typeBox.currentIndex + " " +
+                                            timingBox.currentIndex + ")")
                     }
                     Button {
                         text: "Stop"
@@ -210,7 +218,7 @@ Item {
                     Label { text: "Effect" }
                     ComboBox {
                         id: fxBox
-                        model: ["Solid", "Breathe", "Chase", "Rainbow", "Sparkle", "Comet", "Gauge", "Strobe", "Larson", "Felony"]
+                        model: ["Solid", "Breathe", "Chase", "Rainbow", "Sparkle", "Comet", "Gauge", "Strobe", "Larson", "Felony", "Theater", "Wipe", "Waves", "Candle", "Heartbeat"]
                         Layout.fillWidth: true
                         onActivated: sendCode("(ext-espled-seg-fx 0 " + currentIndex + ")")
                     }
@@ -218,7 +226,7 @@ Item {
                     Label { text: "Palette" }
                     ComboBox {
                         id: palBox
-                        model: ["Spectrum", "Fire", "Ocean", "Neon", "Ember", "Traffic", "B&W Flash", "Police Blue"]
+                        model: ["Spectrum", "Fire", "Ocean", "Neon", "Ember", "Traffic", "B&W Flash", "Police Blue", "Sunset", "Lava", "Aurora", "Forest", "Party", "Ice", "Halloween", "Christmas", "Pastel", "Sakura"]
                         Layout.fillWidth: true
                         // Color 0 = "take color from the palette", so clear
                         // the color when a palette is picked.
@@ -341,25 +349,40 @@ Item {
                     RowLayout {
                         Layout.fillWidth: true
 
+                        // These switch every segment to a solid color
+                        // (ext-espled-col-rgb sets the effect too), so sync
+                        // the effect combo to match.
                         Button {
                             text: "Red"
                             Layout.fillWidth: true
-                            onClicked: sendCode("(ext-espled-col-rgb 255 0 0)")
+                            onClicked: {
+                                sendCode("(ext-espled-col-rgb 255 0 0)")
+                                fxBox.currentIndex = 0
+                            }
                         }
                         Button {
                             text: "Green"
                             Layout.fillWidth: true
-                            onClicked: sendCode("(ext-espled-col-rgb 0 255 0)")
+                            onClicked: {
+                                sendCode("(ext-espled-col-rgb 0 255 0)")
+                                fxBox.currentIndex = 0
+                            }
                         }
                         Button {
                             text: "Blue"
                             Layout.fillWidth: true
-                            onClicked: sendCode("(ext-espled-col-rgb 0 0 255)")
+                            onClicked: {
+                                sendCode("(ext-espled-col-rgb 0 0 255)")
+                                fxBox.currentIndex = 0
+                            }
                         }
                         Button {
                             text: "White"
                             Layout.fillWidth: true
-                            onClicked: sendCode("(ext-espled-col-rgb 255 255 255)")
+                            onClicked: {
+                                sendCode("(ext-espled-col-rgb 255 255 255)")
+                                fxBox.currentIndex = 0
+                            }
                         }
                         Button {
                             text: "Off"

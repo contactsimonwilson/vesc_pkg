@@ -7,7 +7,7 @@ A VESC Express package for controlling LEDs, BMS and Pubmote.
 This version of the package differs from the original in two ways:
 
 <ul>
-  <li><b>LEDs are rendered by the ESPLED Strip native library</b> (lib_espled_strip). The library owns the framebuffers, a background render thread and the LED driver; the package only drives high-level segment state (effect, color, brightness). Strips that share one pin are chained automatically. Highbeams are fully supported: "Standard + PWM Highbeam" drives a separate highbeam pin, and the embedded-highbeam strip types (Highbeam LED First, JetFleet H4/GT, Fungineers GTFO) drive the in-strip highbeam LEDs as overlay pixels.</li>
+  <li><b>LEDs are rendered by the ESPLED Strip native library</b> (lib_espled_strip). The library owns the framebuffers, a background render thread and the LED driver; the package only drives high-level segment state (effect, color, brightness). Strips that share one pin are chained automatically, and each strip can pick a wire timing preset (Universal / WS2812B / WS2815 / SK6812 / SK6815). Highbeams are fully supported: the Stock GT preset drives a separate PWM highbeam pin, and the embedded-highbeam presets (Avaspark Laserbeams, Light-shutka Flashfires, JetFleet H4/GT, Fungineers GTFO) drive the in-strip highbeam LEDs as overlay pixels.</li>
   <li><b>All settings live in a VESC custom config</b> ("Float Accessories Cfg" in VESC Tool's parameter UI), provided by the fa_cfg native lib and described by conf/settings.xml. The firmware persists the config; the old in-package eeprom layout, magic numbers and CRC handling are gone. The package's own settings page keeps working like before (it reads and writes the same config), so you can use either it or VESC Tool's parameter pages - edits from both apply live.</li>
 </ul>
 
@@ -45,10 +45,11 @@ My Blog: <a href='https://sylerclayton.com'>https://sylerclayton.com</a>
   <li>Fix for GTFO strips</li>
   <li>Humidity Sensor Support</li>
   <li>Support for future refloat humidity pushback and alert</li>
+  <li>GNSS receiver support (u-blox or NMEA over UART) - feeds the SD log position and the CAN GNSS broadcast</li>
 </ul>
 
 <H3>BUILD INFO</H3>
 
-Version 3.4.0
+Version 4.0.0
 
 Source code can be found here:  <a href='https://github.com/relys/vesc%5Fpkg'>https://github.com/relys/vesc_pkg</a>

@@ -57,6 +57,14 @@
             <cDefine>CFG_DFLT_HUMIDITY_ENABLED</cDefine>
             <valInt>0</valInt>
         </humidity_enabled>
+        <gnss_enabled>
+            <longName>GNSS Enabled</longName>
+            <type>5</type>
+            <transmittable>1</transmittable>
+            <description>Enable the GNSS receiver (u-blox or NMEA). Feeds the gnss-* extensions, the SD log position (Log GNSS) and the CAN GNSS broadcast.</description>
+            <cDefine>CFG_DFLT_GNSS_ENABLED</cDefine>
+            <valInt>0</valInt>
+        </gnss_enabled>
         <can_id>
             <longName>CAN ID</longName>
             <type>2</type>
@@ -416,21 +424,20 @@
             <cDefine>CFG_DFLT_LED_SHOW_BATTERY_CHARGING</cDefine>
             <valInt>1</valInt>
         </led_show_battery_charging>
-        <led_front_strip_type>
+        <led_front_timing>
             <longName>Front Strip</longName>
             <type>4</type>
             <transmittable>1</transmittable>
-            <description>Front strip mode. PWM Highbeam drives a separate highbeam pin.</description>
-            <cDefine>CFG_DFLT_LED_FRONT_STRIP_TYPE</cDefine>
+            <description>Front strip: disabled, or the wire timing preset to drive it with.</description>
+            <cDefine>CFG_DFLT_LED_FRONT_TIMING</cDefine>
             <valInt>0</valInt>
             <enumNames>Disabled</enumNames>
-            <enumNames>Standard</enumNames>
-            <enumNames>Standard + PWM Highbeam</enumNames>
-            <enumNames>Highbeam LED First</enumNames>
-            <enumNames>JetFleet H4</enumNames>
-            <enumNames>JetFleet GT</enumNames>
-            <enumNames>Fungineers GTFO</enumNames>
-        </led_front_strip_type>
+            <enumNames>Universal</enumNames>
+            <enumNames>WS2812B</enumNames>
+            <enumNames>WS2815</enumNames>
+            <enumNames>SK6812</enumNames>
+            <enumNames>SK6815</enumNames>
+        </led_front_timing>
         <led_front_pin>
             <longName>Front Pin</longName>
             <type>2</type>
@@ -451,7 +458,7 @@
             <longName>Front LED Count</longName>
             <type>2</type>
             <transmittable>1</transmittable>
-            <description>Number of LEDs on the front strip.</description>
+            <description>Number of LEDs on the front strip (highbeam LEDs not included).</description>
             <cDefine>CFG_DFLT_LED_FRONT_NUM</cDefine>
             <editorScale>1</editorScale>
             <editAsPercentage>0</editAsPercentage>
@@ -483,11 +490,22 @@
             <cDefine>CFG_DFLT_LED_FRONT_REVERSED</cDefine>
             <valInt>1</valInt>
         </led_front_reversed>
+        <led_front_highbeam_mode>
+            <longName>Front Highbeam</longName>
+            <type>4</type>
+            <transmittable>1</transmittable>
+            <description>Front highbeam hardware: a separate PWM-driven pin, or LEDs embedded in the strip itself.</description>
+            <cDefine>CFG_DFLT_LED_FRONT_HIGHBEAM_MODE</cDefine>
+            <valInt>0</valInt>
+            <enumNames>None</enumNames>
+            <enumNames>PWM Pin</enumNames>
+            <enumNames>Embedded LEDs</enumNames>
+        </led_front_highbeam_mode>
         <led_front_highbeam_pin>
             <longName>Front Highbeam Pin</longName>
             <type>2</type>
             <transmittable>1</transmittable>
-            <description>PWM highbeam GPIO for the front (Strip mode PWM Highbeam).</description>
+            <description>PWM highbeam GPIO for the front (highbeam mode PWM Pin).</description>
             <cDefine>CFG_DFLT_LED_FRONT_HIGHBEAM_PIN</cDefine>
             <editorScale>1</editorScale>
             <editAsPercentage>0</editAsPercentage>
@@ -499,21 +517,72 @@
             <suffix></suffix>
             <vTx>6</vTx>
         </led_front_highbeam_pin>
-        <led_rear_strip_type>
+        <led_front_highbeam_pos>
+            <longName>Front Highbeam Positions</longName>
+            <type>2</type>
+            <transmittable>1</transmittable>
+            <description>Embedded highbeam LED positions within the strip, packed one per byte from the lowest, 255 = unused (e.g. positions 3,8,14,19 = 320014339).</description>
+            <cDefine>CFG_DFLT_LED_FRONT_HIGHBEAM_POS</cDefine>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxInt>2147483647</maxInt>
+            <minInt>-2147483648</minInt>
+            <showDisplay>0</showDisplay>
+            <stepInt>1</stepInt>
+            <valInt>-1</valInt>
+            <suffix></suffix>
+            <vTx>6</vTx>
+        </led_front_highbeam_pos>
+        <led_front_highbeam_min>
+            <longName>Front Highbeam Min Drive</longName>
+            <type>1</type>
+            <transmittable>1</transmittable>
+            <description>Embedded highbeam brightness is mapped onto the min-max drive range some light bars expect.</description>
+            <cDefine>CFG_DFLT_LED_FRONT_HIGHBEAM_MIN</cDefine>
+            <editorDecimalsDouble>2</editorDecimalsDouble>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxDouble>1.0</maxDouble>
+            <minDouble>0.0</minDouble>
+            <showDisplay>0</showDisplay>
+            <stepDouble>0.05</stepDouble>
+            <valDouble>0.0</valDouble>
+            <vTxDoubleScale>1</vTxDoubleScale>
+            <suffix></suffix>
+            <vTx>9</vTx>
+        </led_front_highbeam_min>
+        <led_front_highbeam_max>
+            <longName>Front Highbeam Max Drive</longName>
+            <type>1</type>
+            <transmittable>1</transmittable>
+            <description>Embedded highbeam brightness is mapped onto the min-max drive range some light bars expect.</description>
+            <cDefine>CFG_DFLT_LED_FRONT_HIGHBEAM_MAX</cDefine>
+            <editorDecimalsDouble>2</editorDecimalsDouble>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxDouble>1.0</maxDouble>
+            <minDouble>0.0</minDouble>
+            <showDisplay>0</showDisplay>
+            <stepDouble>0.05</stepDouble>
+            <valDouble>1.0</valDouble>
+            <vTxDoubleScale>1</vTxDoubleScale>
+            <suffix></suffix>
+            <vTx>9</vTx>
+        </led_front_highbeam_max>
+        <led_rear_timing>
             <longName>Rear Strip</longName>
             <type>4</type>
             <transmittable>1</transmittable>
-            <description>Rear strip mode. PWM Highbeam drives a separate highbeam pin.</description>
-            <cDefine>CFG_DFLT_LED_REAR_STRIP_TYPE</cDefine>
+            <description>Rear strip: disabled, or the wire timing preset to drive it with.</description>
+            <cDefine>CFG_DFLT_LED_REAR_TIMING</cDefine>
             <valInt>0</valInt>
             <enumNames>Disabled</enumNames>
-            <enumNames>Standard</enumNames>
-            <enumNames>Standard + PWM Highbeam</enumNames>
-            <enumNames>Highbeam LED First</enumNames>
-            <enumNames>JetFleet H4</enumNames>
-            <enumNames>JetFleet GT</enumNames>
-            <enumNames>Fungineers GTFO</enumNames>
-        </led_rear_strip_type>
+            <enumNames>Universal</enumNames>
+            <enumNames>WS2812B</enumNames>
+            <enumNames>WS2815</enumNames>
+            <enumNames>SK6812</enumNames>
+            <enumNames>SK6815</enumNames>
+        </led_rear_timing>
         <led_rear_pin>
             <longName>Rear Pin</longName>
             <type>2</type>
@@ -534,7 +603,7 @@
             <longName>Rear LED Count</longName>
             <type>2</type>
             <transmittable>1</transmittable>
-            <description>Number of LEDs on the rear strip.</description>
+            <description>Number of LEDs on the rear strip (highbeam LEDs not included).</description>
             <cDefine>CFG_DFLT_LED_REAR_NUM</cDefine>
             <editorScale>1</editorScale>
             <editAsPercentage>0</editAsPercentage>
@@ -566,11 +635,22 @@
             <cDefine>CFG_DFLT_LED_REAR_REVERSED</cDefine>
             <valInt>1</valInt>
         </led_rear_reversed>
+        <led_rear_highbeam_mode>
+            <longName>Rear Highbeam</longName>
+            <type>4</type>
+            <transmittable>1</transmittable>
+            <description>Rear highbeam hardware: a separate PWM-driven pin, or LEDs embedded in the strip itself.</description>
+            <cDefine>CFG_DFLT_LED_REAR_HIGHBEAM_MODE</cDefine>
+            <valInt>0</valInt>
+            <enumNames>None</enumNames>
+            <enumNames>PWM Pin</enumNames>
+            <enumNames>Embedded LEDs</enumNames>
+        </led_rear_highbeam_mode>
         <led_rear_highbeam_pin>
             <longName>Rear Highbeam Pin</longName>
             <type>2</type>
             <transmittable>1</transmittable>
-            <description>PWM highbeam GPIO for the rear (Strip mode PWM Highbeam).</description>
+            <description>PWM highbeam GPIO for the rear (highbeam mode PWM Pin).</description>
             <cDefine>CFG_DFLT_LED_REAR_HIGHBEAM_PIN</cDefine>
             <editorScale>1</editorScale>
             <editAsPercentage>0</editAsPercentage>
@@ -582,16 +662,72 @@
             <suffix></suffix>
             <vTx>6</vTx>
         </led_rear_highbeam_pin>
-        <led_status_strip_type>
+        <led_rear_highbeam_pos>
+            <longName>Rear Highbeam Positions</longName>
+            <type>2</type>
+            <transmittable>1</transmittable>
+            <description>Embedded highbeam LED positions within the strip, packed one per byte from the lowest, 255 = unused (e.g. positions 3,8,14,19 = 320014339).</description>
+            <cDefine>CFG_DFLT_LED_REAR_HIGHBEAM_POS</cDefine>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxInt>2147483647</maxInt>
+            <minInt>-2147483648</minInt>
+            <showDisplay>0</showDisplay>
+            <stepInt>1</stepInt>
+            <valInt>-1</valInt>
+            <suffix></suffix>
+            <vTx>6</vTx>
+        </led_rear_highbeam_pos>
+        <led_rear_highbeam_min>
+            <longName>Rear Highbeam Min Drive</longName>
+            <type>1</type>
+            <transmittable>1</transmittable>
+            <description>Embedded highbeam brightness is mapped onto the min-max drive range some light bars expect.</description>
+            <cDefine>CFG_DFLT_LED_REAR_HIGHBEAM_MIN</cDefine>
+            <editorDecimalsDouble>2</editorDecimalsDouble>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxDouble>1.0</maxDouble>
+            <minDouble>0.0</minDouble>
+            <showDisplay>0</showDisplay>
+            <stepDouble>0.05</stepDouble>
+            <valDouble>0.0</valDouble>
+            <vTxDoubleScale>1</vTxDoubleScale>
+            <suffix></suffix>
+            <vTx>9</vTx>
+        </led_rear_highbeam_min>
+        <led_rear_highbeam_max>
+            <longName>Rear Highbeam Max Drive</longName>
+            <type>1</type>
+            <transmittable>1</transmittable>
+            <description>Embedded highbeam brightness is mapped onto the min-max drive range some light bars expect.</description>
+            <cDefine>CFG_DFLT_LED_REAR_HIGHBEAM_MAX</cDefine>
+            <editorDecimalsDouble>2</editorDecimalsDouble>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxDouble>1.0</maxDouble>
+            <minDouble>0.0</minDouble>
+            <showDisplay>0</showDisplay>
+            <stepDouble>0.05</stepDouble>
+            <valDouble>1.0</valDouble>
+            <vTxDoubleScale>1</vTxDoubleScale>
+            <suffix></suffix>
+            <vTx>9</vTx>
+        </led_rear_highbeam_max>
+        <led_status_timing>
             <longName>Status Strip</longName>
             <type>4</type>
             <transmittable>1</transmittable>
-            <description>Status bar strip mode.</description>
-            <cDefine>CFG_DFLT_LED_STATUS_STRIP_TYPE</cDefine>
+            <description>Status bar: disabled, or the wire timing preset to drive it with.</description>
+            <cDefine>CFG_DFLT_LED_STATUS_TIMING</cDefine>
             <valInt>0</valInt>
             <enumNames>Disabled</enumNames>
-            <enumNames>Standard</enumNames>
-        </led_status_strip_type>
+            <enumNames>Universal</enumNames>
+            <enumNames>WS2812B</enumNames>
+            <enumNames>WS2815</enumNames>
+            <enumNames>SK6812</enumNames>
+            <enumNames>SK6815</enumNames>
+        </led_status_timing>
         <led_status_pin>
             <longName>Status Pin</longName>
             <type>2</type>
@@ -644,16 +780,20 @@
             <cDefine>CFG_DFLT_LED_STATUS_REVERSED</cDefine>
             <valInt>1</valInt>
         </led_status_reversed>
-        <led_footpad_strip_type>
+        <led_footpad_timing>
             <longName>Footpad Strip</longName>
             <type>4</type>
             <transmittable>1</transmittable>
-            <description>Footpad strip mode.</description>
-            <cDefine>CFG_DFLT_LED_FOOTPAD_STRIP_TYPE</cDefine>
+            <description>Footpad strip: disabled, or the wire timing preset to drive it with.</description>
+            <cDefine>CFG_DFLT_LED_FOOTPAD_TIMING</cDefine>
             <valInt>0</valInt>
             <enumNames>Disabled</enumNames>
-            <enumNames>Standard</enumNames>
-        </led_footpad_strip_type>
+            <enumNames>Universal</enumNames>
+            <enumNames>WS2812B</enumNames>
+            <enumNames>WS2815</enumNames>
+            <enumNames>SK6812</enumNames>
+            <enumNames>SK6815</enumNames>
+        </led_footpad_timing>
         <led_footpad_pin>
             <longName>Footpad Pin</longName>
             <type>2</type>
@@ -706,16 +846,20 @@
             <cDefine>CFG_DFLT_LED_FOOTPAD_REVERSED</cDefine>
             <valInt>0</valInt>
         </led_footpad_reversed>
-        <led_button_strip_type>
+        <led_button_timing>
             <longName>Button LED</longName>
             <type>4</type>
             <transmittable>1</transmittable>
-            <description>Single button LED mode.</description>
-            <cDefine>CFG_DFLT_LED_BUTTON_STRIP_TYPE</cDefine>
+            <description>Single button LED: disabled, or the wire timing preset to drive it with.</description>
+            <cDefine>CFG_DFLT_LED_BUTTON_TIMING</cDefine>
             <valInt>0</valInt>
             <enumNames>Disabled</enumNames>
-            <enumNames>Standard</enumNames>
-        </led_button_strip_type>
+            <enumNames>Universal</enumNames>
+            <enumNames>WS2812B</enumNames>
+            <enumNames>WS2815</enumNames>
+            <enumNames>SK6812</enumNames>
+            <enumNames>SK6815</enumNames>
+        </led_button_timing>
         <led_button_pin>
             <longName>Button Pin</longName>
             <type>2</type>
@@ -1130,7 +1274,7 @@
             <longName>Log GNSS</longName>
             <type>5</type>
             <transmittable>1</transmittable>
-            <description>Append GNSS position to log samples.</description>
+            <description>Append GNSS position to log samples (needs GNSS enabled).</description>
             <cDefine>CFG_DFLT_LOG_APPEND_GNSS</cDefine>
             <valInt>0</valInt>
         </log_append_gnss>
@@ -1166,6 +1310,96 @@
             <suffix></suffix>
             <vTx>6</vTx>
         </humidity_slc_pin>
+        <gnss_type>
+            <longName>GNSS Type</longName>
+            <type>4</type>
+            <transmittable>1</transmittable>
+            <description>u-blox modules are driven by the firmware driver; any other NMEA module is read from a plain UART.</description>
+            <cDefine>CFG_DFLT_GNSS_TYPE</cDefine>
+            <valInt>0</valInt>
+            <enumNames>u-blox (UBX)</enumNames>
+            <enumNames>NMEA (UART)</enumNames>
+        </gnss_type>
+        <gnss_rx_pin>
+            <longName>GNSS RX Pin</longName>
+            <type>2</type>
+            <transmittable>1</transmittable>
+            <description>GPIO wired to the module's TX output.</description>
+            <cDefine>CFG_DFLT_GNSS_RX_PIN</cDefine>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxInt>48</maxInt>
+            <minInt>-1</minInt>
+            <showDisplay>0</showDisplay>
+            <stepInt>1</stepInt>
+            <valInt>-1</valInt>
+            <suffix></suffix>
+            <vTx>6</vTx>
+        </gnss_rx_pin>
+        <gnss_tx_pin>
+            <longName>GNSS TX Pin</longName>
+            <type>2</type>
+            <transmittable>1</transmittable>
+            <description>GPIO wired to the module's RX input. Required for u-blox, optional for NMEA (read-only).</description>
+            <cDefine>CFG_DFLT_GNSS_TX_PIN</cDefine>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxInt>48</maxInt>
+            <minInt>-1</minInt>
+            <showDisplay>0</showDisplay>
+            <stepInt>1</stepInt>
+            <valInt>-1</valInt>
+            <suffix></suffix>
+            <vTx>6</vTx>
+        </gnss_tx_pin>
+        <gnss_uart_num>
+            <longName>GNSS UART</longName>
+            <type>2</type>
+            <transmittable>1</transmittable>
+            <description>UART peripheral to use.</description>
+            <cDefine>CFG_DFLT_GNSS_UART_NUM</cDefine>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxInt>2</maxInt>
+            <minInt>0</minInt>
+            <showDisplay>0</showDisplay>
+            <stepInt>1</stepInt>
+            <valInt>1</valInt>
+            <suffix></suffix>
+            <vTx>6</vTx>
+        </gnss_uart_num>
+        <gnss_rate_ms>
+            <longName>GNSS Nav Rate</longName>
+            <type>2</type>
+            <transmittable>1</transmittable>
+            <description>Navigation update interval (u-blox type only).</description>
+            <cDefine>CFG_DFLT_GNSS_RATE_MS</cDefine>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxInt>5000</maxInt>
+            <minInt>100</minInt>
+            <showDisplay>0</showDisplay>
+            <stepInt>1</stepInt>
+            <valInt>500</valInt>
+            <suffix> ms</suffix>
+            <vTx>6</vTx>
+        </gnss_rate_ms>
+        <gnss_baud>
+            <longName>GNSS Baud Rate</longName>
+            <type>2</type>
+            <transmittable>1</transmittable>
+            <description>UART baud rate (NMEA type only - the u-blox driver manages its own).</description>
+            <cDefine>CFG_DFLT_GNSS_BAUD</cDefine>
+            <editorScale>1</editorScale>
+            <editAsPercentage>0</editAsPercentage>
+            <maxInt>921600</maxInt>
+            <minInt>4800</minInt>
+            <showDisplay>0</showDisplay>
+            <stepInt>1</stepInt>
+            <valInt>9600</valInt>
+            <suffix></suffix>
+            <vTx>6</vTx>
+        </gnss_baud>
         <accept_tos>
             <longName>TOS Accepted</longName>
             <type>5</type>
@@ -1181,6 +1415,7 @@
         <ser>pubmote_enabled</ser>
         <ser>log_enabled</ser>
         <ser>humidity_enabled</ser>
+        <ser>gnss_enabled</ser>
         <ser>can_id</ser>
         <ser>can_loop_delay</ser>
         <ser>led_on</ser>
@@ -1206,29 +1441,37 @@
         <ser>led_loop_delay</ser>
         <ser>led_update_not_running</ser>
         <ser>led_show_battery_charging</ser>
-        <ser>led_front_strip_type</ser>
+        <ser>led_front_timing</ser>
         <ser>led_front_pin</ser>
         <ser>led_front_num</ser>
         <ser>led_front_type</ser>
         <ser>led_front_reversed</ser>
+        <ser>led_front_highbeam_mode</ser>
         <ser>led_front_highbeam_pin</ser>
-        <ser>led_rear_strip_type</ser>
+        <ser>led_front_highbeam_pos</ser>
+        <ser>led_front_highbeam_min</ser>
+        <ser>led_front_highbeam_max</ser>
+        <ser>led_rear_timing</ser>
         <ser>led_rear_pin</ser>
         <ser>led_rear_num</ser>
         <ser>led_rear_type</ser>
         <ser>led_rear_reversed</ser>
+        <ser>led_rear_highbeam_mode</ser>
         <ser>led_rear_highbeam_pin</ser>
-        <ser>led_status_strip_type</ser>
+        <ser>led_rear_highbeam_pos</ser>
+        <ser>led_rear_highbeam_min</ser>
+        <ser>led_rear_highbeam_max</ser>
+        <ser>led_status_timing</ser>
         <ser>led_status_pin</ser>
         <ser>led_status_num</ser>
         <ser>led_status_type</ser>
         <ser>led_status_reversed</ser>
-        <ser>led_footpad_strip_type</ser>
+        <ser>led_footpad_timing</ser>
         <ser>led_footpad_pin</ser>
         <ser>led_footpad_num</ser>
         <ser>led_footpad_type</ser>
         <ser>led_footpad_reversed</ser>
-        <ser>led_button_strip_type</ser>
+        <ser>led_button_timing</ser>
         <ser>led_button_pin</ser>
         <ser>pubmote_loop_delay</ser>
         <ser>pubmote_remote_mac_a</ser>
@@ -1258,6 +1501,12 @@
         <ser>log_append_gnss</ser>
         <ser>humidity_sda_pin</ser>
         <ser>humidity_slc_pin</ser>
+        <ser>gnss_type</ser>
+        <ser>gnss_rx_pin</ser>
+        <ser>gnss_tx_pin</ser>
+        <ser>gnss_uart_num</ser>
+        <ser>gnss_rate_ms</ser>
+        <ser>gnss_baud</ser>
         <ser>accept_tos</ser>
     </SerOrder>
     <Grouping>
@@ -1271,6 +1520,7 @@
                     <param>pubmote_enabled</param>
                     <param>log_enabled</param>
                     <param>humidity_enabled</param>
+                    <param>gnss_enabled</param>
                     <param>can_id</param>
                     <param>can_loop_delay</param>
                 </subgroupParams>
@@ -1309,29 +1559,37 @@
             <subgroup>
                 <subgroupName>Front</subgroupName>
                 <subgroupParams>
-                    <param>led_front_strip_type</param>
+                    <param>led_front_timing</param>
                     <param>led_front_pin</param>
                     <param>led_front_num</param>
                     <param>led_front_type</param>
                     <param>led_front_reversed</param>
+                    <param>led_front_highbeam_mode</param>
                     <param>led_front_highbeam_pin</param>
+                    <param>led_front_highbeam_pos</param>
+                    <param>led_front_highbeam_min</param>
+                    <param>led_front_highbeam_max</param>
                 </subgroupParams>
             </subgroup>
             <subgroup>
                 <subgroupName>Rear</subgroupName>
                 <subgroupParams>
-                    <param>led_rear_strip_type</param>
+                    <param>led_rear_timing</param>
                     <param>led_rear_pin</param>
                     <param>led_rear_num</param>
                     <param>led_rear_type</param>
                     <param>led_rear_reversed</param>
+                    <param>led_rear_highbeam_mode</param>
                     <param>led_rear_highbeam_pin</param>
+                    <param>led_rear_highbeam_pos</param>
+                    <param>led_rear_highbeam_min</param>
+                    <param>led_rear_highbeam_max</param>
                 </subgroupParams>
             </subgroup>
             <subgroup>
                 <subgroupName>Status Bar</subgroupName>
                 <subgroupParams>
-                    <param>led_status_strip_type</param>
+                    <param>led_status_timing</param>
                     <param>led_status_pin</param>
                     <param>led_status_num</param>
                     <param>led_status_type</param>
@@ -1341,7 +1599,7 @@
             <subgroup>
                 <subgroupName>Footpad</subgroupName>
                 <subgroupParams>
-                    <param>led_footpad_strip_type</param>
+                    <param>led_footpad_timing</param>
                     <param>led_footpad_pin</param>
                     <param>led_footpad_num</param>
                     <param>led_footpad_type</param>
@@ -1351,7 +1609,7 @@
             <subgroup>
                 <subgroupName>Button</subgroupName>
                 <subgroupParams>
-                    <param>led_button_strip_type</param>
+                    <param>led_button_timing</param>
                     <param>led_button_pin</param>
                 </subgroupParams>
             </subgroup>
@@ -1415,6 +1673,20 @@
                 <subgroupParams>
                     <param>humidity_sda_pin</param>
                     <param>humidity_slc_pin</param>
+                </subgroupParams>
+            </subgroup>
+        </group>
+        <group>
+            <groupName>GNSS</groupName>
+            <subgroup>
+                <subgroupName>Receiver</subgroupName>
+                <subgroupParams>
+                    <param>gnss_type</param>
+                    <param>gnss_rx_pin</param>
+                    <param>gnss_tx_pin</param>
+                    <param>gnss_uart_num</param>
+                    <param>gnss_rate_ms</param>
+                    <param>gnss_baud</param>
                 </subgroupParams>
             </subgroup>
         </group>

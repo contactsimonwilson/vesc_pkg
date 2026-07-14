@@ -31,6 +31,8 @@
 (read-eval-program can)
 (import "lib/logger.lisp" 'logger)
 (read-eval-program logger)
+(import "lib/gnss.lisp" 'gnss)
+(read-eval-program gnss)
 (import "lib/led-vars.lisp" 'led-vars)
 (read-eval-program led-vars)
 (import "lib/led.lisp" 'led)
@@ -39,13 +41,8 @@
 (read-eval-program bms-vars)
 (import "lib/bms.lisp" 'bms)
 (read-eval-program bms)
-(import "lib/pubmote-consts.lisp" 'pubmote-consts)
-(read-eval-program pubmote-consts)
-(import "lib/pubmote-vars.lisp" 'pubmote-vars)
-(read-eval-program pubmote-vars)
-(import "lib/pubmote-utils.lisp" 'pubmote-utils)
-(read-eval-program pubmote-utils)
-(import "lib/pubmote.lisp" 'pubmote)
+; Pubmote comes from the standalone lib_pubmote library package
+(import "../lib_pubmote/pubmote.lisp" 'pubmote)
 (read-eval-program pubmote)
 (import "lib/commands.lisp" 'commands)
 (read-eval-program commands)
@@ -136,36 +133,43 @@
         (setq led-context-id (spawn-with-restart "led-loop" nil led-loop))
     }); start the led loop as soon as possible once checks are done. once CAN bus comes online it will start responding, and since this is multi-process now leds won't freeze when can is scanning. :)
     (setq can-context-id (spawn-with-restart "can-loop" nil can-loop))
+    ; Always inject the pubmote callbacks, even with pubmote disabled -
+    ; enabling it later from the settings page spawns pubmote-loop through
+    ; apply-config, which must never run with unset callbacks.
+    (setup-pubmote
+        VEHICLE_TYPE_ONEWHEEL
+        (fn (jsy jsx bt-c bt-z is-rev) {
+            (setq pubmote-last-jsy jsy)
+            (setq pubmote-last-jsx jsx)
+            (setq pubmote-last-bt-c bt-c)
+            (setq pubmote-last-bt-z bt-z)
+            (setq pubmote-last-is-rev is-rev)
+            (if (>= (get-config 'can-id) 0) {
+                (can-cmd (get-config 'can-id) (str-replace (to-str (list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
+            })
+        })
+        (fn () {
+            (list fault-code pitch-angle roll-angle state switch-state vin rpm speed tot-current duty-cycle-now distance-abs fet-temp-filtered motor-temp-filtered odometer battery-percent-remaining)
+        })
+        (fn (text) {
+            (send-msg text)
+        })
+        (fn (name) {
+            (get-config name)
+        })
+        (fn (name val) {
+            (set-config name val)
+        })
+        (fn () {
+            ; Persist the pairing (remote mac + secret) in the config
+            (ext-facfg-store)
+        })
+        (fn (state) {
+            ; The QML pairing flow watches this
+            (send-data (str-merge "pairing-status " (to-str state)))
+        })
+    )
     (if (= (get-config 'pubmote-enabled) 1){
-        (setup-pubmote
-            VEHICLE_TYPE_ONEWHEEL
-            (fn (jsy jsx bt-c bt-z is-rev) {
-                (setq pubmote-last-jsy jsy)
-                (setq pubmote-last-jsx jsx)
-                (setq pubmote-last-bt-c bt-c)
-                (setq pubmote-last-bt-z bt-z)
-                (setq pubmote-last-is-rev is-rev)
-                (if (>= (get-config 'can-id) 0) {
-                    (can-cmd (get-config 'can-id) (str-replace (to-str (list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
-                })
-            })
-            (fn () {
-                (list fault-code pitch-angle roll-angle state switch-state vin rpm speed tot-current duty-cycle-now distance-abs fet-temp-filtered motor-temp-filtered odometer battery-percent-remaining)
-            })
-            (fn (text) {
-                (send-msg text)
-            })
-            (fn (name) {
-                (get-config name)
-            })
-            (fn (name val) {
-                (set-config name val)
-            })
-            (fn () {
-                ; Persist the pairing (remote mac + secret) in the config
-                (ext-facfg-store)
-            })
-        )
         (setq pubmote-context-id (spawn-with-restart "pubmote-loop" nil pubmote-loop))
     })
     (if (= (get-config 'bms-enabled) 1){
@@ -173,6 +177,8 @@
     })
 
     (if (= (get-config 'humidity-enabled) 1) (setq humidity-context-id (spawn-with-restart "humidity-loop" nil humidity-loop)))
+
+    (if (= (get-config 'gnss-enabled) 1) (setq gnss-context-id (spawn-with-restart "gnss-loop" nil gnss-loop)))
 
     (if (= (get-config 'log-enabled) 1) (setq log-context-id (spawn-with-restart "log-loop" 50 log-loop)))
 

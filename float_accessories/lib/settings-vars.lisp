@@ -36,6 +36,9 @@
 
 (def humidity-context-id -1)
 
+(def gnss-context-id -1)
+(def gnss-exit-flag nil)
+
 ; State
 (def log-running false)
 

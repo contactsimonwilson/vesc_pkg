@@ -252,6 +252,10 @@ Item {
     property int pubmoteLastStatusTime: 0
     property bool floatPackageConnected: false
     property bool pubmoteConnected: false
+    property bool gnssFix: false
+    property real gnssAge: 9999
+    property real gnssHdop: 99
+    property real gnssSpeed: 0
     property int pubmoteWifiChannel: 0
     property bool isPubmoteBle: false
     property bool isPubmotePaired: false
@@ -592,7 +596,7 @@ Item {
         anchors.fill: parent
         spacing: 10
         property string primaryTabLabel: ledEnabled.checked || bmsEnabled.checked || logEnabled.checked ? qsTr("Control") : qsTr("Status")
-        property int enabledFeatureCount: ledEnabled.checked + pubmoteEnabled.checked + bmsEnabled.checked + logEnabled.checked
+        property int enabledFeatureCount: ledEnabled.checked + pubmoteEnabled.checked + bmsEnabled.checked + logEnabled.checked + gnssEnabled.checked
 
         onEnabledFeatureCountChanged: {
             if (enabledFeatureCount === 0 && tabBar.currentIndex === 1) {
@@ -648,6 +652,15 @@ Item {
                 height: visible ? implicitHeight : 0
                 onTriggered: {
                     tabBar2.currentIndex = 3
+                    tabBar.currentIndex = 1
+                }
+            }
+            MenuItem {
+                text: qsTr("GNSS")
+                visible: gnssEnabled.checked
+                height: visible ? implicitHeight : 0
+                onTriggered: {
+                    tabBar2.currentIndex = 4
                     tabBar.currentIndex = 1
                 }
             }
@@ -733,6 +746,7 @@ Item {
                         else if (pubmoteEnabled.checked) tabBar2.currentIndex = 1
                         else if (bmsEnabled.checked) tabBar2.currentIndex = 2
                         else if (logEnabled.checked) tabBar2.currentIndex = 3
+                        else if (gnssEnabled.checked) tabBar2.currentIndex = 4
                     }
                 }
             }
@@ -789,6 +803,16 @@ Item {
                 function onCheckedChanged() { updateEnabledIndices() }
             }
 
+            Connections {
+                target: logEnabled
+                function onCheckedChanged() { updateEnabledIndices() }
+            }
+
+            Connections {
+                target: gnssEnabled
+                function onCheckedChanged() { updateEnabledIndices() }
+            }
+
             TabButton {
                 text: qsTr("Lights")
                 enabled: ledEnabled.checked
@@ -814,6 +838,12 @@ Item {
                 enabled: logEnabled.checked
                 visible: logEnabled.checked
                 width: logEnabled.checked ? implicitWidth : 0
+            }
+            TabButton {
+                text: qsTr("GNSS")
+                enabled: gnssEnabled.checked
+                visible: gnssEnabled.checked
+                width: gnssEnabled.checked ? implicitWidth : 0
             }
         }
 
@@ -907,26 +937,10 @@ Item {
                                 visible: (
                                     ledOn.checked
                                     && (
-                                        (
-                                            (
-                                                ledFrontStripType.currentIndex > 1
-                                                && ledFrontStripType.currentIndex != 7
-                                            )
-                                            || (
-                                                ledFrontStripType.currentIndex === 7
-                                                && ledFrontHighbeamPin.value >= 0
-                                            )
-                                        )
-                                        || (
-                                            (
-                                                ledRearStripType.currentIndex > 1
-                                                && ledRearStripType.currentIndex != 7
-                                            )
-                                            || (
-                                                ledRearStripType.currentIndex === 7
-                                                && ledRearHighbeamPin.value >= 0
-                                            )
-                                        )
+                                        frontHbMode === 2
+                                        || (frontHbMode === 1 && ledFrontHighbeamPin.value >= 0)
+                                        || rearHbMode === 2
+                                        || (rearHbMode === 1 && ledRearHighbeamPin.value >= 0)
                                     )
                                 )
                                 spacing: 10
@@ -1045,10 +1059,7 @@ Item {
                                 visible: (
                                     ledOn.checked
                                     && ledHighbeamOn.checked
-                                    && (
-                                        ledFrontStripType.currentIndex === 7
-                                        || ledRearStripType.currentIndex === 7
-                                    )
+                                    && (frontHbMode > 0 || rearHbMode > 0)
                                 )
                                 spacing: 2
 
@@ -1182,6 +1193,16 @@ Item {
                                 property int effectiveTime: Math.max(pubmoteLastStatusTime, lastStatusTime)
                                 color: !isPubmotePaired ? Utility.getAppHexColor("lightText") : ((pubmoteConnected && !statusTimeout) ? "green" : (effectiveTime <= 60 ? "yellow" : "red"))
                                 text: !isPubmotePaired ? "Pubmote: Not Paired" : ("Pubmote : " + ((pubmoteConnected && !statusTimeout) ? (isPubmoteBle ? "Connected (BLE)" : "Connected (WiFi Channel " + (pubmoteWifiChannel ? pubmoteWifiChannel : "?") + ")") : (effectiveTime <= 60 ? "Connecting (" + effectiveTime + "s)" : "Disconnected (" + effectiveTime + "s)")))
+                            }
+
+                            Text {
+                                id: gnssStatus
+                                Layout.fillWidth: true
+                                visible: gnssEnabled.checked
+                                color: statusTimeout ? "grey" : (gnssFix ? "green" : (gnssAge <= 10 ? "yellow" : "red"))
+                                text: statusTimeout ? "GNSS: Unknown"
+                                    : (gnssFix ? "GNSS: Fix (HDOP " + gnssHdop.toFixed(1) + ", " + (gnssSpeed * 3.6).toFixed(1) + " km/h)"
+                                    : (gnssAge <= 10 ? "GNSS: Searching (no fix)" : "GNSS: No Signal"))
                             }
 
                             Text {
@@ -1721,6 +1742,22 @@ Item {
                                         text: "Status Reversed"
                                         checked: false
                                     }
+
+                                    ColumnLayout {
+                                        spacing: cardStyle.labelSpacing
+                                        Layout.fillWidth: true
+                                        Text {
+                                            color: fieldLabelStyle.color
+                                            font.pixelSize: fieldLabelStyle.pixelSize
+                                            font.bold: fieldLabelStyle.bold
+                                            text: "Status Timing"
+                                        }
+                                        ComboBox {
+                                            id: ledStatusTiming
+                                            Layout.fillWidth: true
+                                            model: ["Universal", "WS2812B", "WS2815", "SK6812", "SK6815"]
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1795,7 +1832,7 @@ Item {
 
                                 ColumnLayout {
                                     id: ledFrontHighbeamPinLayout
-                                    visible: ledFrontStripType.currentValue === 7
+                                    visible: frontHbMode === 1
                                     spacing: 10
 
                                     Text {
@@ -1876,6 +1913,24 @@ Item {
                                         checked: false
                                     }
                                 }
+
+                                ColumnLayout {
+                                    visible: ledFrontStripType.currentValue > 0
+                                    spacing: cardStyle.labelSpacing
+                                    Layout.fillWidth: true
+
+                                    Text {
+                                        color: fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize
+                                        font.bold: fieldLabelStyle.bold
+                                        text: "Front Timing"
+                                    }
+                                    ComboBox {
+                                        id: ledFrontTiming
+                                        Layout.fillWidth: true
+                                        model: ["Universal", "WS2812B", "WS2815", "SK6812", "SK6815"]
+                                    }
+                                }
                             }
                         }
 
@@ -1949,7 +2004,7 @@ Item {
 
                                 ColumnLayout {
                                     id: ledRearHighbeamPinLayout
-                                    visible: ledRearStripType.currentValue === 7
+                                    visible: rearHbMode === 1
                                     spacing: cardStyle.labelSpacing
 
                                     Text {
@@ -2028,6 +2083,24 @@ Item {
                                         id: ledRearReversed
                                         text: "Rear Reversed"
                                         checked: false
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    visible: ledRearStripType.currentValue > 0
+                                    spacing: cardStyle.labelSpacing
+                                    Layout.fillWidth: true
+
+                                    Text {
+                                        color: fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize
+                                        font.bold: fieldLabelStyle.bold
+                                        text: "Rear Timing"
+                                    }
+                                    ComboBox {
+                                        id: ledRearTiming
+                                        Layout.fillWidth: true
+                                        model: ["Universal", "WS2812B", "WS2815", "SK6812", "SK6815"]
                                     }
                                 }
                             }
@@ -2216,6 +2289,24 @@ Item {
                                         id: ledFootpadReversed
                                         text: "Footpad Reversed"
                                         checked: false
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    visible: ledFootpadStripType.currentValue > 0
+                                    spacing: cardStyle.labelSpacing
+                                    Layout.fillWidth: true
+
+                                    Text {
+                                        color: fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize
+                                        font.bold: fieldLabelStyle.bold
+                                        text: "Footpad Timing"
+                                    }
+                                    ComboBox {
+                                        id: ledFootpadTiming
+                                        Layout.fillWidth: true
+                                        model: ["Universal", "WS2812B", "WS2815", "SK6812", "SK6815"]
                                     }
                                 }
                             }
@@ -2644,23 +2735,146 @@ Item {
                                     Layout.preferredWidth: 500
                                     text: "Test SD-card"
                                     visible: logEnabled.checked
-                                
+
                                     onClicked: {
                                         commDialog.open()
                                         var ok = mCommands.fileBlockWrite("test.txt", "TestTxt")
                                         commDialog.close()
-                                    
+
                                         VescIf.emitMessageDialog(
                                                 "Express SD-Card Test",
                                             ok ?
                                                 "Writing to the SD-card works!" :
-                                            
+
                                                 "Could not write to the SD-card. Make sure " +
                                                 "that it is formatted to FAT32. Also make sure " +
                                                 "that the logger CAN ID is correct. Note that not " +
                                                 "all SD-cards work even if they are formatted " +
                                                 "correctly.",
                                             ok, false)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 20
+                        visible: gnssEnabled.checked && tabBar2.currentIndex === 4
+                        GroupBox {
+                            title: "GNSS Config"
+                            Layout.fillWidth: true
+                            background: Loader { sourceComponent: cardBg }
+                            label: Loader { sourceComponent: cardTitleLabel; onLoaded: item.title = "GNSS Config" }
+                            topPadding: cardStyle.topPadding; leftPadding: cardStyle.sidePadding; rightPadding: cardStyle.sidePadding; bottomPadding: cardStyle.bottomPadding
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: 10
+
+                                ColumnLayout {
+                                    spacing: cardStyle.labelSpacing
+                                    Layout.fillWidth: true
+                                    Text {
+                                        color: fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize
+                                        font.bold: fieldLabelStyle.bold
+                                        text: "Type"
+                                    }
+                                    ComboBox {
+                                        id: gnssType
+                                        Layout.fillWidth: true
+                                        model: ["u-blox (UBX)", "NMEA (UART)"]
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    spacing: cardStyle.labelSpacing
+                                    Text {
+                                        color: fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize
+                                        font.bold: fieldLabelStyle.bold
+                                        text: "RX Pin (module TX)"
+                                    }
+                                    SpinBox {
+                                        id: gnssRxPin
+                                        from: -1
+                                        to: 100
+                                        value: -1
+                                        editable: true
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    spacing: cardStyle.labelSpacing
+                                    Text {
+                                        color: fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize
+                                        font.bold: fieldLabelStyle.bold
+                                        text: gnssType.currentIndex === 0 ? "TX Pin (module RX)" : "TX Pin (module RX, optional)"
+                                    }
+                                    SpinBox {
+                                        id: gnssTxPin
+                                        from: -1
+                                        to: 100
+                                        value: -1
+                                        editable: true
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    spacing: cardStyle.labelSpacing
+                                    Text {
+                                        color: fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize
+                                        font.bold: fieldLabelStyle.bold
+                                        text: "UART"
+                                    }
+                                    SpinBox {
+                                        id: gnssUartNum
+                                        from: 0
+                                        to: 2
+                                        value: 1
+                                        editable: true
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    visible: gnssType.currentIndex === 0
+                                    spacing: cardStyle.labelSpacing
+                                    Text {
+                                        color: fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize
+                                        font.bold: fieldLabelStyle.bold
+                                        text: "Nav Rate (ms)"
+                                    }
+                                    SpinBox {
+                                        id: gnssRateMs
+                                        from: 100
+                                        to: 5000
+                                        value: 500
+                                        stepSize: 100
+                                        editable: true
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    visible: gnssType.currentIndex === 1
+                                    spacing: cardStyle.labelSpacing
+                                    Text {
+                                        color: fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize
+                                        font.bold: fieldLabelStyle.bold
+                                        text: "Baud Rate"
+                                    }
+                                    SpinBox {
+                                        id: gnssBaud
+                                        from: 4800
+                                        to: 921600
+                                        value: 9600
+                                        stepSize: 4800
+                                        editable: true
                                     }
                                 }
                             }
@@ -2730,6 +2944,13 @@ Item {
                             CheckBox {
                                 id: humidityEnabled
                                 text: "Humidity Sensor Enabled"
+                                checked: false
+                                enabled: true
+                            }
+
+                            CheckBox {
+                                id: gnssEnabled
+                                text: "GNSS Enabled"
                                 checked: false
                                 enabled: true
                             }
@@ -2871,6 +3092,7 @@ Item {
                             }
                         }
                     }
+
                     }
                 }
             }
@@ -2905,7 +3127,7 @@ Item {
                         "<p>My Blog: <a href='https://sylerclayton.com'>https://sylerclayton.com</a></p>" +
 
                         "<p><b>BUILD INFO</b></p>" +
-                        "<p>Version 3.4.0</p>" +
+                        "<p>Version 4.0.0</p>" +
                         "<p>Source code can be found here: <a href='https://github.com/relys/vesc_pkg'>https://github.com/relys/vesc_pkg</a></p>"
                     wrapMode: Text.WordWrap
                     readOnly: true
@@ -2982,106 +3204,92 @@ Item {
         }
     }
 
-    function updateFrontLEDSettings() {
-        switch(ledFrontStripType.value) {
-            case 0: // None
-                break
-            case 1: // Custom
-                break
-            case 2: // Avaspark Laserbeam
-                ledFrontNum.value = 18
-                ledFrontType.currentIndex = 0
-                break
-            case 3: // Avaspark Laserbeam Pint
-                ledFrontNum.value = 16
-                ledFrontType.currentIndex = 0
-                break
-            case 4: // JetFleet H4
-                ledFrontNum.value = 17
-                ledFrontType.currentIndex = 0
-                break
-            case 5: // JetFleet H4 (no limit)
-                ledFrontNum.value = 17
-                ledFrontType.currentIndex = 0
-                break
-            case 6: // JetFleet GT
-                ledFrontNum.value = 11
-                ledFrontType.currentIndex = 0
-                break
-            case 7: // Stock GT
-                ledFrontNum.value = 11
-                ledFrontType.currentIndex = 2
-                break
-            case 8: // Avaspark Laserbeam V3
-                ledFrontNum.value = 13
-                ledFrontType.currentIndex = 0
-                break
-            case 9: // Avaspark Laserbeam V3 Pint
-                ledFrontNum.value = 10
-                ledFrontType.currentIndex = 0
-                break
-            case 10: // Light-shutka Flashfires
-                ledFrontNum.value = 20;
-                ledFrontType.currentIndex = 0
-                break
-            case 11: // Fungineers GTFO
-                ledFrontNum.value = 10
-                ledFrontType.currentIndex = 0
-                break
-            default:
-                // Do nothing, keep user-defined values
+    // Front/rear board presets. Selecting one just fills the concrete
+    // hardware description below - only those values are stored in the
+    // config, the preset itself is not. hbPos holds embedded highbeam LED
+    // positions; hbMin/hbMax the drive range those LEDs expect.
+    property var stripPresets: [
+        { },                                                                        // 0 None
+        { },                                                                        // 1 Custom
+        { num: 18, type: 0, hbMode: 2, hbPos: [0], hbMin: 0.0, hbMax: 1.0 },        // 2 Avaspark Laserbeam
+        { num: 16, type: 0, hbMode: 2, hbPos: [0], hbMin: 0.0, hbMax: 1.0 },        // 3 Avaspark Laserbeam Pint
+        { num: 17, type: 0, hbMode: 2, hbPos: [3,8,14,19], hbMin: 0.6, hbMax: 0.8 },// 4 JetFleet H4
+        { num: 17, type: 0, hbMode: 2, hbPos: [3,8,14,19], hbMin: 0.6, hbMax: 1.0 },// 5 JetFleet H4 (no limit)
+        { num: 11, type: 0, hbMode: 2, hbPos: [1,4,10,13], hbMin: 0.6, hbMax: 1.0 },// 6 JetFleet GT
+        { num: 11, type: 2, hbMode: 1, hbPos: [], hbMin: 0.0, hbMax: 1.0 },         // 7 Stock GT (PWM highbeam)
+        { num: 13, type: 0, hbMode: 2, hbPos: [0], hbMin: 0.0, hbMax: 1.0 },        // 8 Avaspark Laserbeam V2
+        { num: 10, type: 0, hbMode: 2, hbPos: [0], hbMin: 0.0, hbMax: 1.0 },        // 9 Avaspark Laserbeam V2 Pint
+        { num: 20, type: 0, hbMode: 2, hbPos: [0], hbMin: 0.0, hbMax: 1.0 },        // 10 Light-shutka Flashfires
+        { num: 10, type: 0, hbMode: 2, hbPos: [3,6,9,13], hbMin: 0.4, hbMax: 1.0 }, // 11 Fungineers GTFO
+    ]
+
+    // Highbeam hardware description per strip (0 none, 1 PWM pin,
+    // 2 embedded LEDs). Filled by the presets, kept as-is for Custom.
+    property int frontHbMode: 0
+    property var frontHbPos: []
+    property real frontHbMin: 0.0
+    property real frontHbMax: 1.0
+    property int rearHbMode: 0
+    property var rearHbPos: []
+    property real rearHbMin: 0.0
+    property real rearHbMax: 1.0
+
+    // Positions pack one per byte from the lowest, 255 = unused.
+    function packHbPos(arr) {
+        var v = 0
+        for (var i = 0; i < 4; i++) {
+            v |= (i < arr.length ? (arr[i] & 0xFF) : 0xFF) << (8 * i)
         }
+        return v
+    }
+
+    function unpackHbPos(v) {
+        var arr = []
+        for (var i = 0; i < 4; i++) {
+            var b = (v >> (8 * i)) & 0xFF
+            if (b !== 0xFF) arr.push(b)
+        }
+        return arr
+    }
+
+    // Find the preset matching a loaded config, 1 (Custom) when none does.
+    function matchStripPreset(num, type, hbMode, hbPos, hbMin, hbMax) {
+        for (var i = 2; i < stripPresets.length; i++) {
+            var p = stripPresets[i]
+            if (p.num === num && p.type === type && p.hbMode === hbMode
+                && Math.abs(p.hbMin - hbMin) < 0.01
+                && Math.abs(p.hbMax - hbMax) < 0.01
+                && JSON.stringify(p.hbPos) === JSON.stringify(hbPos)) {
+                return i
+            }
+        }
+        return 1
+    }
+
+    function updateFrontLEDSettings() {
+        var p = stripPresets[ledFrontStripType.value]
+        if (!p || p.num === undefined) {
+            return // None / Custom keep the user-defined values
+        }
+        ledFrontNum.value = p.num
+        ledFrontType.currentIndex = p.type
+        frontHbMode = p.hbMode
+        frontHbPos = p.hbPos
+        frontHbMin = p.hbMin
+        frontHbMax = p.hbMax
     }
 
     function updateRearLEDSettings() {
-        switch(ledRearStripType.value) {
-            case 0: // None
-                break
-            case 1: // Custom
-                break
-            case 2: // Avaspark Laserbeam
-                ledRearNum.value = 18
-                ledRearType.currentIndex = 0
-                break
-            case 3: // Avaspark Laserbeam Pint
-                ledRearNum.value = 16
-                ledRearType.currentIndex = 0
-                break
-            case 4: // JetFleet H4
-                ledRearNum.value = 17
-                ledRearType.currentIndex = 0
-                break
-            case 5: // JetFleet H4 (no limit)
-                ledRearNum.value = 17
-                ledRearType.currentIndex = 0
-                break
-            case 6: // JetFleet GT
-                ledRearNum.value = 11
-                ledRearType.currentIndex = 0
-                break
-            case 7: // Stock GT
-                ledRearNum.value = 11
-                ledRearType.currentIndex = 2
-                break
-            case 8: // Avaspark Laserbeam V2
-                ledRearNum.value = 13
-                ledRearType.currentIndex = 0
-                break
-            case 9: // Avaspark Laserbeam V2 Pint
-                ledRearNum.value = 10
-                ledRearType.currentIndex = 0
-                break
-            case 10: // Light-shutka Flashfires
-                ledRearNum.value = 20
-                ledRearType.currentIndex = 0
-                break
-            case 11: // Fungineers GTFO
-                ledFrontNum.value = 10
-                ledFrontType.currentIndex = 0
-                break
-            default:
-                // Do nothing, keep user-defined values
+        var p = stripPresets[ledRearStripType.value]
+        if (!p || p.num === undefined) {
+            return // None / Custom keep the user-defined values
         }
+        ledRearNum.value = p.num
+        ledRearType.currentIndex = p.type
+        rearHbMode = p.hbMode
+        rearHbPos = p.hbPos
+        rearHbMin = p.hbMin
+        rearHbMax = p.hbMax
     }
 
     function updateFootpadLEDSettings() {
@@ -3163,19 +3371,19 @@ Item {
             ledFrontNum.value,
             ledFrontType.currentIndex,
             ledFrontReversed.checked * 1,
-            ledFrontStripType.currentIndex,
+            ledFrontStripType.currentIndex > 0 ? ledFrontTiming.currentIndex + 1 : 0,
             ledRearPin.value,
             ledRearNum.value,
             ledRearType.currentIndex,
             ledRearReversed.checked * 1,
-            ledRearStripType.currentIndex,
+            ledRearStripType.currentIndex > 0 ? ledRearTiming.currentIndex + 1 : 0,
             ledButtonPin.value,
-            ledButtonStripType.currentIndex,
+            ledButtonStripType.currentIndex > 0 ? 1 : 0,
             ledFootpadPin.value,
             ledFootpadNum.value,
             ledFootpadType.currentIndex,
             ledFootpadReversed.checked * 1,
-            ledFootpadStripType.currentIndex,
+            ledFootpadStripType.currentIndex > 0 ? ledFootpadTiming.currentIndex + 1 : 0,
             bmsRs485DIPin.value,
             bmsRs485ROPin.value,
             bmsRs485DEREPin.value,
@@ -3189,7 +3397,7 @@ Item {
             ledStartupTimeout.value,
             parseFloat(ledDimOnHighbeamRatioLoader.item.value).toFixed(2),
             bmsType.currentIndex,
-            ledStatusStripType.currentIndex,
+            ledStatusStripType.currentIndex > 0 ? ledStatusTiming.currentIndex + 1 : 0,
             bmsChargeOnly.checked * 1,
             ledShowBatteryCharging.checked * 1,
             ledFrontHighbeamPin.value,
@@ -3204,7 +3412,22 @@ Item {
             logAppendGnss.checked * 1,
             humidityEnabled.checked * 1,
             humiditySdaPin.value,
-            humiditySlcPin.value
+            humiditySlcPin.value,
+            frontHbMode,
+            packHbPos(frontHbPos),
+            frontHbMin.toFixed(2),
+            frontHbMax.toFixed(2),
+            rearHbMode,
+            packHbPos(rearHbPos),
+            rearHbMin.toFixed(2),
+            rearHbMax.toFixed(2),
+            gnssEnabled.checked * 1,
+            gnssType.currentIndex,
+            gnssRxPin.value,
+            gnssTxPin.value,
+            gnssUartNum.value,
+            gnssRateMs.value,
+            gnssBaud.value
         ].join(" ");
     }
 
@@ -3227,6 +3450,8 @@ Item {
         if (ledEnabled.checked) newIndices.push(0)
         if (pubmoteEnabled.checked) newIndices.push(1)
         if (bmsEnabled.checked) newIndices.push(2)
+        if (logEnabled.checked) newIndices.push(3)
+        if (gnssEnabled.checked) newIndices.push(4)
         enabledIndices = newIndices
     }
 
@@ -3298,19 +3523,29 @@ Item {
                 ledFrontNum.value = Number(tokens[30])
                 ledFrontType.currentIndex = Number(tokens[31])
                 ledFrontReversed.checked = Number(tokens[32])
-                ledFrontStripType.currentIndex = Number(tokens[33])
+                var frontTiming = Number(tokens[33])
+                if (frontTiming > 0) {
+                    ledFrontTiming.currentIndex = frontTiming - 1
+                }
                 ledRearPin.value = Number(tokens[34])
                 ledRearNum.value = Number(tokens[35])
                 ledRearType.currentIndex = Number(tokens[36])
                 ledRearReversed.checked = Number(tokens[37])
-                ledRearStripType.currentIndex = Number(tokens[38])
+                var rearTiming = Number(tokens[38])
+                if (rearTiming > 0) {
+                    ledRearTiming.currentIndex = rearTiming - 1
+                }
                 ledButtonPin.value = Number(tokens[39])
-                ledButtonStripType.currentIndex = Number(tokens[40])
+                ledButtonStripType.currentIndex = Number(tokens[40]) > 0 ? 1 : 0
                 ledFootpadPin.value = Number(tokens[41])
                 ledFootpadNum.value = Number(tokens[42])
                 ledFootpadType.currentIndex = Number(tokens[43])
                 ledFootpadReversed.checked = Number(tokens[44])
-                ledFootpadStripType.currentIndex = Number(tokens[45])
+                var footpadTiming = Number(tokens[45])
+                ledFootpadStripType.currentIndex = footpadTiming > 0 ? 1 : 0
+                if (footpadTiming > 0) {
+                    ledFootpadTiming.currentIndex = footpadTiming - 1
+                }
                 // Format and display MAC address... need to unpack
                 var unpack = unpackUint32ToBytes(Number(tokens[46])).concat(unpackUint32ToBytes(Number(tokens[47]))).slice(0,-2)
                 var macAddress = unpack.map(function(token) {
@@ -3339,7 +3574,11 @@ Item {
                 ledStartupTimeout.value = Number(tokens[67])
                 ledDimOnHighbeamRatioLoader.item.value = Number(tokens[68])
                 bmsType.currentIndex = Number(tokens[69])
-                ledStatusStripType.currentIndex = Number(tokens[70])
+                var statusTiming = Number(tokens[70])
+                ledStatusStripType.currentIndex = statusTiming > 0 ? 1 : 0
+                if (statusTiming > 0) {
+                    ledStatusTiming.currentIndex = statusTiming - 1
+                }
                 bmsChargeOnly.checked = Number(tokens[71])
                 ledShowBatteryCharging.checked = Number(tokens[72])
                 ledFrontHighbeamPin.value = Number(tokens[73])
@@ -3356,6 +3595,32 @@ Item {
                 humidityEnabled.checked = Number(tokens[83])
                 humiditySdaPin.value = Number(tokens[84])
                 humiditySlcPin.value = Number(tokens[85])
+                frontHbMode = Number(tokens[86])
+                frontHbPos = unpackHbPos(Number(tokens[87]))
+                frontHbMin = Number(tokens[88])
+                frontHbMax = Number(tokens[89])
+                rearHbMode = Number(tokens[90])
+                rearHbPos = unpackHbPos(Number(tokens[91]))
+                rearHbMin = Number(tokens[92])
+                rearHbMax = Number(tokens[93])
+                gnssEnabled.checked = Number(tokens[94])
+                gnssType.currentIndex = Number(tokens[95])
+                gnssRxPin.value = Number(tokens[96])
+                gnssTxPin.value = Number(tokens[97])
+                gnssUartNum.value = Number(tokens[98])
+                gnssRateMs.value = Number(tokens[99])
+                gnssBaud.value = Number(tokens[100])
+
+                // The preset itself is not stored - recognize it from the
+                // loaded values, falling back to Custom.
+                ledFrontStripType.currentIndex = frontTiming > 0
+                    ? matchStripPreset(ledFrontNum.value, ledFrontType.currentIndex,
+                                       frontHbMode, frontHbPos, frontHbMin, frontHbMax)
+                    : 0
+                ledRearStripType.currentIndex = rearTiming > 0
+                    ? matchStripPreset(ledRearNum.value, ledRearType.currentIndex,
+                                       rearHbMode, rearHbPos, rearHbMin, rearHbMax)
+                    : 0
 
                 isPubmoteBle = (macAddress === "00:00:00:00:00:00");
                 isPubmotePaired = (Number(tokens[46]) != -1);
@@ -3398,6 +3663,14 @@ Item {
                 bmsHumTemp = parseFloat(tokens[11])
 
                 loggerRunning = parseFloat(tokens[12])
+
+                // GNSS status
+                if (tokens.length > 16) {
+                    gnssFix = !!Number(tokens[13])
+                    gnssAge = parseFloat(tokens[14])
+                    gnssHdop = parseFloat(tokens[15])
+                    gnssSpeed = parseFloat(tokens[16])
+                }
 
                 // Update status flags
                 lastStatusTime = 0  // Reset the timer when status is received

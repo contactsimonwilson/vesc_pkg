@@ -7,11 +7,16 @@
 ; and sets per-segment effect/color/brightness through the ext-espled-*
 ; extensions. Strips on the same pin are chained with segment offsets.
 ;
-; Highbeams: strip type 2 drives a separate PWM highbeam pin; types 3-6
-; have highbeam LEDs embedded in the strip (one prepended, or the
-; JetFleet H4/GT and Fungineers GTFO positions), driven as espled overlay
-; pixels. The strip facing the direction of travel lights its highbeam
-; and dims by the configured ratio.
+; Each strip's timing config doubles as its enable: 0 = disabled, 1+ =
+; wire timing preset (espled preset value + 1).
+;
+; Highbeams are described concretely in the config (the named board
+; presets exist only in the QML page): mode 1 drives a separate PWM pin,
+; mode 2 drives LEDs embedded in the strip as espled overlay pixels, at
+; positions packed one per byte in the highbeam-pos int (255 = unused),
+; with the brightness mapped onto the configured min-max drive range. The
+; strip facing the direction of travel lights its highbeam and dims by
+; the configured ratio.
 
 (defun load-led-settings () {
     (setq led-enabled (get-config 'led-enabled))
@@ -36,26 +41,34 @@
     (setq led-status-num (get-config 'led-status-num))
     (setq led-status-type (get-config 'led-status-type))
     (setq led-status-reversed (get-config 'led-status-reversed))
+    (setq led-status-timing (get-config 'led-status-timing))
     (setq led-front-pin (get-config 'led-front-pin))
     (setq led-front-num (get-config 'led-front-num))
     (setq led-front-type (get-config 'led-front-type))
     (setq led-front-reversed (get-config 'led-front-reversed))
-    (setq led-front-strip-type (get-config 'led-front-strip-type))
+    (setq led-front-timing (get-config 'led-front-timing))
+    (setq led-front-highbeam-mode (get-config 'led-front-highbeam-mode))
+    (setq led-front-highbeam-pos (get-config 'led-front-highbeam-pos))
+    (setq led-front-highbeam-min (get-config 'led-front-highbeam-min))
+    (setq led-front-highbeam-max (get-config 'led-front-highbeam-max))
     (setq led-rear-pin (get-config 'led-rear-pin))
     (setq led-rear-num (get-config 'led-rear-num))
     (setq led-rear-type (get-config 'led-rear-type))
     (setq led-rear-reversed (get-config 'led-rear-reversed))
-    (setq led-rear-strip-type (get-config 'led-rear-strip-type))
+    (setq led-rear-timing (get-config 'led-rear-timing))
+    (setq led-rear-highbeam-mode (get-config 'led-rear-highbeam-mode))
+    (setq led-rear-highbeam-pos (get-config 'led-rear-highbeam-pos))
+    (setq led-rear-highbeam-min (get-config 'led-rear-highbeam-min))
+    (setq led-rear-highbeam-max (get-config 'led-rear-highbeam-max))
     (setq led-button-pin (get-config 'led-button-pin))
-    (setq led-button-strip-type (get-config 'led-button-strip-type))
+    (setq led-button-timing (get-config 'led-button-timing))
     (setq led-footpad-pin (get-config 'led-footpad-pin))
     (setq led-footpad-num (get-config 'led-footpad-num))
     (setq led-footpad-type (get-config 'led-footpad-type))
     (setq led-footpad-reversed (get-config 'led-footpad-reversed))
-    (setq led-footpad-strip-type (get-config 'led-footpad-strip-type))
+    (setq led-footpad-timing (get-config 'led-footpad-timing))
     (setq led-startup-timeout (get-config 'led-startup-timeout))
     (setq led-dim-on-highbeam-ratio (get-config 'led-dim-on-highbeam-ratio))
-    (setq led-status-strip-type (get-config 'led-status-strip-type))
     (setq led-loop-delay (get-config 'led-loop-delay))
     (setq led-show-battery-charging (get-config 'led-show-battery-charging))
     (setq led-front-highbeam-pin (get-config 'led-front-highbeam-pin))
@@ -78,6 +91,7 @@
 
     (var idx 0)
     (var pin-offsets nil) ; assoc pin -> next chain offset
+    (var pin-timings nil) ; assoc pin -> chain timing preset
 
     (var next-offset (fn (pin len) {
         (var entry (assoc pin-offsets pin))
@@ -86,49 +100,62 @@
         off
     }))
 
-    (if (and (> led-status-strip-type 0) (>= led-status-pin 0) (> led-status-num 0)) {
-        (ext-espled-seg-def idx led-status-pin led-status-type led-status-num (next-offset led-status-pin led-status-num))
+    ; Segments chained on one pin share one data line, so the whole chain
+    ; uses the timing of the first strip defined on that pin. Config
+    ; timing values are espled preset + 1 (0 = strip disabled).
+    (var chain-timing (fn (pin timing) {
+        (var entry (assoc pin-timings pin))
+        (if (eq entry nil) {
+            (setq pin-timings (acons pin (- timing 1) pin-timings))
+            (- timing 1)
+        } entry)
+    }))
+
+    (if (and (> led-status-timing 0) (>= led-status-pin 0) (> led-status-num 0)) {
+        (ext-espled-seg-def idx led-status-pin led-status-type led-status-num (next-offset led-status-pin led-status-num) (chain-timing led-status-pin led-status-timing))
         (setq seg-status idx)
         (setq idx (+ idx 1))
     })
-    ; Embedded highbeam LED positions per strip type (segment-relative).
-    ; 3: one highbeam LED first; 4-6: light bars with 4 embedded highbeams.
-    (var overlay-def-for-type (fn (seg strip-type) {
-        (cond
-            ((= strip-type 3) (ext-espled-seg-overlay-def seg 0))
-            ((= strip-type 4) (ext-espled-seg-overlay-def seg 3 8 14 19)) ; JetFleet H4
-            ((= strip-type 5) (ext-espled-seg-overlay-def seg 1 4 10 13)) ; JetFleet GT
-            ((= strip-type 6) (ext-espled-seg-overlay-def seg 3 6 9 13))  ; Fungineers GTFO
-        )
+    ; Embedded highbeam LED positions (segment-relative), unpacked from
+    ; the config int: one position per byte from the lowest, 255 = unused.
+    (var hb-positions (fn (packed) {
+        (var lst nil)
+        (looprange k 0 4 {
+            (var p (bitwise-and (shr packed (* k 8)) 0xFF))
+            (if (!= p 0xFF) (setq lst (append lst (list p))))
+        })
+        lst
     }))
-    ; Footprint on the chain includes the embedded highbeam pixels
-    (var footprint-for-type (fn (num strip-type) {
+    (var overlay-def (fn (seg ps) {
         (cond
-            ((= strip-type 3) (+ num 1))
-            ((and (>= strip-type 4) (<= strip-type 6)) (+ num 4))
-            (t num)
+            ((= (length ps) 1) (ext-espled-seg-overlay-def seg (ix ps 0)))
+            ((= (length ps) 2) (ext-espled-seg-overlay-def seg (ix ps 0) (ix ps 1)))
+            ((= (length ps) 3) (ext-espled-seg-overlay-def seg (ix ps 0) (ix ps 1) (ix ps 2)))
+            ((= (length ps) 4) (ext-espled-seg-overlay-def seg (ix ps 0) (ix ps 1) (ix ps 2) (ix ps 3)))
         )
     }))
 
-    (if (and (> led-front-strip-type 0) (>= led-front-pin 0) (> led-front-num 0)) {
-        (ext-espled-seg-def idx led-front-pin led-front-type led-front-num (next-offset led-front-pin (footprint-for-type led-front-num led-front-strip-type)))
-        (overlay-def-for-type idx led-front-strip-type)
+    (if (and (> led-front-timing 0) (>= led-front-pin 0) (> led-front-num 0)) {
+        (var ps (if (= led-front-highbeam-mode 2) (hb-positions led-front-highbeam-pos) nil))
+        (ext-espled-seg-def idx led-front-pin led-front-type led-front-num (next-offset led-front-pin (+ led-front-num (length ps))) (chain-timing led-front-pin led-front-timing))
+        (overlay-def idx ps)
         (setq seg-front idx)
         (setq idx (+ idx 1))
     })
-    (if (and (> led-rear-strip-type 0) (>= led-rear-pin 0) (> led-rear-num 0)) {
-        (ext-espled-seg-def idx led-rear-pin led-rear-type led-rear-num (next-offset led-rear-pin (footprint-for-type led-rear-num led-rear-strip-type)))
-        (overlay-def-for-type idx led-rear-strip-type)
+    (if (and (> led-rear-timing 0) (>= led-rear-pin 0) (> led-rear-num 0)) {
+        (var ps (if (= led-rear-highbeam-mode 2) (hb-positions led-rear-highbeam-pos) nil))
+        (ext-espled-seg-def idx led-rear-pin led-rear-type led-rear-num (next-offset led-rear-pin (+ led-rear-num (length ps))) (chain-timing led-rear-pin led-rear-timing))
+        (overlay-def idx ps)
         (setq seg-rear idx)
         (setq idx (+ idx 1))
     })
-    (if (and (> led-footpad-strip-type 0) (>= led-footpad-pin 0) (> led-footpad-num 0)) {
-        (ext-espled-seg-def idx led-footpad-pin led-footpad-type led-footpad-num (next-offset led-footpad-pin led-footpad-num))
+    (if (and (> led-footpad-timing 0) (>= led-footpad-pin 0) (> led-footpad-num 0)) {
+        (ext-espled-seg-def idx led-footpad-pin led-footpad-type led-footpad-num (next-offset led-footpad-pin led-footpad-num) (chain-timing led-footpad-pin led-footpad-timing))
         (setq seg-footpad idx)
         (setq idx (+ idx 1))
     })
-    (if (and (> led-button-strip-type 0) (>= led-button-pin 0)) {
-        (ext-espled-seg-def idx led-button-pin 0 1 (next-offset led-button-pin 1))
+    (if (and (> led-button-timing 0) (>= led-button-pin 0)) {
+        (ext-espled-seg-def idx led-button-pin 0 1 (next-offset led-button-pin 1) (chain-timing led-button-pin led-button-timing))
         (setq seg-button idx)
         (setq idx (+ idx 1))
     })
@@ -141,11 +168,11 @@
         (if (>= seg-footpad 0) (ext-espled-seg-reverse seg-footpad led-footpad-reversed))
     })
 
-    ; PWM highbeams (strip type 2 = Standard + PWM Highbeam)
-    (if (and (= led-front-strip-type 2) (>= led-front-highbeam-pin 0)) {
+    ; PWM highbeams (highbeam mode 1)
+    (if (and (= led-front-highbeam-mode 1) (>= led-front-highbeam-pin 0)) {
         (pwm-start 1000 0.0 0 led-front-highbeam-pin 10)
     })
-    (if (and (= led-rear-strip-type 2) (>= led-rear-highbeam-pin 0)) {
+    (if (and (= led-rear-highbeam-mode 1) (>= led-rear-highbeam-pin 0)) {
         (pwm-start 1000 0.0 1 led-rear-highbeam-pin 10)
     })
 
@@ -154,8 +181,8 @@
 
 (defun led-teardown () {
     (ext-espled-deinit)
-    (if (and (= led-front-strip-type 2) (>= led-front-highbeam-pin 0)) (pwm-stop 0))
-    (if (and (= led-rear-strip-type 2) (>= led-rear-highbeam-pin 0)) (pwm-stop 1))
+    (if (and (= led-front-highbeam-mode 1) (>= led-front-highbeam-pin 0)) (pwm-stop 0))
+    (if (and (= led-rear-highbeam-mode 1) (>= led-rear-highbeam-pin 0)) (pwm-stop 1))
 })
 
 (defun bri255 (b) (to-i (* 255.0 (min (max b 0.0) 1.0))))
@@ -173,6 +200,9 @@
 (defun seg-gauge (seg level spd bri) {
     (if (>= seg 0) {
         (ext-espled-seg-fx seg FX-GAUGE)
+        ; color 0 + palette 0 = the battery gradient; reset the palette so
+        ; one left over from another mode cannot recolor the gauge
+        (ext-espled-seg-pal seg 0)
         (ext-espled-seg-col seg 0)
         (ext-espled-seg-level seg level)
         (ext-espled-seg-spd seg spd)
@@ -411,28 +441,32 @@
 
             ; Brightness transitions are handled by the espled lib
             ; (ext-espled-fade), so targets are set directly here.
-            ; Highbeams: the strip facing the direction of travel lights its
-            ; highbeam (PWM pin for type 2, embedded overlay pixels for
-            ; types 3-6) and the rest of that strip dims by the configured
-            ; ratio (0 = fully off, like the original).
+            ; Highbeams: the strip facing the direction of travel lights
+            ; its highbeam (mode 1 = PWM pin, mode 2 = embedded overlay
+            ; pixels) and the rest of that strip dims by the configured
+            ; ratio (0 = fully off, like the original). Embedded light
+            ; bars need a minimum drive, so their brightness is mapped
+            ; onto the configured min-max range.
             (var highbeam-active (and (= led-on 1) (= led-highbeam-on 1) (running-state) (!= state 5)))
-            (var hb-front (and highbeam-active (>= direction 0) (>= led-front-strip-type 2)))
-            (var hb-rear (and highbeam-active (< direction 0) (>= led-rear-strip-type 2)))
-            (var hb-bri (bri255 (min led-brightness-highbeam led-max-brightness)))
+            (var hb-front (and highbeam-active (>= direction 0) (> led-front-highbeam-mode 0)))
+            (var hb-rear (and highbeam-active (< direction 0) (> led-rear-highbeam-mode 0)))
+            (var hb-frac (min led-brightness-highbeam led-max-brightness))
             (var front-bri (bri255 (* led-current-brightness (if hb-front led-dim-on-highbeam-ratio 1.0))))
             (var rear-bri (bri255 (* led-current-brightness (if hb-rear led-dim-on-highbeam-ratio 1.0))))
 
-            (if (and (= led-front-strip-type 2) (>= led-front-highbeam-pin 0)) {
-                (pwm-set-duty (if hb-front (min led-brightness-highbeam led-max-brightness) 0.0) 0)
+            (if (and (= led-front-highbeam-mode 1) (>= led-front-highbeam-pin 0)) {
+                (pwm-set-duty (if hb-front hb-frac 0.0) 0)
             })
-            (if (and (= led-rear-strip-type 2) (>= led-rear-highbeam-pin 0)) {
-                (pwm-set-duty (if hb-rear (min led-brightness-highbeam led-max-brightness) 0.0) 1)
+            (if (and (= led-rear-highbeam-mode 1) (>= led-rear-highbeam-pin 0)) {
+                (pwm-set-duty (if hb-rear hb-frac 0.0) 1)
             })
-            (if (and (>= led-front-strip-type 3) (<= led-front-strip-type 6) (>= seg-front 0)) {
-                (ext-espled-seg-overlay seg-front 0xFFFFFFFFu32 (if hb-front hb-bri 0))
+            (if (and (= led-front-highbeam-mode 2) (>= seg-front 0)) {
+                (ext-espled-seg-overlay seg-front 0xFFFFFFFFu32
+                    (if hb-front (bri255 (+ led-front-highbeam-min (* (- led-front-highbeam-max led-front-highbeam-min) hb-frac))) 0))
             })
-            (if (and (>= led-rear-strip-type 3) (<= led-rear-strip-type 6) (>= seg-rear 0)) {
-                (ext-espled-seg-overlay seg-rear 0xFFFFFFFFu32 (if hb-rear hb-bri 0))
+            (if (and (= led-rear-highbeam-mode 2) (>= seg-rear 0)) {
+                (ext-espled-seg-overlay seg-rear 0xFFFFFFFFu32
+                    (if hb-rear (bri255 (+ led-rear-highbeam-min (* (- led-rear-highbeam-max led-rear-highbeam-min) hb-frac))) 0))
             })
 
             (var status-bri (bri255 (min led-brightness-status led-max-brightness)))

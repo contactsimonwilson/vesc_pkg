@@ -45,6 +45,11 @@ HEADER
 #define ESPLED_OV_MAX      8   // overlay pixels per segment
 #define ESPLED_RENDER_MS   33  // ~30 fps
 
+// Frames without changes before a keepalive retransmit (~2 s): static
+// content keeps the data line quiet, but a pixel corrupted by line noise
+// still heals shortly.
+#define ESPLED_REFRESH_FRAMES 60
+
 // Effects
 enum {
 	FX_SOLID = 0,
@@ -53,10 +58,15 @@ enum {
 	FX_RAINBOW,
 	FX_SPARKLE,
 	FX_COMET,
-	FX_GAUGE,   // fill by the level param; battery gradient when color = 0
-	FX_STROBE,  // hard on/off flash
-	FX_LARSON,  // bouncing eye with tail (knight rider)
-	FX_FELONY,  // halves alternate red/blue
+	FX_GAUGE,     // fill by the level param; battery gradient when color = 0
+	FX_STROBE,    // hard on/off flash
+	FX_LARSON,    // bouncing eye with tail (knight rider)
+	FX_FELONY,    // halves alternate red/blue
+	FX_THEATER,   // marquee - every third pixel, marching
+	FX_WIPE,      // fill end-to-end, then wipe to black
+	FX_WAVES,     // overlapping slow waves (pacifica-like)
+	FX_CANDLE,    // warm uneven flicker
+	FX_HEARTBEAT, // thump-thump double pulse
 };
 
 // Color byte layouts on the wire
@@ -78,6 +88,16 @@ static const palette_t palettes[] = {
 	{{0x00FF00, 0xFFFF00, 0xFF0000, 0x00FF00}}, // 5 traffic
 	{{0xFFFFFF, 0x000000, 0xFFFFFF, 0x000000}}, // 6 strobe
 	{{0x1030FF, 0xFFFFFF, 0x1030FF, 0x001040}}, // 7 police-blue
+	{{0x0B1D51, 0xFF6A00, 0xFFD700, 0x2A0E4F}}, // 8 sunset
+	{{0x000000, 0x8B0000, 0xFF4500, 0xFFFFE0}}, // 9 lava
+	{{0x01411F, 0x00FFB2, 0x7A00FF, 0x013220}}, // 10 aurora
+	{{0x013220, 0x2E8B57, 0x9ACD32, 0x013220}}, // 11 forest
+	{{0x8000FF, 0xFF4000, 0xFF00A0, 0x0040FF}}, // 12 party
+	{{0x001F5C, 0x00BFFF, 0xFFFFFF, 0x001F5C}}, // 13 ice
+	{{0xFF6A00, 0x1A001A, 0x8000FF, 0x000000}}, // 14 halloween
+	{{0xFF0000, 0x00FF00, 0xFFC000, 0x0000FF}}, // 15 christmas (c9)
+	{{0xFFB3BA, 0xBAFFC9, 0xBAE1FF, 0xFFFFBA}}, // 16 pastel
+	{{0xFF2E6A, 0xFFC0CB, 0xFFF0F5, 0xC71585}}, // 17 sakura
 };
 #define PALETTE_COUNT ((int)(sizeof(palettes) / sizeof(palettes[0])))
 
@@ -86,6 +106,7 @@ typedef struct {
 	bool on;
 	uint8_t pin;
 	uint8_t type;      // TYPE_*
+	uint8_t timing;    // wire timing preset, 0 = generic
 	uint16_t len;      // pixels
 	bool reverse;
 	uint8_t fx;
@@ -113,14 +134,19 @@ typedef struct {
 
 // Segments sharing a pin form one chain, rendered into one buffer and
 // transmitted once per frame (the segment offsets place them along the
-// chain). Per group buffer: the firmware LED driver transmits
-// asynchronously from the caller's memory, so a group's buffer must stay
-// untouched until the next transmission waits for it.
+// chain). The firmware LED driver transmits asynchronously from the
+// caller's memory and only waits for the previous transmission when the
+// next one starts - a long chain can still be shifting out when the next
+// frame renders, so each group double buffers: render into one buffer
+// while the other may still be on the wire.
 typedef struct {
 	uint8_t pin;
 	uint8_t colors;      // bytes per pixel of the chain
+	uint8_t timing;      // wire timing preset of the chain
 	uint16_t chain_len;  // pixels
-	uint8_t *txbuf;      // chain_len * colors bytes
+	uint8_t *txbuf[2];   // chain_len * colors bytes each
+	uint8_t cur;         // buffer rendered and transmitted this frame
+	uint16_t quiet;      // frames since the last transmission
 } group_t;
 
 typedef struct {
@@ -136,9 +162,15 @@ typedef struct {
 
 	uint8_t master_bri;  // target
 	uint8_t master_cur;  // eased current
-	uint8_t fade;        // easing steps per frame, 0 = instant
+	uint8_t fade;        // gap fraction closed per frame in 32nds, 0 = instant
 	bool auto_white;
 	uint32_t ablimit_ma; // 0 = off
+
+	// Current limiting is global: each frame sums the unscaled demand of
+	// all segments and the scale derived from it is applied on the next
+	// frame (one frame of lag instead of a second render pass).
+	uint32_t ma_frame;   // demand accumulated this frame
+	uint8_t ma_scale;    // 0..255 output scale, 255 = no limiting
 
 	uint16_t buf_len;    // pixels the work buffer holds
 	uint32_t *work;      // packed 0xWWRRGGBB, buf_len entries
@@ -243,13 +275,23 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 	} break;
 
 	case FX_GAUGE: {
-		// Fill the first level/255 of the strip. With color 0 the fill is
-		// a battery-style gradient: red when nearly empty, green when
-		// full. spd > 0 pulses the fill (e.g. while charging).
+		// Fill the first level/255 of the strip. Fill color: the segment
+		// color if set; else the palette as a gradient along the strip,
+		// revealed by the fill; else (color 0, palette 0) a battery-style
+		// gradient - red when nearly empty, green when full. spd > 0
+		// pulses the fill (e.g. while charging).
 		int lit = (n * s->level + 254) / 255;
 		if (s->level > 0 && lit < 1) lit = 1;
 		uint32_t b = s->spd ? 140 + triangle(ph / 32) * 115 / 255
 			: 255;
+		if (!s->color && s->pal) {
+			for (int i = 0; i < n; i++) {
+				work[i] = i < lit
+					? scale(palette_at(s->pal, (uint8_t)((i * 255) / n)), b)
+					: 0;
+			}
+			break;
+		}
 		uint32_t c;
 		if (s->color) {
 			c = s->color;
@@ -293,6 +335,80 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 		}
 	} break;
 
+	case FX_THEATER: {
+		// Marquee: every third pixel lit, marching along the strip
+		int offset = (int)((ph / 64) % 3);
+		for (int i = 0; i < n; i++) {
+			bool lit = ((i + 3 - offset) % 3) == 0;
+			uint32_t c = s->color ? s->color
+				: palette_at(s->pal, (uint8_t)((i * 255) / n + ph / 64));
+			work[i] = lit ? c : 0;
+		}
+	} break;
+
+	case FX_WIPE: {
+		// Fill end-to-end with color, then wipe to black from the same
+		// end. With color 0 each fill cycle takes a new palette color.
+		uint32_t period = 2u * (uint32_t)n;
+		uint32_t pos = (ph / 32) % period;
+		bool filling = pos < (uint32_t)n;
+		int edge = (int)(filling ? pos : pos - (uint32_t)n);
+		uint32_t c = s->color ? s->color
+			: palette_at(s->pal, (uint8_t)(((ph / 32) / period) * 47));
+		for (int i = 0; i < n; i++) {
+			bool lit = filling ? (i <= edge) : (i > edge);
+			work[i] = lit ? c : 0;
+		}
+	} break;
+
+	case FX_WAVES: {
+		// Overlapping slow waves, pacifica-like: one wave picks the
+		// palette position, another modulates brightness on top of a
+		// floor so the strip shimmers instead of blinking.
+		for (int i = 0; i < n; i++) {
+			uint32_t p = ((uint32_t)i * 255) / (uint32_t)n;
+			uint32_t w1 = triangle(p * 2 + ph / 32);
+			uint32_t w2 = triangle(p * 3 + 170 + 1024 - ph / 48);
+			uint32_t w3 = triangle(p + 85 + ph / 80);
+			uint32_t c0 = s->color ? s->color
+				: palette_at(s->pal, (uint8_t)((w1 + w3) / 2));
+			work[i] = scale(c0, 64 + (w2 * 191) / 255);
+		}
+	} break;
+
+	case FX_CANDLE: {
+		// Warm uneven flicker: smooth deterministic noise per pixel,
+		// interpolated between flicker steps. Color 0 = candle flame
+		// (this effect does not cycle the palette).
+		uint32_t t = ph / 128;
+		uint32_t f = (ph & 127) * 2; // 0..254 between flicker steps
+		uint32_t c0 = s->color ? s->color : 0xFF9329;
+		for (int i = 0; i < n; i++) {
+			uint32_t h1 = ((uint32_t)i * 2654435761u) ^ (t * 40503u);
+			uint32_t h2 = ((uint32_t)i * 2654435761u) ^ ((t + 1) * 40503u);
+			uint32_t b1 = (h1 >> 8) & 0xFF;
+			uint32_t b2 = (h2 >> 8) & 0xFF;
+			uint32_t b = (b1 * (255 - f) + b2 * f) / 255;
+			work[i] = scale(c0, 100 + (b * 155) / 255);
+		}
+	} break;
+
+	case FX_HEARTBEAT: {
+		// Double pulse: strong thump, short gap, weaker thump, rest
+		uint32_t cyc = (ph / 16) & 511;
+		uint32_t b = 0;
+		if (cyc < 96) {
+			b = 255 - (cyc * 255) / 96;
+		} else if (cyc >= 160 && cyc < 240) {
+			uint32_t d = cyc - 160;
+			b = 180 - (d * 180) / 80;
+		}
+		if (b < 16) b = 16; // faint glow between beats
+		uint32_t c = s->color ? s->color : palette_at(s->pal, (uint8_t)(ph / 128));
+		c = scale(c, b);
+		for (int i = 0; i < n; i++) work[i] = c;
+	} break;
+
 	case FX_SOLID:
 	default:
 		for (int i = 0; i < n; i++) work[i] = s->color;
@@ -322,11 +438,11 @@ static uint8_t ease_u8(uint8_t cur, uint8_t target, uint8_t fade) {
 
 // Render one segment into its place in the pin group's chain buffer.
 static void render_seg(espled_t *st, seg_t *s) {
-	group_t *g = &st->group[s->group];
+	group_t *grp = &st->group[s->group];
 	int n = s->len;
 	uint32_t *work = st->work;
-	int colors = g->colors;
-	uint8_t *tx = g->txbuf + (uint32_t)s->offset * colors;
+	int colors = grp->colors;
+	uint8_t *tx = grp->txbuf[grp->cur] + (uint32_t)s->offset * colors;
 
 	fx_render(s, work);
 
@@ -352,14 +468,14 @@ static void render_seg(espled_t *st, seg_t *s) {
 		sum += r + g + b + w;
 	}
 
-	// Adaptive current limit: ~20 mA per full channel + 1 mA idle per LED
+	// Adaptive current limit: ~20 mA per full channel + 1 mA idle per LED.
+	// The demand goes into the frame total and last frame's scale is
+	// applied, so the cap holds across all segments together.
 	if (st->ablimit_ma) {
-		uint32_t ma = (sum * 20) / 255 + n;
-		if (ma > st->ablimit_ma) {
-			uint32_t num = st->ablimit_ma > (uint32_t)n ? st->ablimit_ma - n : 0;
-			uint32_t den = ma - n;
+		st->ma_frame += (sum * 20) / 255 + n;
+		if (st->ma_scale < 255) {
 			for (int i = 0; i < n; i++) {
-				work[i] = scale(work[i], (num * 255) / den);
+				work[i] = scale(work[i], st->ma_scale);
 			}
 		}
 	}
@@ -408,13 +524,20 @@ static void render_thd(void *arg) {
 	espled_t *st = (espled_t*)arg;
 
 	while (!VESC_IF->should_terminate()) {
-		// Ease brightness toward the targets once per frame
+		// Ease brightness toward the targets and derive the current-limit
+		// scale from last frame's total demand, once per frame.
 		VESC_IF->mutex_lock(st->lock);
 		st->master_cur = ease_u8(st->master_cur, st->master_bri, st->fade);
 		for (int i = 0; i < st->seg_count; i++) {
 			seg_t *s = &st->seg[i];
 			s->bri_cur = ease_u8(s->bri_cur, s->bri, st->fade);
 		}
+		if (st->ablimit_ma && st->ma_frame > st->ablimit_ma) {
+			st->ma_scale = (uint8_t)((st->ablimit_ma * 255) / st->ma_frame);
+		} else {
+			st->ma_scale = 255;
+		}
+		st->ma_frame = 0;
 		VESC_IF->mutex_unlock(st->lock);
 
 		for (int gi = 0; gi < st->group_count; gi++) {
@@ -429,7 +552,7 @@ static void render_thd(void *arg) {
 					if (s->on) {
 						render_seg(st, s);
 					} else {
-						memset(g->txbuf + (uint32_t)s->offset * g->colors,
+						memset(g->txbuf[g->cur] + (uint32_t)s->offset * g->colors,
 							0, (uint32_t)(s->len + s->ov_count) * g->colors);
 					}
 					// Accumulate speed so speed changes take effect
@@ -439,14 +562,31 @@ static void render_thd(void *arg) {
 				}
 			}
 			int pin = g->pin;
-			uint8_t *tx = g->txbuf;
+			unsigned int timing = g->timing;
+			uint8_t *tx = g->txbuf[g->cur];
 			int tx_bytes = g->chain_len * g->colors;
+
+			// Only transmit frames that differ from what the strip already
+			// shows (the other buffer holds the last transmitted frame),
+			// plus a periodic keepalive. The buffer only flips after a real
+			// transmission so the comparison stays against the wire state.
+			bool send = false;
+			if (any) {
+				if (g->quiet >= ESPLED_REFRESH_FRAMES
+					|| memcmp(g->txbuf[0], g->txbuf[1], (size_t)tx_bytes) != 0) {
+					send = true;
+					g->quiet = 0;
+					g->cur ^= 1;
+				} else if (g->quiet < 0xFFFF) {
+					g->quiet++;
+				}
+			}
 			VESC_IF->mutex_unlock(st->lock);
 
 			// Hardware IO outside the lock - the firmware driver can block
 			// while a previous transmission finishes. Re-init is a no-op
-			// when the pin is unchanged.
-			if (any && VESC_IF->rgbled_init(pin)) {
+			// when the pin and timing are unchanged.
+			if (send && VESC_IF->rgbled_init(pin, timing)) {
 				VESC_IF->rgbled_update(tx, tx_bytes);
 			}
 		}
@@ -479,12 +619,14 @@ static seg_t *seg_arg(espled_t *st, lbm_value v) {
 
 // ---- Extensions ---------------------------------------------------------
 
-// (ext-espled-seg-def i pin type len [offset]) - define segment i before
-// ext-espled-init. type: 0 GRB, 1 RGB, 2 GRBW, 3 RGBW. Segments on the
-// same pin form one chain; offset is the segment's pixel position in it.
+// (ext-espled-seg-def i pin type len [offset] [timing]) - define segment i
+// before ext-espled-init. type: 0 GRB, 1 RGB, 2 GRBW, 3 RGBW. Segments on
+// the same pin form one chain; offset is the segment's pixel position in
+// it. timing selects the wire timing preset: 0 generic (default), 1
+// WS2812B, 2 WS2815, 3 SK6812, 4 SK6815.
 static lbm_value ext_seg_def(lbm_value *args, lbm_uint argn) {
 	espled_t *st = state();
-	if (argn != 4 && argn != 5) return VESC_IF->lbm_enc_sym_terror;
+	if (argn < 4 || argn > 6) return VESC_IF->lbm_enc_sym_terror;
 	for (lbm_uint i = 0; i < argn; i++) {
 		if (!VESC_IF->lbm_is_number(args[i])) return VESC_IF->lbm_enc_sym_terror;
 	}
@@ -493,10 +635,12 @@ static lbm_value ext_seg_def(lbm_value *args, lbm_uint argn) {
 	int pin = VESC_IF->lbm_dec_as_i32(args[1]);
 	int type = VESC_IF->lbm_dec_as_i32(args[2]);
 	int len = VESC_IF->lbm_dec_as_i32(args[3]);
-	int offset = argn == 5 ? VESC_IF->lbm_dec_as_i32(args[4]) : 0;
+	int offset = argn >= 5 ? VESC_IF->lbm_dec_as_i32(args[4]) : 0;
+	int timing = argn >= 6 ? VESC_IF->lbm_dec_as_i32(args[5]) : 0;
 
 	if (!s || pin < 0 || pin > 255 || type < 0 || type > TYPE_RGBW
-		|| len < 1 || len > 1024 || offset < 0 || offset > 1024) {
+		|| len < 1 || len > 1024 || offset < 0 || offset > 1024
+		|| timing < 0 || timing > 4) {
 		return VESC_IF->lbm_enc_sym_terror;
 	}
 
@@ -511,6 +655,7 @@ static lbm_value ext_seg_def(lbm_value *args, lbm_uint argn) {
 	s->on = true;
 	s->pin = (uint8_t)pin;
 	s->type = (uint8_t)type;
+	s->timing = (uint8_t)timing;
 	s->len = (uint16_t)len;
 	s->offset = (uint16_t)offset;
 	s->reverse = false;
@@ -520,6 +665,7 @@ static lbm_value ext_seg_def(lbm_value *args, lbm_uint argn) {
 	s->bri_cur = 255;
 	s->spd = 32;
 	s->size = 8;
+	s->level = 255;
 	s->color = 0;
 	s->phase = 0;
 	s->ov_count = 0;
@@ -630,16 +776,46 @@ static lbm_value ext_init(lbm_value *args, lbm_uint argn) {
 			s->group = st->group_count++;
 			st->group[s->group].pin = s->pin;
 			st->group[s->group].colors = (uint8_t)colors;
+			st->group[s->group].timing = s->timing;
 			st->group[s->group].chain_len = end;
-			st->group[s->group].txbuf = NULL;
+			st->group[s->group].txbuf[0] = NULL;
+			st->group[s->group].txbuf[1] = NULL;
+			st->group[s->group].cur = 0;
+			// Force the first frame out even if it renders all-black
+			// (both buffers start zeroed and would compare equal)
+			st->group[s->group].quiet = 0xFFFF;
 		} else {
 			if (st->group[s->group].colors != colors) {
 				VESC_IF->lbm_set_error_reason(
 					"Segments on one pin must have the same color depth");
 				return VESC_IF->lbm_enc_sym_eerror;
 			}
+			if (st->group[s->group].timing != s->timing) {
+				VESC_IF->lbm_set_error_reason(
+					"Segments on one pin must have the same timing preset");
+				return VESC_IF->lbm_enc_sym_eerror;
+			}
 			if (end > st->group[s->group].chain_len) {
 				st->group[s->group].chain_len = end;
+			}
+		}
+	}
+
+	// Segments sharing a pin must not overlap on the chain - overlapping
+	// footprints would silently overwrite each other every frame.
+	for (int i = 0; i < n; i++) {
+		for (int j = i + 1; j < n; j++) {
+			seg_t *a = &st->seg[i];
+			seg_t *b = &st->seg[j];
+			if (a->pin != b->pin) {
+				continue;
+			}
+			uint32_t a_end = (uint32_t)a->offset + a->len + a->ov_count;
+			uint32_t b_end = (uint32_t)b->offset + b->len + b->ov_count;
+			if (a->offset < b_end && b->offset < a_end) {
+				VESC_IF->lbm_set_error_reason(
+					"Segments on one pin overlap - check the offsets");
+				return VESC_IF->lbm_enc_sym_eerror;
 			}
 		}
 	}
@@ -650,11 +826,13 @@ static lbm_value ext_init(lbm_value *args, lbm_uint argn) {
 	for (int gi = 0; gi < st->group_count && alloc_ok; gi++) {
 		group_t *g = &st->group[gi];
 		uint32_t bytes = (uint32_t)g->chain_len * g->colors;
-		g->txbuf = VESC_IF->malloc(bytes);
-		if (g->txbuf) {
-			memset(g->txbuf, 0, bytes);
-		} else {
-			alloc_ok = false;
+		for (int b = 0; b < 2 && alloc_ok; b++) {
+			g->txbuf[b] = VESC_IF->malloc(bytes);
+			if (g->txbuf[b]) {
+				memset(g->txbuf[b], 0, bytes);
+			} else {
+				alloc_ok = false;
+			}
 		}
 	}
 
@@ -668,9 +846,11 @@ static lbm_value ext_init(lbm_value *args, lbm_uint argn) {
 	if (!alloc_ok) {
 		if (st->work) { VESC_IF->free(st->work); st->work = NULL; }
 		for (int gi = 0; gi < st->group_count; gi++) {
-			if (st->group[gi].txbuf) {
-				VESC_IF->free(st->group[gi].txbuf);
-				st->group[gi].txbuf = NULL;
+			for (int b = 0; b < 2; b++) {
+				if (st->group[gi].txbuf[b]) {
+					VESC_IF->free(st->group[gi].txbuf[b]);
+					st->group[gi].txbuf[b] = NULL;
+				}
 			}
 		}
 		st->group_count = 0;
@@ -679,6 +859,8 @@ static lbm_value ext_init(lbm_value *args, lbm_uint argn) {
 		return VESC_IF->lbm_enc_sym_merror;
 	}
 
+	st->ma_frame = 0;
+	st->ma_scale = 255;
 	st->running = true;
 
 	return VESC_IF->lbm_enc_sym_true;
@@ -695,9 +877,11 @@ static void espled_stop(espled_t *st) {
 
 	VESC_IF->free(st->work); st->work = NULL;
 	for (int gi = 0; gi < st->group_count; gi++) {
-		if (st->group[gi].txbuf) {
-			VESC_IF->free(st->group[gi].txbuf);
-			st->group[gi].txbuf = NULL;
+		for (int b = 0; b < 2; b++) {
+			if (st->group[gi].txbuf[b]) {
+				VESC_IF->free(st->group[gi].txbuf[b]);
+				st->group[gi].txbuf[b] = NULL;
+			}
 		}
 	}
 	st->group_count = 0;
@@ -721,12 +905,16 @@ static lbm_value ext_seg_look(lbm_value *args, lbm_uint argn) {
 	if (!s) return VESC_IF->lbm_enc_sym_terror;
 
 	VESC_IF->mutex_lock(st->lock);
-	s->fx = (uint8_t)VESC_IF->lbm_dec_as_i32(args[1]);
+	uint8_t fx = (uint8_t)VESC_IF->lbm_dec_as_i32(args[1]);
+	if (s->fx != fx) {
+		s->fx = fx;
+		s->phase = 0; // restart only when the effect actually changes,
+		              // so repeated seg-look calls don't stall animations
+	}
 	s->pal = (uint8_t)VESC_IF->lbm_dec_as_i32(args[2]);
 	s->color = VESC_IF->lbm_dec_as_u32(args[3]);
 	s->spd = (uint8_t)VESC_IF->lbm_dec_as_i32(args[4]);
 	s->bri = (uint8_t)VESC_IF->lbm_dec_as_i32(args[5]);
-	s->phase = 0;
 	VESC_IF->mutex_unlock(st->lock);
 
 	return VESC_IF->lbm_enc_sym_true;

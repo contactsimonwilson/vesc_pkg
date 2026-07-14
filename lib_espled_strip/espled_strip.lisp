@@ -21,9 +21,10 @@
 )
 
 ; Convenience used by the test UI: single strip on one pin as segment 0.
-(defun espled-setup (pin len type) {
+; timing: 0 generic, 1 WS2812B, 2 WS2815, 3 SK6812, 4 SK6815.
+(defun espled-setup (pin len type timing) {
     (ext-espled-deinit)
-    (ext-espled-seg-def 0 pin type len)
+    (ext-espled-seg-def 0 pin type len 0 timing)
     (ext-espled-init 1)
 })
 

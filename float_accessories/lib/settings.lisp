@@ -84,6 +84,19 @@
         (setq humidity-context-id (spawn humidity-loop))
     })
 
+    ; GNSS: restart to pick up new pins/type
+    (if (>= gnss-context-id 0) {
+        (var start-time (systime))
+        (setq gnss-exit-flag t)
+        (loopwhile (and gnss-exit-flag (< (- (systime) start-time) 2000000))
+            (yield 10000))
+        (if gnss-exit-flag (send-msg "WARNING: GNSS loop did not exit in time."))
+        (setq gnss-context-id -1)
+    })
+    (if (= (get-config 'gnss-enabled) 1) {
+        (setq gnss-context-id (spawn gnss-loop))
+    })
+
     ; Pubmote loop
     (if (and (>= pubmote-context-id 0) (!= (get-config 'pubmote-enabled) 1)) {
         (var start-time (systime))
@@ -134,11 +147,11 @@
     (led-brightness-idle f) (led-brightness-status f) (led-status-pin i)
     (led-status-num i) (led-status-type i) (led-status-reversed b)
     (led-front-pin i) (led-front-num i) (led-front-type i)
-    (led-front-reversed b) (led-front-strip-type b) (led-rear-pin i)
+    (led-front-reversed b) (led-front-timing i) (led-rear-pin i)
     (led-rear-num i) (led-rear-type i) (led-rear-reversed b)
-    (led-rear-strip-type b) (led-button-pin b) (led-button-strip-type b)
+    (led-rear-timing i) (led-button-pin b) (led-button-timing i)
     (led-footpad-pin i) (led-footpad-num i) (led-footpad-type i)
-    (led-footpad-reversed b) (led-footpad-strip-type b)
+    (led-footpad-reversed b) (led-footpad-timing i)
     (pubmote-remote-mac-a i) (pubmote-remote-mac-b i) (pubmote-secret-code i)
     (bms-rs485-di-pin i) (bms-rs485-ro-pin i) (bms-rs485-dere-pin i)
     (bms-wakeup-pin i) (bms-override-soc i) (bms-rs485-chip b)
@@ -146,37 +159,36 @@
     (bms-counter-a i) (bms-counter-b i) (bms-counter-c i) (bms-counter-d i)
     (led-loop-delay i) (bms-loop-delay i) (pubmote-loop-delay i)
     (can-loop-delay i) (led-startup-timeout i)
-    (led-dim-on-highbeam-ratio f) (bms-type i) (led-status-strip-type i)
+    (led-dim-on-highbeam-ratio f) (bms-type i) (led-status-timing i)
     (bms-charge-only b) (led-show-battery-charging b)
     (led-front-highbeam-pin i) (led-rear-highbeam-pin i) (bms-buff-size i)
     (led-max-brightness f) (soc-type i) (cell-type i)
     (led-update-not-running b) (log-enabled b) (log-rate f)
     (log-append-gnss b) (humidity-enabled b) (humidity-sda-pin i)
     (humidity-slc-pin i)
+    (led-front-highbeam-mode i) (led-front-highbeam-pos i)
+    (led-front-highbeam-min f) (led-front-highbeam-max f)
+    (led-rear-highbeam-mode i) (led-rear-highbeam-pos i)
+    (led-rear-highbeam-min f) (led-rear-highbeam-max f)
+    (gnss-enabled b) (gnss-type i) (gnss-rx-pin i) (gnss-tx-pin i)
+    (gnss-uart-num i) (gnss-rate-ms i) (gnss-baud i)
 ))
 
 (defun send-config () {
-    (var config-string "settings ")
-
-    (loopforeach p qml-config-params {
+    ; One join instead of a str-merge accumulator, which would copy a
+    ; growing ~1.5 KB string once per parameter.
+    (send-data (str-join (cons "settings" (map (fn (p) {
         (var name (first p))
-        (var type (second p))
         (var value (cond
             ((eq name 'magic) 445)
             ((eq name 'crc) 0)
             (t (get-config name))
         ))
-        (setq config-string
-            (str-merge config-string
-                (if (eq type 'f)
-                    (str-from-n (to-float value) "%.2f ")
-                    (str-from-n (to-i value) "%d ")
-                )
-            )
+        (if (eq (second p) 'f)
+            (str-from-n (to-float value) "%.2f")
+            (str-from-n (to-i value) "%d")
         )
-    })
-
-    (send-data config-string)
+    }) qml-config-params)) " "))
     (send-status "Settings loaded")
 })
 
@@ -187,13 +199,16 @@
     in-led-mode-startup in-led-mode-button in-led-mode-footpad in-led-mall-grab-enabled in-led-brake-light-enabled in-led-brake-light-min-amps
     in-idle-timeout in-idle-timeout-shutoff in-led-brightness in-led-brightness-highbeam in-led-brightness-idle in-led-brightness-status
     in-led-status-pin in-led-status-num in-led-status-type in-led-status-reversed in-led-front-pin in-led-front-num in-led-front-type
-    in-led-front-reversed in-led-front-strip-type in-led-rear-pin in-led-rear-num in-led-rear-type in-led-rear-reversed in-led-rear-strip-type
-    in-led-button-pin in-led-button-strip-type in-led-footpad-pin in-led-footpad-num in-led-footpad-type in-led-footpad-reversed
-    in-led-footpad-strip-type in-bms-rs485-di-pin in-bms-rs485-ro-pin in-bms-rs485-dere-pin in-bms-wakeup-pin in-bms-override-soc in-bms-rs485-chip
+    in-led-front-reversed in-led-front-timing in-led-rear-pin in-led-rear-num in-led-rear-type in-led-rear-reversed in-led-rear-timing
+    in-led-button-pin in-led-button-timing in-led-footpad-pin in-led-footpad-num in-led-footpad-type in-led-footpad-reversed
+    in-led-footpad-timing in-bms-rs485-di-pin in-bms-rs485-ro-pin in-bms-rs485-dere-pin in-bms-wakeup-pin in-bms-override-soc in-bms-rs485-chip
     in-led-loop-delay in-bms-loop-delay in-pubmote-loop-delay in-can-loop-delay in-led-startup-timeout
-    in-led-dim-on-highbeam-ratio in-bms-type in-led-status-strip-type in-bms-charge-only in-led-show-battery-charging
+    in-led-dim-on-highbeam-ratio in-bms-type in-led-status-timing in-bms-charge-only in-led-show-battery-charging
     in-led-front-highbeam-pin in-led-rear-highbeam-pin in-bms-buff-size in-led-max-brightness in-soc-type in-cell-type in-led-update-not-running
     in-log-enabled in-log-rate in-log-append-gnss in-humidity-enabled in-humidity-sda-pin in-humidity-slc-pin
+    in-led-front-highbeam-mode in-led-front-highbeam-pos in-led-front-highbeam-min in-led-front-highbeam-max
+    in-led-rear-highbeam-mode in-led-rear-highbeam-pos in-led-rear-highbeam-min in-led-rear-highbeam-max
+    in-gnss-enabled in-gnss-type in-gnss-rx-pin in-gnss-tx-pin in-gnss-uart-num in-gnss-rate-ms in-gnss-baud
 ) {
     (set-config 'led-enabled (to-i in-led-enabled))
     (set-config 'bms-enabled (to-i in-bms-enabled))
@@ -225,30 +240,38 @@
     (set-config 'led-status-num (to-i in-led-status-num))
     (set-config 'led-status-type (to-i in-led-status-type))
     (set-config 'led-status-reversed (to-i in-led-status-reversed))
-    (set-config 'led-status-strip-type (to-i in-led-status-strip-type))
+    (set-config 'led-status-timing (to-i in-led-status-timing))
 
     (set-config 'led-front-pin (to-i in-led-front-pin))
     (set-config 'led-front-num (to-i in-led-front-num))
     (set-config 'led-front-type (to-i in-led-front-type))
     (set-config 'led-front-reversed (to-i in-led-front-reversed))
-    (set-config 'led-front-strip-type (to-i in-led-front-strip-type))
+    (set-config 'led-front-timing (to-i in-led-front-timing))
+    (set-config 'led-front-highbeam-mode (to-i in-led-front-highbeam-mode))
     (set-config 'led-front-highbeam-pin (to-i in-led-front-highbeam-pin))
+    (set-config 'led-front-highbeam-pos (to-i in-led-front-highbeam-pos))
+    (set-config 'led-front-highbeam-min (to-float in-led-front-highbeam-min))
+    (set-config 'led-front-highbeam-max (to-float in-led-front-highbeam-max))
 
     (set-config 'led-rear-pin (to-i in-led-rear-pin))
     (set-config 'led-rear-num (to-i in-led-rear-num))
     (set-config 'led-rear-type (to-i in-led-rear-type))
     (set-config 'led-rear-reversed (to-i in-led-rear-reversed))
-    (set-config 'led-rear-strip-type (to-i in-led-rear-strip-type))
+    (set-config 'led-rear-timing (to-i in-led-rear-timing))
+    (set-config 'led-rear-highbeam-mode (to-i in-led-rear-highbeam-mode))
     (set-config 'led-rear-highbeam-pin (to-i in-led-rear-highbeam-pin))
+    (set-config 'led-rear-highbeam-pos (to-i in-led-rear-highbeam-pos))
+    (set-config 'led-rear-highbeam-min (to-float in-led-rear-highbeam-min))
+    (set-config 'led-rear-highbeam-max (to-float in-led-rear-highbeam-max))
 
     (set-config 'led-button-pin (to-i in-led-button-pin))
-    (set-config 'led-button-strip-type (to-i in-led-button-strip-type))
+    (set-config 'led-button-timing (to-i in-led-button-timing))
 
     (set-config 'led-footpad-pin (to-i in-led-footpad-pin))
     (set-config 'led-footpad-num (to-i in-led-footpad-num))
     (set-config 'led-footpad-type (to-i in-led-footpad-type))
     (set-config 'led-footpad-reversed (to-i in-led-footpad-reversed))
-    (set-config 'led-footpad-strip-type (to-i in-led-footpad-strip-type))
+    (set-config 'led-footpad-timing (to-i in-led-footpad-timing))
 
     (set-config 'bms-rs485-di-pin (to-i in-bms-rs485-di-pin))
     (set-config 'bms-rs485-ro-pin (to-i in-bms-rs485-ro-pin))
@@ -279,6 +302,14 @@
     (set-config 'humidity-enabled (to-i in-humidity-enabled))
     (set-config 'humidity-sda-pin (to-i in-humidity-sda-pin))
     (set-config 'humidity-slc-pin (to-i in-humidity-slc-pin))
+
+    (set-config 'gnss-enabled (to-i in-gnss-enabled))
+    (set-config 'gnss-type (to-i in-gnss-type))
+    (set-config 'gnss-rx-pin (to-i in-gnss-rx-pin))
+    (set-config 'gnss-tx-pin (to-i in-gnss-tx-pin))
+    (set-config 'gnss-uart-num (to-i in-gnss-uart-num))
+    (set-config 'gnss-rate-ms (to-i in-gnss-rate-ms))
+    (set-config 'gnss-baud (to-i in-gnss-baud))
 
     (ext-facfg-store)
     (apply-config)
@@ -356,20 +387,35 @@
 })
 
 (defun status () {
-    (var status-string "float-stats ")
-    (setq status-string (str-merge status-string (str-from-n (if (< (secs-since can-last-activity-time) 1) 1 0) "%d ")))
-    (setq status-string (str-merge status-string (str-from-n (is-pubmote-connected) "%d ")))
-    (setq status-string (str-merge status-string (str-from-n (if (< (secs-since bms-last-activity-time) 1) 1 0) "%d ")))
-    (setq status-string (str-merge status-string (str-from-n bms-status "%d ")))
-    (setq status-string (str-merge status-string (str-from-n bms-battery-type "%d ")))
-    (setq status-string (str-merge status-string (str-from-n bms-battery-cycles "%d ")))
-    (setq status-string (str-merge status-string (str-from-n (if (> (conf-get 'wifi-mode) 0) (wifi-get-chan) -1) "%d ")))
-    (setq status-string (str-merge status-string (str-from-n hum "%.0f ")))
-    (setq status-string (str-merge status-string (str-from-n hum-temp "%.2f ")))
-    (setq status-string (str-merge status-string (str-from-n (get-bms-val 'bms-hum) "%.0f ")))
-    (setq status-string (str-merge status-string (str-from-n (get-bms-val 'bms-temp-hum) "%.0f ")))
-    (setq status-string (str-merge status-string (str-from-n (if log-running 1 0) "%d ")))
-    (send-data status-string)
+    ; Built as a list and joined once: accumulating with str-merge copies
+    ; the growing string on every step, which at the QML poll rate was the
+    ; main source of lbm memory churn between GC cycles.
+    ;
+    ; GNSS: fix flag, seconds since the last sentence, hdop, speed (m/s).
+    ; The firmware stamps the age on every decoded sentence (fix or not),
+    ; so a fix additionally needs a non-zero position.
+    (var gnss-ll (gnss-lat-lon))
+    (var gnss-age-s (gnss-age))
+    (var gnss-fix (if (and (< gnss-age-s 5.0) (or (!= (ix gnss-ll 0) 0.0) (!= (ix gnss-ll 1) 0.0))) 1 0))
+    (send-data (str-join (list
+        "float-stats"
+        (str-from-n (if (< (secs-since can-last-activity-time) 1) 1 0) "%d")
+        (str-from-n (is-pubmote-connected) "%d")
+        (str-from-n (if (< (secs-since bms-last-activity-time) 1) 1 0) "%d")
+        (str-from-n bms-status "%d")
+        (str-from-n bms-battery-type "%d")
+        (str-from-n bms-battery-cycles "%d")
+        (str-from-n (if (> (conf-get 'wifi-mode) 0) (wifi-get-chan) -1) "%d")
+        (str-from-n hum "%.0f")
+        (str-from-n hum-temp "%.2f")
+        (str-from-n (get-bms-val 'bms-hum) "%.0f")
+        (str-from-n (get-bms-val 'bms-temp-hum) "%.0f")
+        (str-from-n (if log-running 1 0) "%d")
+        (str-from-n gnss-fix "%d")
+        (str-from-n (to-float (min gnss-age-s 9999.0)) "%.1f")
+        (str-from-n (gnss-hdop) "%.1f")
+        (str-from-n (gnss-speed) "%.2f")
+    ) " "))
 
     (if (= (is-pubmote-connected) 1) {
         (send-data (str-merge "pubmote-info " (to-str (ix pubmote-version 0)) "." (to-str (ix pubmote-version 1)) "." (to-str (ix pubmote-version 2))))
@@ -377,14 +423,15 @@
 })
 
 (defun input-state () {
-    (var input-string "input-state ")
-    (setq input-string (str-merge input-string (str-from-n (is-pubmote-connected) "%d ")))
-    (setq input-string (str-merge input-string (str-from-n pubmote-last-jsy "%.3f ")))
-    (setq input-string (str-merge input-string (str-from-n pubmote-last-jsx "%.3f ")))
-    (setq input-string (str-merge input-string (str-from-n pubmote-last-bt-c "%d ")))
-    (setq input-string (str-merge input-string (str-from-n pubmote-last-bt-z "%d ")))
-    (setq input-string (str-merge input-string (str-from-n pubmote-last-is-rev "%d")))
-    (send-data input-string)
+    (send-data (str-join (list
+        "input-state"
+        (str-from-n (is-pubmote-connected) "%d")
+        (str-from-n pubmote-last-jsy "%.3f")
+        (str-from-n pubmote-last-jsx "%.3f")
+        (str-from-n pubmote-last-bt-c "%d")
+        (str-from-n pubmote-last-bt-z "%d")
+        (str-from-n pubmote-last-is-rev "%d")
+    ) " "))
 })
 
 @const-end
