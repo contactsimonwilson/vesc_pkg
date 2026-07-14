@@ -141,6 +141,7 @@ Item {
                         from: 1; to: 255; value: 32
                         stepSize: 1
                         Layout.fillWidth: true
+                        onValueChanged: if (pressed) queueSend("spd", "(ext-espled-seg-spd 0 " + value.toFixed(0) + ")")
                         onPressedChanged: if (!pressed) sendCode("(ext-espled-seg-spd 0 " + value.toFixed(0) + ")")
                     }
 
@@ -150,6 +151,7 @@ Item {
                         from: 1; to: 64; value: 8
                         stepSize: 1
                         Layout.fillWidth: true
+                        onValueChanged: if (pressed) queueSend("size", "(ext-espled-seg-size 0 " + value.toFixed(0) + ")")
                         onPressedChanged: if (!pressed) sendCode("(ext-espled-seg-size 0 " + value.toFixed(0) + ")")
                     }
 
@@ -159,6 +161,7 @@ Item {
                         from: 0; to: 255; value: 255
                         stepSize: 1
                         Layout.fillWidth: true
+                        onValueChanged: if (pressed) queueSend("level", "(ext-espled-seg-level 0 " + value.toFixed(0) + ")")
                         onPressedChanged: if (!pressed) sendCode("(ext-espled-seg-level 0 " + value.toFixed(0) + ")")
                     }
                 }
@@ -189,6 +192,7 @@ Item {
                             from: 0; to: 255; value: 255
                             stepSize: 1
                             Layout.fillWidth: true
+                            onValueChanged: if (pressed) queueSend("color", "(ext-espled-seg-col 0 " + packedColor() + ")")
                             onPressedChanged: if (!pressed) sendColor()
                         }
 
@@ -198,6 +202,7 @@ Item {
                             from: 0; to: 255; value: 0
                             stepSize: 1
                             Layout.fillWidth: true
+                            onValueChanged: if (pressed) queueSend("color", "(ext-espled-seg-col 0 " + packedColor() + ")")
                             onPressedChanged: if (!pressed) sendColor()
                         }
 
@@ -207,6 +212,7 @@ Item {
                             from: 0; to: 255; value: 0
                             stepSize: 1
                             Layout.fillWidth: true
+                            onValueChanged: if (pressed) queueSend("color", "(ext-espled-seg-col 0 " + packedColor() + ")")
                             onPressedChanged: if (!pressed) sendColor()
                         }
                     }
@@ -257,7 +263,17 @@ Item {
                         from: 0; to: 255; value: 255
                         stepSize: 1
                         Layout.fillWidth: true
+                        onValueChanged: if (pressed) queueSend("bri", "(ext-espled-bri " + value.toFixed(0) + ")")
                         onPressedChanged: if (!pressed) sendCode("(ext-espled-bri " + value.toFixed(0) + ")")
+                    }
+
+                    Label { text: "Fade " + fadeSlider.value.toFixed(0) }
+                    Slider {
+                        id: fadeSlider
+                        from: 0; to: 64; value: 12
+                        stepSize: 1
+                        Layout.fillWidth: true
+                        onPressedChanged: if (!pressed) sendCode("(ext-espled-fade " + value.toFixed(0) + ")")
                     }
 
                     Label { text: "Auto white" }

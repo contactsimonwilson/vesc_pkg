@@ -90,7 +90,8 @@ typedef struct {
 	bool reverse;
 	uint8_t fx;
 	uint8_t pal;
-	uint8_t bri;       // per-segment brightness 0..255
+	uint8_t bri;       // per-segment brightness target 0..255
+	uint8_t bri_cur;   // eased current brightness
 	uint8_t spd;       // 0..255
 	uint8_t size;      // chase head / comet tail length
 	uint8_t level;     // gauge fill 0..255
@@ -133,7 +134,9 @@ typedef struct {
 	group_t group[ESPLED_SEG_MAX];
 	int group_count;
 
-	uint8_t master_bri;
+	uint8_t master_bri;  // target
+	uint8_t master_cur;  // eased current
+	uint8_t fade;        // easing steps per frame, 0 = instant
 	bool auto_white;
 	uint32_t ablimit_ma; // 0 = off
 
@@ -297,6 +300,17 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 
 // ---- Render thread ------------------------------------------------------
 
+// Move cur toward target by at most step (0 = jump immediately).
+static uint8_t ease_u8(uint8_t cur, uint8_t target, uint8_t step) {
+	if (step == 0) {
+		return target;
+	}
+	int d = (int)target - (int)cur;
+	if (d > step) return cur + step;
+	if (d < -step) return cur - step;
+	return target;
+}
+
 // Render one segment into its place in the pin group's chain buffer.
 static void render_seg(espled_t *st, seg_t *s) {
 	group_t *g = &st->group[s->group];
@@ -308,7 +322,7 @@ static void render_seg(espled_t *st, seg_t *s) {
 	fx_render(s, work);
 
 	// Combined per-segment and master brightness
-	uint32_t bri = ((uint32_t)s->bri * st->master_bri) / 255;
+	uint32_t bri = ((uint32_t)s->bri_cur * st->master_cur) / 255;
 
 	uint32_t sum = 0; // channel sum for the current estimate
 	for (int i = 0; i < n; i++) {
@@ -385,6 +399,15 @@ static void render_thd(void *arg) {
 	espled_t *st = (espled_t*)arg;
 
 	while (!VESC_IF->should_terminate()) {
+		// Ease brightness toward the targets once per frame
+		VESC_IF->mutex_lock(st->lock);
+		st->master_cur = ease_u8(st->master_cur, st->master_bri, st->fade);
+		for (int i = 0; i < st->seg_count; i++) {
+			seg_t *s = &st->seg[i];
+			s->bri_cur = ease_u8(s->bri_cur, s->bri, st->fade);
+		}
+		VESC_IF->mutex_unlock(st->lock);
+
 		for (int gi = 0; gi < st->group_count; gi++) {
 			group_t *g = &st->group[gi];
 
@@ -483,6 +506,7 @@ static lbm_value ext_seg_def(lbm_value *args, lbm_uint argn) {
 	s->fx = FX_SOLID;
 	s->pal = 0;
 	s->bri = 255;
+	s->bri_cur = 255;
 	s->spd = 32;
 	s->size = 8;
 	s->color = 0;
@@ -802,6 +826,16 @@ static lbm_value ext_bri(lbm_value *args, lbm_uint argn) {
 	return VESC_IF->lbm_enc_sym_true;
 }
 
+// (ext-espled-fade rate) - brightness easing in steps per frame
+// (0 = instant, higher = faster). Applies to master and segment
+// brightness changes.
+static lbm_value ext_fade(lbm_value *args, lbm_uint argn) {
+	espled_t *st = state();
+	if (!check_num_args(args, argn, 1)) return VESC_IF->lbm_enc_sym_terror;
+	st->fade = (uint8_t)VESC_IF->lbm_dec_as_i32(args[0]);
+	return VESC_IF->lbm_enc_sym_true;
+}
+
 // (ext-espled-auto-white en) - derive W from RGB on RGBW strips
 static lbm_value ext_auto_white(lbm_value *args, lbm_uint argn) {
 	espled_t *st = state();
@@ -846,6 +880,8 @@ INIT_FUN(lib_info *info) {
 	}
 
 	st->master_bri = 255;
+	st->master_cur = 255;
+	st->fade = 12; // ~0.5 s for a half-range change at 30 fps
 	st->lock = VESC_IF->mutex_create();
 	if (!st->lock) {
 		VESC_IF->free(st);
@@ -876,6 +912,7 @@ INIT_FUN(lib_info *info) {
 	VESC_IF->lbm_add_extension("ext-espled-col-rgb", ext_col_rgbw);
 	VESC_IF->lbm_add_extension("ext-espled-col-rgbw", ext_col_rgbw);
 	VESC_IF->lbm_add_extension("ext-espled-bri", ext_bri);
+	VESC_IF->lbm_add_extension("ext-espled-fade", ext_fade);
 	VESC_IF->lbm_add_extension("ext-espled-auto-white", ext_auto_white);
 	VESC_IF->lbm_add_extension("ext-espled-ablimit", ext_ablimit);
 
