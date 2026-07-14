@@ -135,6 +135,8 @@
 
     (if (> idx 0) {
         (ext-espled-init idx)
+        ; This loop smooths brightness itself - no lib-side easing on top
+        (ext-espled-fade 0)
         (if (>= seg-status 0) (ext-espled-seg-reverse seg-status led-status-reversed))
         (if (>= seg-front 0) (ext-espled-seg-reverse seg-front led-front-reversed))
         (if (>= seg-rear 0) (ext-espled-seg-reverse seg-rear led-rear-reversed))
