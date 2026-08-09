@@ -175,7 +175,8 @@
                 (dbg-warn (str-merge "can overrun " (str-from-n (- 0 time-to-wait) "%.4f"))))
             (setq next-run-time (secs-since 0))
         })
-        (setq next-run-time (+ next-run-time can-loop-delay-sec))
+        (setq next-run-time (+ next-run-time
+            (if (< can-id 0) (max can-loop-delay-sec 0.25) can-loop-delay-sec)))
     })
 })
 
