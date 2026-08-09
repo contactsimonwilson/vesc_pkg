@@ -24,6 +24,9 @@
 ; debug.lisp first: every other module logs through it.
 (import "lib/debug.lisp" 'debug)
 (read-eval-program debug)
+; Generated from the `version` file; utils' get-version returns pkg-version.
+(import "lib/version-gen.lisp" 'version-gen)
+(read-eval-program version-gen)
 (import "lib/utils.lisp" 'utils)
 (read-eval-program utils)
 (import "lib/settings-vars.lisp" 'settings-vars)
@@ -265,9 +268,7 @@
 
 ; Save the environment as a binary image for fast boot on subsequent power-cycles.
 ; On the very next boot the reader is skipped and main() is called directly.
-(if (is-606-or-newer) {
-    (image-save)
-})
+(image-save)
 ; Start immediately on this (first) boot too.
 (main)
 @const-end

@@ -121,13 +121,7 @@
 
 (defun get-var (i) i)
 
-(defun get-version () {
-    (list 3 4 0) ; Major, Minor, Patch
-})
-
-(defun is-606-or-newer () {
-    (or (> (first (sysinfo 'fw-ver)) 6) (and (= (first (sysinfo 'fw-ver)) 6) (>= (second (sysinfo 'fw-ver)) 6)))
-})
+(defun get-version () pkg-version)
 
 (defun is-pubmote-connected ()
     (if (= (get-config 'pubmote-enabled) 1) (pubmote-connected) 0)

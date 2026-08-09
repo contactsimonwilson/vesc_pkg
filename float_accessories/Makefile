@@ -48,7 +48,11 @@ README-gen.md: README.md version
 ui.qml: ui.qml.in version README-gen.md gen_ui.py
 	$(PYTHON) gen_ui.py
 
-float_accessories.vescpkg: esp_led_libs fa_cfg_libs pkgdesc.qml README-gen.md ui.qml
+# The lisp's package version, from the same `version` file as the About box.
+lib/version-gen.lisp: version gen_version.py
+	$(PYTHON) gen_version.py
+
+float_accessories.vescpkg: esp_led_libs fa_cfg_libs pkgdesc.qml README-gen.md ui.qml lib/version-gen.lisp
 	$(VESC_TOOL) --buildPkgFromDesc pkgdesc.qml \
 		--testPkgDesc 'custom:Devkit C3' \
 		--testPkgDesc 'custom:Avaspark RGB V3' \

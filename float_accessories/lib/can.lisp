@@ -351,21 +351,15 @@
     ; Stage 3: active scan - the last resort, because it stalls every lisp
     ; thread (see can-scan-range).
     (dbg-warn "can nothing heard, ping scanning")
-    (if (not (is-606-or-newer)) {
-        ; can-ping needs 6.06. can-scan halts LispBM for ~2.5s in one go,
-        ; but on 6.05 it is the only option.
-        (if (try-can-devices (can-scan))
-            (return (finish-can-init original-can-id)))
-    } {
-        ; Low ids first: a controller id is nearly always small, and every
-        ; probe costs ~10ms of frozen evaluator.
-        (var scanned (can-scan-range 0 32))
-        (if (try-can-devices scanned)
-            (return (finish-can-init original-can-id)))
-        (setq scanned (can-scan-range 32 254))
-        (if (try-can-devices scanned)
-            (return (finish-can-init original-can-id)))
-    })
+
+    ; Low ids first: a controller id is nearly always small, and every
+    ; probe costs ~10ms of frozen evaluator.
+    (var scanned (can-scan-range 0 32))
+    (if (try-can-devices scanned)
+        (return (finish-can-init original-can-id)))
+    (setq scanned (can-scan-range 32 254))
+    (if (try-can-devices scanned)
+        (return (finish-can-init original-can-id)))
 
     (return 0)
 })

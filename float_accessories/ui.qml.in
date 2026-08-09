@@ -274,6 +274,68 @@ Item {
     property int loggerRunning: 0
     property string pubmoteVersionStr: "Unknown"
 
+    // ---- Status summary -------------------------------------------------
+    // One source of truth for the header pill and the popover it opens.
+    // Every line reports a severity: 0 ok, 1 warning, 2 error, and -1 for
+    // "nothing to say" - the feature is off, or the value isn't known yet
+    // because the link is down, which the link line already reports.
+    QtObject {
+        id: statusSummary
+
+        readonly property color okColor: "#4caf50"
+        readonly property color warnColor: "#ffb300"
+        readonly property color errColor: "#ef5350"
+        readonly property color idleColor: Qt.rgba(1, 1, 1, 0.45)
+
+        function severityColor(sev) {
+            if (sev < 0) return idleColor
+            return sev === 0 ? okColor : (sev === 1 ? warnColor : errColor)
+        }
+
+        readonly property int linkSeverity: !statusTimeout ? 0 : (lastStatusTime <= 60 ? 1 : 2)
+
+        readonly property int floatSeverity: (floatPackageConnected && !statusTimeout) ? 0
+            : (Math.max(floatPackageLastStatusTime, lastStatusTime) <= 60 ? 1 : 2)
+
+        readonly property int pubmoteSeverity: (!pubmoteEnabled.checked || !isPubmotePaired) ? -1
+            : ((pubmoteConnected && !statusTimeout) ? 0
+            : (Math.max(pubmoteLastStatusTime, lastStatusTime) <= 60 ? 1 : 2))
+
+        readonly property int gnssSeverity: (!gnssEnabled.checked || statusTimeout) ? -1
+            : (gnssFix ? 0 : (gnssAge <= 10 ? 1 : 2))
+
+        readonly property int bmsSeverity: (!bmsEnabled.checked || statusTimeout) ? -1
+            : (bmsConnected ? 0 : 2)
+
+        readonly property int bmsHumSeverity: (!bmsEnabled.checked || !humidityEnabled.checked
+            || statusTimeout || bmsHum <= 0) ? -1
+            : (bmsHum < 65 ? 0 : (bmsHum < 80 ? 1 : 2))
+
+        readonly property int lcmHumSeverity: (!humidityEnabled.checked || statusTimeout || lcmHum <= 0) ? -1
+            : (lcmHum < 65 ? 0 : (lcmHum < 80 ? 1 : 2))
+
+        // Only the link and the float package. A pubmote that isn't paired, a
+        // GNSS still searching or a BMS that isn't fitted are all normal
+        // states for a board that is working perfectly, so colouring the pill
+        // for them would make it amber most of the time and stop meaning
+        // anything. They keep their own coloured line in the popover.
+        readonly property int worstSeverity: Math.max(linkSeverity, floatSeverity)
+
+        readonly property color pillColor: severityColor(worstSeverity)
+
+        // Deliberately no second counter here - the seconds tick every second
+        // and would resize the pill under the user's finger. The popover has
+        // them.
+        readonly property string pillText: {
+            if (statusTimeout) return lastStatusTime <= 60 ? qsTr("Connecting") : qsTr("Disconnected")
+            // Named rather than counted: the float package is now the only
+            // thing besides the link that can colour the pill, so "1 issue"
+            // would be a riddle with one answer.
+            if (floatSeverity > 0) return qsTr("No Float Package")
+            return qsTr("Connected")
+        }
+    }
+
     // Live remote input preview state
     property bool pubmoteInputConnected: false
     property real pubmoteInputJsy: 0
@@ -322,6 +384,14 @@ Item {
         if (arr.length > 400) arr.shift()
         gnssTrack = arr
         gnssTrackCanvas.requestPaint()
+    }
+
+    // Every feature checkbox starts unchecked, so which tabs are worth showing
+    // is only known once the board's settings have landed.
+    onReadConfigChanged: {
+        if (readConfig) {
+            settleTabTimer.restart()
+        }
     }
 
     // Device link lost: clear stale preview data so the joystick and GPS
@@ -379,12 +449,173 @@ Item {
         }
     }
 
+    // ---- Settings ---------------------------------------------------------
+    // The package registers a VESC custom config from its native fa_cfg lib
+    // (conf_custom_add_config), so VESC Tool reads and writes these settings
+    // over its own config transport - the same one it uses for motor and app
+    // config. It even fetches this config by itself on connect. This page
+    // therefore never transfers settings: it reads the values out of the
+    // ConfigParams object and writes them back through customConfigSet.
+    //
+    // Index 1 on the VESC Express. VescIf.customConfigNum() / customConfig(i)
+    // can enumerate them if that ever stops holding.
+    readonly property int faConfigIndex: 1
+    property ConfigParams mCustomConf: VescIf.customConfig(faConfigIndex)
+
+    Connections {
+        target: mCustomConf
+        function onUpdated() {
+            applyConfigFromParams()
+        }
+    }
+
+    // Populate every control from the custom config. VESC Tool fetches
+    // it on connect by itself (a 1 Hz sweep in VescInterface pulls any
+    // config it has not received yet), so this is driven by the ConfigParams
+    // updated() signal rather than by a request from this page.
+    function applyConfigFromParams() {
+            acceptTOS = (mCustomConf.getParamBool("accept_tos")) ? true : false
+            ledEnabled.checked = mCustomConf.getParamBool("led_enabled")
+            bmsEnabled.checked = mCustomConf.getParamBool("bms_enabled")
+            pubmoteEnabled.checked = mCustomConf.getParamBool("pubmote_enabled")
+            ledOn.checked = mCustomConf.getParamBool("led_on")
+            ledHighbeamOn.checked = mCustomConf.getParamBool("led_highbeam_on")
+            ledMode.currentIndex = mCustomConf.getParamEnum("led_mode")
+            ledModeIdle.currentIndex = mCustomConf.getParamEnum("led_mode_idle")
+            ledModeStatus.currentIndex = mCustomConf.getParamEnum("led_mode_status")
+            ledModeStartup.currentIndex = mCustomConf.getParamEnum("led_mode_startup")
+            ledModeButton.currentIndex = mCustomConf.getParamEnum("led_mode_button")
+            ledModeFootpad.currentIndex = mCustomConf.getParamEnum("led_mode_footpad")
+            ledMallGrabEnabled.checked = mCustomConf.getParamBool("led_mall_grab_enabled")
+            ledBrakeLightEnabled.checked = mCustomConf.getParamBool("led_brake_light_enabled")
+            ledBrakeLightMinAmps.value = mCustomConf.getParamDouble("led_brake_light_min_amps")
+            idleTimeout.value = mCustomConf.getParamInt("idle_timeout")
+            idleTimeoutShutoff.value = mCustomConf.getParamInt("idle_timeout_shutoff")
+            ledBrightnessLoader.item.value = mCustomConf.getParamDouble("led_brightness")
+            ledBrightnessHighbeamLoader.item.value = mCustomConf.getParamDouble("led_brightness_highbeam")
+            ledBrightnessIdleLoader.item.value = mCustomConf.getParamDouble("led_brightness_idle")
+            ledBrightnessStatusLoader.item.value = mCustomConf.getParamDouble("led_brightness_status")
+            ledStatusPin.value = mCustomConf.getParamInt("led_status_pin")
+            ledStatusNum.value = mCustomConf.getParamInt("led_status_num")
+            ledStatusType.currentIndex = mCustomConf.getParamEnum("led_status_type")
+            ledStatusReversed.checked = mCustomConf.getParamBool("led_status_reversed")
+            ledFrontPin.value = mCustomConf.getParamInt("led_front_pin")
+            ledFrontNum.value = mCustomConf.getParamInt("led_front_num")
+            ledFrontType.currentIndex = mCustomConf.getParamEnum("led_front_type")
+            ledFrontReversed.checked = mCustomConf.getParamBool("led_front_reversed")
+            var frontTiming = mCustomConf.getParamEnum("led_front_timing")
+            if (frontTiming > 0) {
+                ledFrontTiming.currentIndex = frontTiming - 1
+            }
+            ledRearPin.value = mCustomConf.getParamInt("led_rear_pin")
+            ledRearNum.value = mCustomConf.getParamInt("led_rear_num")
+            ledRearType.currentIndex = mCustomConf.getParamEnum("led_rear_type")
+            ledRearReversed.checked = mCustomConf.getParamBool("led_rear_reversed")
+            var rearTiming = mCustomConf.getParamEnum("led_rear_timing")
+            if (rearTiming > 0) {
+                ledRearTiming.currentIndex = rearTiming - 1
+            }
+            ledButtonPin.value = mCustomConf.getParamInt("led_button_pin")
+            ledButtonStripType.currentIndex = mCustomConf.getParamEnum("led_button_timing") > 0 ? 1 : 0
+            ledFootpadPin.value = mCustomConf.getParamInt("led_footpad_pin")
+            ledFootpadNum.value = mCustomConf.getParamInt("led_footpad_num")
+            ledFootpadType.currentIndex = mCustomConf.getParamEnum("led_footpad_type")
+            ledFootpadReversed.checked = mCustomConf.getParamBool("led_footpad_reversed")
+            var footpadTiming = mCustomConf.getParamEnum("led_footpad_timing")
+            ledFootpadStripType.currentIndex = footpadTiming > 0 ? 1 : 0
+            if (footpadTiming > 0) {
+                ledFootpadTiming.currentIndex = footpadTiming - 1
+            }
+            // Format and display MAC address... need to unpack
+            var unpack = unpackUint32ToBytes(mCustomConf.getParamInt("pubmote_remote_mac_a")).concat(unpackUint32ToBytes(mCustomConf.getParamInt("pubmote_remote_mac_b"))).slice(0,-2)
+            var macAddress = unpack.map(function(token) {
+                return ("0" + Number(token).toString(16)).slice(-2);
+            }).join(":");
+            // pubmote-secret-code 48
+            bmsRs485DIPin.value = mCustomConf.getParamInt("bms_rs485_di_pin")
+            bmsRs485ROPin.value = mCustomConf.getParamInt("bms_rs485_ro_pin")
+            bmsRs485DEREPin.value = mCustomConf.getParamInt("bms_rs485_dere_pin")
+            bmsWakeupPin.value = mCustomConf.getParamInt("bms_wakeup_pin")
+            bmsOverrideSOC.checked = mCustomConf.getParamInt("bms_override_soc")
+            bmsRS485Chip.checked = mCustomConf.getParamInt("bms_rs485_chip")
+            //Need to read and unpack. To set this is also going to be handled in seperate button like tos, pair-pubmote etc.
+            //bmsKeyA.value = mCustomConf.getParamInt("bms_key_a")
+            //bmsKeyB.value = mCustomConf.getParamInt("bms_key_b")
+            //bmsKeyC.value = mCustomConf.getParamInt("bms_key_c")
+            //bmsKeyD.value = mCustomConf.getParamInt("bms_key_d")
+            //bmsCounterA.value = mCustomConf.getParamInt("bms_counter_a")
+            //bmsCounterB.value = mCustomConf.getParamInt("bms_counter_b")
+            //bmsCounterC.value = mCustomConf.getParamInt("bms_counter_c")
+            //bmsCounterD.value = mCustomConf.getParamInt("bms_counter_d")
+            ledLoopDelay.value = mCustomConf.getParamInt("led_loop_delay")
+            bmsLoopDelay.value = mCustomConf.getParamInt("bms_loop_delay")
+            pubmoteLoopDelay.value = mCustomConf.getParamInt("pubmote_loop_delay")
+            canLoopFreq.value = mCustomConf.getParamInt("can_loop_delay")
+            ledStartupTimeout.value = mCustomConf.getParamInt("led_startup_timeout")
+            ledDimOnHighbeamRatioLoader.item.value = mCustomConf.getParamDouble("led_dim_on_highbeam_ratio")
+            bmsType.currentIndex = mCustomConf.getParamInt("bms_type")
+            var statusTiming = mCustomConf.getParamEnum("led_status_timing")
+            ledStatusStripType.currentIndex = statusTiming > 0 ? 1 : 0
+            if (statusTiming > 0) {
+                ledStatusTiming.currentIndex = statusTiming - 1
+            }
+            bmsChargeOnly.checked = mCustomConf.getParamBool("bms_charge_only")
+            ledShowBatteryCharging.checked = mCustomConf.getParamBool("led_show_battery_charging")
+            ledFrontHighbeamPin.value = mCustomConf.getParamInt("led_front_highbeam_pin")
+            ledRearHighbeamPin.value = mCustomConf.getParamInt("led_rear_highbeam_pin")
+            bmsBuffSize.value = mCustomConf.getParamInt("bms_buff_size")
+            ledMaxBrightnessLoader.item.value = mCustomConf.getParamDouble("led_max_brightness")
+            floatPkgSoc.checked = mCustomConf.getParamInt("soc_type") == 0
+            voltageCurveSoc.checked = mCustomConf.getParamInt("soc_type") == 1
+            cellType.currentIndex = mCustomConf.getParamInt("cell_type")
+            ledUpdateNotRunning.checked = mCustomConf.getParamBool("led_update_not_running")
+            logEnabled.checked = mCustomConf.getParamBool("log_enabled")
+            logRate.value = mCustomConf.getParamDouble("log_rate")
+            logAppendGnss.checked = mCustomConf.getParamBool("log_append_gnss")
+            humidityEnabled.checked = mCustomConf.getParamBool("humidity_enabled")
+            humiditySdaPin.value = mCustomConf.getParamInt("humidity_sda_pin")
+            humiditySlcPin.value = mCustomConf.getParamInt("humidity_slc_pin")
+            frontHbMode = mCustomConf.getParamEnum("led_front_highbeam_mode")
+            frontHbPos = unpackHbPos(mCustomConf.getParamInt("led_front_highbeam_pos"))
+            frontHbMin = mCustomConf.getParamDouble("led_front_highbeam_min")
+            frontHbMax = mCustomConf.getParamDouble("led_front_highbeam_max")
+            rearHbMode = mCustomConf.getParamEnum("led_rear_highbeam_mode")
+            rearHbPos = unpackHbPos(mCustomConf.getParamInt("led_rear_highbeam_pos"))
+            rearHbMin = mCustomConf.getParamDouble("led_rear_highbeam_min")
+            rearHbMax = mCustomConf.getParamDouble("led_rear_highbeam_max")
+            gnssEnabled.checked = mCustomConf.getParamBool("gnss_enabled")
+            gnssType.currentIndex = mCustomConf.getParamEnum("gnss_type")
+            gnssRxPin.value = mCustomConf.getParamInt("gnss_rx_pin")
+            gnssTxPin.value = mCustomConf.getParamInt("gnss_tx_pin")
+            gnssUartNum.value = mCustomConf.getParamInt("gnss_uart_num")
+            gnssRateMs.value = mCustomConf.getParamInt("gnss_rate_ms")
+            gnssBaud.value = mCustomConf.getParamInt("gnss_baud")
+
+            // The preset itself is not stored - recognize it from the
+            // loaded values, falling back to Custom.
+            ledFrontStripType.currentIndex = frontTiming > 0
+                ? matchStripPreset(ledFrontNum.value, ledFrontType.currentIndex,
+                                   frontHbMode, frontHbPos, frontHbMin, frontHbMax)
+                : 0
+            ledRearStripType.currentIndex = rearTiming > 0
+                ? matchStripPreset(ledRearNum.value, ledRearType.currentIndex,
+                                   rearHbMode, rearHbPos, rearHbMin, rearHbMax)
+                : 0
+
+            isPubmoteBle = (macAddress === "00:00:00:00:00:00");
+            isPubmotePaired = (mCustomConf.getParamInt("pubmote_remote_mac_a") != -1);
+            pubmoteMacAddress.text = !isPubmotePaired ? "MAC: Not Paired" : (isPubmoteBle ? "Connection: BLE" : "MAC: " + macAddress.toUpperCase());
+            readConfig = true;
+    }
+
     Component.onCompleted: {
         if (VescIf.getLastFwRxParams().hwTypeStr() !== "Custom Module") {
             VescIf.emitMessageDialog("Float Accessories", "Warning: It doesn't look like this is installed on a VESC Express.", false, false)
         }
 
-        sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
+        // Usually already in flight from VESC Tool's own sweep; harmless
+        // if it is, and covers the case where the page outlives a reconnect.
+        mCommands.customConfigGet(faConfigIndex, false)
     }
 
     Timer {
@@ -392,6 +623,7 @@ Item {
         interval: 1000 // Check status every second
         running: true
         repeat: true
+        triggeredOnStart: true
         onTriggered: {
             sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(status)")
             lastStatusTime++
@@ -442,7 +674,7 @@ Item {
             if (remainingTime <= 0) {
                 pairingTimeout = true;
                 sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pair-pubmote -2)");  // Automatically reject if time runs out
-                sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)");
+                mCommands.customConfigGet(faConfigIndex, false)
                 pubmotePairPopup.close();
             }
         }
@@ -534,7 +766,7 @@ Item {
                     Layout.fillWidth: true
                     onClicked: {
                         sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pair-pubmote -2)");  // Reject pairing manually
-                        sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)");
+                        mCommands.customConfigGet(faConfigIndex, false)
                         pubmotePairPopup.close();
                     }
                 }
@@ -547,7 +779,7 @@ Item {
                     onClicked: {
                         if (!pairingTimeout) {
                             sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pair-pubmote -1)");  // Accept pairing
-                            sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)");
+                            mCommands.customConfigGet(faConfigIndex, false)
                             pubmotePairPopup.close();
                         }
                     }
@@ -769,41 +1001,286 @@ Item {
         id: mainLayout
         anchors.fill: parent
         spacing: 10
-        property string primaryTabLabel: ledEnabled.checked || bmsEnabled.checked || logEnabled.checked ? qsTr("Control") : qsTr("Status")
+        // Status used to live on the Control tab and gave it its name when no
+        // feature was on. It is in the header pill now, so with every feature
+        // off that tab holds nothing at all and hides itself.
+        property bool hasControlContent: ledEnabled.checked || bmsEnabled.checked || logEnabled.checked
         property int enabledFeatureCount: ledEnabled.checked + pubmoteEnabled.checked + bmsEnabled.checked + logEnabled.checked + gnssEnabled.checked
 
-        onEnabledFeatureCountChanged: {
-            if (enabledFeatureCount === 0 && tabBar.currentIndex === 1) {
-                tabBar.currentIndex = 0
+        // Control (0) and Config (1) each hide themselves when they have
+        // nothing to show, so keep the selection off a hidden tab. Settings
+        // (2) is always there as the fallback.
+        function settleTabSelection() {
+            // Nothing to settle before a config has ever landed: the tabs are
+            // hidden behind the loading pane, and every feature flag is still
+            // at its unchecked default.
+            if (!readConfig) {
+                return
+            }
+            if (tabBar.currentIndex === 0 && !hasControlContent) {
+                tabBar.currentIndex = enabledFeatureCount > 0 ? 1 : 2
+            } else if (tabBar.currentIndex === 1 && enabledFeatureCount === 0) {
+                tabBar.currentIndex = hasControlContent ? 0 : 2
             }
         }
 
+        // Coalesced rather than settled on each change: a config arrives one
+        // field at a time, and this only moves off tabs that have *become*
+        // invalid. An intermediate state with nothing enabled yet would push
+        // the selection off Control, and the later field that makes Control
+        // valid again would not bring it back - so the page would settle on
+        // the wrong tab. A whole parse is one JS call, so a zero-interval
+        // timer collapses it into a single settle against the final state,
+        // for the config read on connect and for every later re-read.
+        Timer {
+            id: settleTabTimer
+            interval: 0
+            onTriggered: mainLayout.settleTabSelection()
+        }
+
+        onEnabledFeatureCountChanged: settleTabTimer.restart()
+        onHasControlContentChanged: settleTabTimer.restart()
+
         Item {
+            id: headerBar
             Layout.fillWidth: true
             Layout.topMargin: 10
-            implicitHeight: appTitleText.implicitHeight
+            implicitHeight: Math.max(appTitleText.implicitHeight, statusPill.height)
+
+            readonly property real gutter: 10
+            readonly property real pillGap: 8
+
+            // Width the pill wants with its label showing. Measured off
+            // TextMetrics rather than the label itself: the label is hidden
+            // when the pill collapses, so measuring the live item would make
+            // the collapse depend on its own outcome.
+            readonly property real pillFullWidth: pillMetrics.width + 8 + 6 + 20
+
+            // Keeping the title dead centre means reserving the pill's width
+            // on the empty left side too, which on a phone-width window
+            // leaves the title nothing. Drop the pill's label and show just
+            // the dot when both won't fit; the colour still carries the state
+            // and the popover has the words.
+            readonly property bool pillCompact:
+                width > 0 && (width - 2 * (pillFullWidth + gutter + pillGap)) < appTitleText.implicitWidth
+
+            TextMetrics {
+                id: pillMetrics
+                font.pixelSize: 12
+                font.bold: true
+                text: statusSummary.pillText
+            }
 
             Text {
                 id: appTitleText
                 anchors.centerIn: parent
+                width: Math.max(0, parent.width - 2 * (statusPill.width + parent.gutter + parent.pillGap))
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
                 color: Utility.getAppHexColor("lightText")
                 font.pointSize: 20
                 font.bold: true
                 text: "Float Accessories"
             }
 
-            // Opens the About dialog (replaces the old About tab).
-            RoundButton {
+            // Current status at a glance; tap for the full breakdown.
+            Rectangle {
+                id: statusPill
                 anchors.right: parent.right
-                anchors.rightMargin: 10
+                anchors.rightMargin: headerBar.gutter
                 anchors.verticalCenter: parent.verticalCenter
-                implicitWidth: 30
-                implicitHeight: 30
-                padding: 0
-                text: "i"
-                font.pointSize: 13
-                font.bold: true
-                onClicked: aboutDialog.open()
+                height: 26
+                width: headerBar.pillCompact ? height : headerBar.pillFullWidth
+                radius: height / 2
+                color: Qt.rgba(statusSummary.pillColor.r, statusSummary.pillColor.g,
+                               statusSummary.pillColor.b, statusPillMouse.pressed ? 0.30 : 0.16)
+                border.width: 1
+                border.color: Qt.rgba(statusSummary.pillColor.r, statusSummary.pillColor.g,
+                                      statusSummary.pillColor.b, 0.55)
+
+                Behavior on color { ColorAnimation { duration: 150 } }
+
+                RowLayout {
+                    id: pillContent
+                    anchors.centerIn: parent
+                    spacing: 6
+
+                    Rectangle {
+                        Layout.alignment: Qt.AlignVCenter
+                        width: 8
+                        height: 8
+                        radius: 4
+                        color: statusSummary.pillColor
+                    }
+
+                    Text {
+                        Layout.alignment: Qt.AlignVCenter
+                        visible: !headerBar.pillCompact
+                        text: statusSummary.pillText
+                        color: Utility.getAppHexColor("lightText")
+                        font.pixelSize: 12
+                        font.bold: true
+                    }
+                }
+
+                MouseArea {
+                    id: statusPillMouse
+                    anchors.fill: parent
+                    onClicked: statusPopup.opened ? statusPopup.close() : statusPopup.open()
+                }
+
+                Popup {
+                    id: statusPopup
+                    // Right-aligned under the pill, which sits at the right
+                    // edge of the header.
+                    x: statusPill.width - width
+                    y: statusPill.height + 8
+                    width: Math.min(340, container.width - 20)
+                    padding: 14
+                    modal: true
+                    dim: false
+                    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside | Popup.CloseOnReleaseOutside
+
+                    background: Rectangle {
+                        color: Utility.getAppHexColor("darkBackground")
+                        border.color: Qt.rgba(1, 1, 1, 0.18)
+                        border.width: 1
+                        radius: 12
+                    }
+
+                    contentItem: ColumnLayout {
+                        spacing: 6
+
+                        Text {
+                            Layout.fillWidth: true
+                            Layout.bottomMargin: 2
+                            color: Qt.rgba(1, 1, 1, 0.55)
+                            font.pixelSize: 12
+                            font.bold: true
+                            text: qsTr("Status")
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.bottomMargin: 4
+                            height: 1
+                            color: Qt.rgba(1, 1, 1, 0.12)
+                        }
+
+                        Text {
+                            id: lastStatusText
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            color: statusSummary.severityColor(statusSummary.linkSeverity)
+                            text: !statusTimeout ? "Status: Connected" : (lastStatusTime <= 60 ? "Status: Connecting (" + lastStatusTime + "s)" : "Status: Disconnected (" + lastStatusTime + "s)")
+                        }
+
+                        Text {
+                            id: floatPackageStatus
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            property int effectiveTime: Math.max(floatPackageLastStatusTime, lastStatusTime)
+                            color: statusSummary.severityColor(statusSummary.floatSeverity)
+                            text: (floatPackageConnected && !statusTimeout) ? "Float Package: Connected" : (effectiveTime <= 60 ? "Float Package: Connecting (" + effectiveTime + "s)" : "Float Package: Disconnected (" + effectiveTime + "s)")
+                        }
+
+                        Text {
+                            id: pubmoteStatus
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            visible: pubmoteEnabled.checked
+                            property int effectiveTime: Math.max(pubmoteLastStatusTime, lastStatusTime)
+                            color: statusSummary.severityColor(statusSummary.pubmoteSeverity)
+                            text: !isPubmotePaired ? "Pubmote: Not Paired" : ("Pubmote : " + ((pubmoteConnected && !statusTimeout) ? (isPubmoteBle ? "Connected (BLE)" : "Connected (WiFi Channel " + (pubmoteWifiChannel ? pubmoteWifiChannel : "?") + ")") : (effectiveTime <= 60 ? "Connecting (" + effectiveTime + "s)" : "Disconnected (" + effectiveTime + "s)")))
+                        }
+
+                        Text {
+                            id: gnssStatus
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            visible: gnssEnabled.checked
+                            color: statusSummary.severityColor(statusSummary.gnssSeverity)
+                            text: statusTimeout ? "GNSS: Unknown"
+                                : (gnssFix ? "GNSS: Fix (HDOP " + gnssHdop.toFixed(1) + ", " + (gnssSpeed * 3.6).toFixed(1) + " km/h)"
+                                : (gnssAge <= 10 ? "GNSS: Searching (no fix)" : "GNSS: No Signal"))
+                        }
+
+                        Text {
+                            id: bmsStatus
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            color: statusSummary.severityColor(statusSummary.bmsSeverity)
+                            text: statusTimeout ? "BMS: Unknown" : "BMS: " + (bmsConnected ? "Connected" : "Not Connected")
+                            visible: bmsEnabled.checked
+                        }
+
+                        Text {
+                            id: bmsHumStatus
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            color: statusSummary.severityColor(statusSummary.bmsHumSeverity)
+                            text: "BMS Humidity: " + ((!statusTimeout && bmsHum > 0) ? bmsHum + "%" : "Unknown")
+                            visible: bmsEnabled.checked && humidityEnabled.checked
+                        }
+
+                        Text {
+                            id: bmsHumTempStatus
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            color: (!statusTimeout && bmsHum > 0) ? statusSummary.okColor : statusSummary.idleColor
+                            text: "BMS Temp: " + ((!statusTimeout && bmsHum > 0) ? Math.floor((bmsHumTemp * 1.8 + 32) * 100)/100 +"F " + bmsHumTemp + "C" : "Unknown")
+                            visible: bmsEnabled.checked
+                        }
+
+                        Text {
+                            id: humidityStatus
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            color: statusSummary.severityColor(statusSummary.lcmHumSeverity)
+                            text: "LCM Humidity: " + ((!statusTimeout && lcmHum > 0) ? lcmHum + "%" : "Unknown")
+                            visible: humidityEnabled.checked
+                        }
+
+                        Text {
+                            id: humidityTempStatus
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            color: (!statusTimeout && lcmHum > 0) ? statusSummary.okColor : statusSummary.idleColor
+                            text: "LCM Temp: " + ((!statusTimeout && lcmHum > 0) ? Math.floor((lcmHumTemp * 1.8 + 32) * 100)/100 +"F " + lcmHumTemp + "C" : "Unknown")
+                            visible: humidityEnabled.checked
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.topMargin: 6
+                            height: 1
+                            color: Qt.rgba(1, 1, 1, 0.12)
+                        }
+
+                        // The About dialog used to hang off an "i" button in
+                        // the header; it lives here now so the header carries
+                        // the pill alone. Styled explicitly rather than left
+                        // to the ambient Button style, which renders almost
+                        // invisibly against this popup's background.
+                        ItemDelegate {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 34
+                            padding: 0
+
+                            contentItem: Text {
+                                text: qsTr("About Float Accessories")
+                                color: Utility.getAppHexColor("lightText")
+                                verticalAlignment: Text.AlignVCenter
+                                font.pixelSize: 13
+                            }
+
+                            onClicked: {
+                                statusPopup.close()
+                                aboutDialog.open()
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -858,15 +1335,51 @@ Item {
             }
         }
 
+        // Until the board's settings have landed there is nothing worth
+        // showing: every feature checkbox is still unchecked, so the tabs
+        // appear and disappear underneath the user as the config arrives.
+        // readConfig is a one-way latch - once we have seen a config the tabs
+        // stay put through any later dropout, and this never comes back.
+        Item {
+            id: loadingPane
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            visible: !readConfig
+
+            ColumnLayout {
+                anchors.centerIn: parent
+                spacing: 16
+
+                BusyIndicator {
+                    Layout.alignment: Qt.AlignHCenter
+                    running: loadingPane.visible
+                }
+
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    horizontalAlignment: Text.AlignHCenter
+                    color: Qt.rgba(1, 1, 1, 0.6)
+                    text: !statusTimeout ? qsTr("Loading settings…")
+                        : (lastStatusTime <= 60 ? qsTr("Connecting to the board…")
+                        : qsTr("No connection to the board"))
+                }
+            }
+        }
+
         TabBar {
             id: tabBar
             Layout.fillWidth: true
+            visible: readConfig
 
             TabButton {
                 id: primaryTabButton
-                text: mainLayout.primaryTabLabel
+                text: qsTr("Control")
                 font.capitalization: Font.MixedCase
+                enabled: mainLayout.hasControlContent
+                visible: mainLayout.hasControlContent
                 Layout.fillWidth: true
+                Layout.maximumWidth: mainLayout.hasControlContent ? Number.POSITIVE_INFINITY : 0
+                width: mainLayout.hasControlContent ? undefined : 0
                 contentItem: Text {
                     text: primaryTabButton.text
                     font: primaryTabButton.font
@@ -1032,6 +1545,7 @@ Item {
             id: stackLayout
             Layout.fillWidth: true
             Layout.fillHeight: true
+            visible: readConfig
             currentIndex: tabBar.currentIndex
 
             // LED Control Tab
@@ -1340,90 +1854,6 @@ Item {
                     }
 
                     GroupBox {
-                        title: "Status"
-                        Layout.fillWidth: true
-                        background: Loader { sourceComponent: cardBg }
-                        label: Loader { sourceComponent: cardTitleLabel; onLoaded: item.title = "Status" }
-                        topPadding: cardStyle.topPadding; leftPadding: cardStyle.sidePadding; rightPadding: cardStyle.sidePadding; bottomPadding: cardStyle.bottomPadding
-
-                        ColumnLayout {
-                            anchors.fill: parent
-                            spacing: 6
-
-                            // Status Texts Column
-                            Text {
-                                id: lastStatusText
-                                Layout.fillWidth: true
-                                color: !statusTimeout ? "green" : (lastStatusTime <= 60 ? "yellow" : "red")
-                                text: !statusTimeout ? "Status: Connected" : (lastStatusTime <= 60 ? "Status: Connecting (" + lastStatusTime + "s)" : "Status: Disconnected (" + lastStatusTime + "s)")
-                            }
-
-                            Text {
-                                id: floatPackageStatus
-                                Layout.fillWidth: true
-                                property int effectiveTime: Math.max(floatPackageLastStatusTime, lastStatusTime)
-                                color: (floatPackageConnected && !statusTimeout) ? "green" : (effectiveTime <= 60 ? "yellow" : "red")
-                                text: (floatPackageConnected && !statusTimeout) ? "Float Package: Connected" : (effectiveTime <= 60 ? "Float Package: Connecting (" + effectiveTime + "s)" : "Float Package: Disconnected (" + effectiveTime + "s)")
-                            }
-
-                            Text {
-                                id: pubmoteStatus
-                                Layout.fillWidth: true
-                                visible: pubmoteEnabled.checked
-                                property int effectiveTime: Math.max(pubmoteLastStatusTime, lastStatusTime)
-                                color: !isPubmotePaired ? Utility.getAppHexColor("lightText") : ((pubmoteConnected && !statusTimeout) ? "green" : (effectiveTime <= 60 ? "yellow" : "red"))
-                                text: !isPubmotePaired ? "Pubmote: Not Paired" : ("Pubmote : " + ((pubmoteConnected && !statusTimeout) ? (isPubmoteBle ? "Connected (BLE)" : "Connected (WiFi Channel " + (pubmoteWifiChannel ? pubmoteWifiChannel : "?") + ")") : (effectiveTime <= 60 ? "Connecting (" + effectiveTime + "s)" : "Disconnected (" + effectiveTime + "s)")))
-                            }
-
-                            Text {
-                                id: gnssStatus
-                                Layout.fillWidth: true
-                                visible: gnssEnabled.checked
-                                color: statusTimeout ? "grey" : (gnssFix ? "green" : (gnssAge <= 10 ? "yellow" : "red"))
-                                text: statusTimeout ? "GNSS: Unknown"
-                                    : (gnssFix ? "GNSS: Fix (HDOP " + gnssHdop.toFixed(1) + ", " + (gnssSpeed * 3.6).toFixed(1) + " km/h)"
-                                    : (gnssAge <= 10 ? "GNSS: Searching (no fix)" : "GNSS: No Signal"))
-                            }
-
-                            Text {
-                                id: bmsStatus
-                                Layout.fillWidth: true
-                                color: (!statusTimeout && bmsConnected) ? "green" : "red"
-                                text: statusTimeout ? "BMS: Unknown" : "BMS: " + (bmsConnected ? "Connected" : "Not Connected")
-                                visible: bmsEnabled.checked
-                            }
-                            Text {
-                                id: bmsHumStatus
-                                Layout.fillWidth: true
-                                color: (!statusTimeout && bmsHum > 0) ? (bmsHum < 65 ? "green" : bmsHum < 80 ? "orange" : "red") : "grey"
-                                text: "BMS Humidity: " + ((!statusTimeout && bmsHum > 0) ? bmsHum + "%" : "Unknown")
-                                visible: bmsEnabled.checked && humidityEnabled.checked
-                            }
-                            Text {
-                                id: bmsHumTempStatus
-                                Layout.fillWidth: true
-                                color: (!statusTimeout && bmsHum > 0) ? "green" : "grey"
-                                text: "BMS Temp: " + ((!statusTimeout && bmsHum > 0) ? Math.floor((bmsHumTemp * 1.8 + 32) * 100)/100 +"F " + bmsHumTemp + "C" : "Unknown")
-                                visible: bmsEnabled.checked
-                            }
-                            Text {
-                                id: humidityStatus
-                                Layout.fillWidth: true
-                                color: (!statusTimeout && lcmHum > 0) ? (lcmHum < 65 ? "green" : lcmHum < 80 ? "orange" : "red") : "grey"
-                                text: "LCM Humidity: " + ((!statusTimeout && lcmHum > 0) ? lcmHum + "%" : "Unknown")
-                                visible: humidityEnabled.checked
-                            }
-                            Text {
-                                id: humidityTempStatus
-                                Layout.fillWidth: true
-                                color: (!statusTimeout && lcmHum > 0) ? "green" : "grey"
-                                text: "LCM Temp: " + ((!statusTimeout && lcmHum > 0) ? Math.floor((lcmHumTemp * 1.8 + 32) * 100)/100 +"F " + lcmHumTemp + "C" : "Unknown")
-                                visible: humidityEnabled.checked
-                            }
-                        }
-                    }
-
-                    GroupBox {
                         title: "BMS Info"
                         Layout.fillWidth: true
                         visible: bmsEnabled.checked && bmsConnected === 1
@@ -1455,6 +1885,7 @@ Item {
                             }
                         }
                     }
+
                     }
                 }
             }
@@ -2595,7 +3026,7 @@ Item {
                                     onClicked: {
                                         if (isPubmotePaired) {
                                             sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pair-pubmote -2)");
-                                            sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)");
+                                            mCommands.customConfigGet(faConfigIndex, false)
                                         } else {
                                             pubmotePairPopup.open();  // Open the confirmation popup with the random code
                                         }
@@ -3601,11 +4032,11 @@ Item {
                         termsPopup.visible = true
                     }
 
-                    console.log(makeArgStr())
-                    sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(recv-config " + makeArgStr() + " )")
+                    writeConfigToParams()
+                    mCommands.customConfigSet(faConfigIndex, mCustomConf)
 
                     //sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(save-config)")
-                    //sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
+                    //mCommands.customConfigGet(faConfigIndex, false)
                 }
             }
 
@@ -3623,7 +4054,7 @@ Item {
                     MenuItem {
                         text: "Read Config"
                         onClicked: {
-                            sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
+                            mCommands.customConfigGet(faConfigIndex, false)
                         }
                     }
 
@@ -3631,7 +4062,7 @@ Item {
                         text: "Restore Default Config"
                         onClicked: {
                             sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(restore-config)")
-                            sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
+                            mCommands.customConfigGet(faConfigIndex, false)
                         }
                     }
                 }
@@ -3787,94 +4218,96 @@ Item {
         sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(recv-control " + makeControlArgStr() + " )")
     }
 
-    function makeArgStr() {
-        return [
-            ledEnabled.checked * 1,
-            bmsEnabled.checked * 1,
-            pubmoteEnabled.checked * 1,
-            ledOn.checked * 1,
-            ledHighbeamOn.checked * 1,
-            ledMode.currentIndex,
-            ledModeIdle.currentIndex,
-            ledModeStatus.currentIndex,
-            ledModeStartup.currentIndex,
-            ledModeButton.currentIndex,
-            ledModeFootpad.currentIndex,
-            ledMallGrabEnabled.checked * 1,
-            ledBrakeLightEnabled.checked * 1,
-            parseFloat(ledBrakeLightMinAmps.value).toFixed(2),
-            idleTimeout.value,
-            idleTimeoutShutoff.value,
-            parseFloat(ledBrightnessLoader.item.value).toFixed(2),
-            parseFloat(ledBrightnessHighbeamLoader.item.value).toFixed(2),
-            parseFloat(ledBrightnessIdleLoader.item.value).toFixed(2),
-            parseFloat(ledBrightnessStatusLoader.item.value).toFixed(2),
-            ledStatusPin.value,
-            ledStatusNum.value,
-            ledStatusType.currentIndex,
-            ledStatusReversed.checked * 1,
-            ledFrontPin.value,
-            ledFrontNum.value,
-            ledFrontType.currentIndex,
-            ledFrontReversed.checked * 1,
-            ledFrontStripType.currentIndex > 0 ? ledFrontTiming.currentIndex + 1 : 0,
-            ledRearPin.value,
-            ledRearNum.value,
-            ledRearType.currentIndex,
-            ledRearReversed.checked * 1,
-            ledRearStripType.currentIndex > 0 ? ledRearTiming.currentIndex + 1 : 0,
-            ledButtonPin.value,
-            ledButtonStripType.currentIndex > 0 ? 1 : 0,
-            ledFootpadPin.value,
-            ledFootpadNum.value,
-            ledFootpadType.currentIndex,
-            ledFootpadReversed.checked * 1,
-            ledFootpadStripType.currentIndex > 0 ? ledFootpadTiming.currentIndex + 1 : 0,
-            bmsRs485DIPin.value,
-            bmsRs485ROPin.value,
-            bmsRs485DEREPin.value,
-            bmsWakeupPin.value,
-            bmsOverrideSOC.checked * 1,
-            bmsRS485Chip.checked * 1,
-            ledLoopDelay.value,
-            bmsLoopDelay.value,
-            pubmoteLoopDelay.value,
-            canLoopFreq.value,
-            ledStartupTimeout.value,
-            parseFloat(ledDimOnHighbeamRatioLoader.item.value).toFixed(2),
-            bmsType.currentIndex,
-            ledStatusStripType.currentIndex > 0 ? ledStatusTiming.currentIndex + 1 : 0,
-            bmsChargeOnly.checked * 1,
-            ledShowBatteryCharging.checked * 1,
-            ledFrontHighbeamPin.value,
-            ledRearHighbeamPin.value,
-            bmsBuffSize.value,
-            parseFloat(ledMaxBrightnessLoader.item.value).toFixed(2),
-            voltageCurveSoc.checked * 1,
-            cellType.value,
-            ledUpdateNotRunning.checked * 1,
-            logEnabled.checked * 1,
-            logRate.value,
-            logAppendGnss.checked * 1,
-            humidityEnabled.checked * 1,
-            humiditySdaPin.value,
-            humiditySlcPin.value,
-            frontHbMode,
-            packHbPos(frontHbPos),
-            frontHbMin.toFixed(2),
-            frontHbMax.toFixed(2),
-            rearHbMode,
-            packHbPos(rearHbPos),
-            rearHbMin.toFixed(2),
-            rearHbMax.toFixed(2),
-            gnssEnabled.checked * 1,
-            gnssType.currentIndex,
-            gnssRxPin.value,
-            gnssTxPin.value,
-            gnssUartNum.value,
-            gnssRateMs.value,
-            gnssBaud.value
-        ].join(" ");
+    // Push every control into the custom config. The transfer is VESC
+    // Tool's job from here: customConfigSet writes it, fa_cfg persists it
+    // to eeprom and flags it changed, and the lisp config-watch-loop picks
+    // that up and applies it.
+    function writeConfigToParams() {
+        mCustomConf.updateParamBool("led_enabled", ledEnabled.checked)
+        mCustomConf.updateParamBool("bms_enabled", bmsEnabled.checked)
+        mCustomConf.updateParamBool("pubmote_enabled", pubmoteEnabled.checked)
+        mCustomConf.updateParamBool("led_on", ledOn.checked)
+        mCustomConf.updateParamBool("led_highbeam_on", ledHighbeamOn.checked)
+        mCustomConf.updateParamEnum("led_mode", ledMode.currentIndex)
+        mCustomConf.updateParamEnum("led_mode_idle", ledModeIdle.currentIndex)
+        mCustomConf.updateParamEnum("led_mode_status", ledModeStatus.currentIndex)
+        mCustomConf.updateParamEnum("led_mode_startup", ledModeStartup.currentIndex)
+        mCustomConf.updateParamEnum("led_mode_button", ledModeButton.currentIndex)
+        mCustomConf.updateParamEnum("led_mode_footpad", ledModeFootpad.currentIndex)
+        mCustomConf.updateParamBool("led_mall_grab_enabled", ledMallGrabEnabled.checked)
+        mCustomConf.updateParamBool("led_brake_light_enabled", ledBrakeLightEnabled.checked)
+        mCustomConf.updateParamDouble("led_brake_light_min_amps", parseFloat(ledBrakeLightMinAmps.value).toFixed(2))
+        mCustomConf.updateParamInt("idle_timeout", idleTimeout.value)
+        mCustomConf.updateParamInt("idle_timeout_shutoff", idleTimeoutShutoff.value)
+        mCustomConf.updateParamDouble("led_brightness", parseFloat(ledBrightnessLoader.item.value).toFixed(2))
+        mCustomConf.updateParamDouble("led_brightness_highbeam", parseFloat(ledBrightnessHighbeamLoader.item.value).toFixed(2))
+        mCustomConf.updateParamDouble("led_brightness_idle", parseFloat(ledBrightnessIdleLoader.item.value).toFixed(2))
+        mCustomConf.updateParamDouble("led_brightness_status", parseFloat(ledBrightnessStatusLoader.item.value).toFixed(2))
+        mCustomConf.updateParamInt("led_status_pin", ledStatusPin.value)
+        mCustomConf.updateParamInt("led_status_num", ledStatusNum.value)
+        mCustomConf.updateParamEnum("led_status_type", ledStatusType.currentIndex)
+        mCustomConf.updateParamBool("led_status_reversed", ledStatusReversed.checked)
+        mCustomConf.updateParamInt("led_front_pin", ledFrontPin.value)
+        mCustomConf.updateParamInt("led_front_num", ledFrontNum.value)
+        mCustomConf.updateParamEnum("led_front_type", ledFrontType.currentIndex)
+        mCustomConf.updateParamBool("led_front_reversed", ledFrontReversed.checked)
+        mCustomConf.updateParamEnum("led_front_timing", ledFrontStripType.currentIndex > 0 ? ledFrontTiming.currentIndex + 1 : 0)
+        mCustomConf.updateParamInt("led_rear_pin", ledRearPin.value)
+        mCustomConf.updateParamInt("led_rear_num", ledRearNum.value)
+        mCustomConf.updateParamEnum("led_rear_type", ledRearType.currentIndex)
+        mCustomConf.updateParamBool("led_rear_reversed", ledRearReversed.checked)
+        mCustomConf.updateParamEnum("led_rear_timing", ledRearStripType.currentIndex > 0 ? ledRearTiming.currentIndex + 1 : 0)
+        mCustomConf.updateParamInt("led_button_pin", ledButtonPin.value)
+        mCustomConf.updateParamEnum("led_button_timing", ledButtonStripType.currentIndex > 0 ? 1 : 0)
+        mCustomConf.updateParamInt("led_footpad_pin", ledFootpadPin.value)
+        mCustomConf.updateParamInt("led_footpad_num", ledFootpadNum.value)
+        mCustomConf.updateParamEnum("led_footpad_type", ledFootpadType.currentIndex)
+        mCustomConf.updateParamBool("led_footpad_reversed", ledFootpadReversed.checked)
+        mCustomConf.updateParamEnum("led_footpad_timing", ledFootpadStripType.currentIndex > 0 ? ledFootpadTiming.currentIndex + 1 : 0)
+        mCustomConf.updateParamInt("bms_rs485_di_pin", bmsRs485DIPin.value)
+        mCustomConf.updateParamInt("bms_rs485_ro_pin", bmsRs485ROPin.value)
+        mCustomConf.updateParamInt("bms_rs485_dere_pin", bmsRs485DEREPin.value)
+        mCustomConf.updateParamInt("bms_wakeup_pin", bmsWakeupPin.value)
+        mCustomConf.updateParamInt("bms_override_soc", bmsOverrideSOC.checked * 1)
+        mCustomConf.updateParamInt("bms_rs485_chip", bmsRS485Chip.checked * 1)
+        mCustomConf.updateParamInt("led_loop_delay", ledLoopDelay.value)
+        mCustomConf.updateParamInt("bms_loop_delay", bmsLoopDelay.value)
+        mCustomConf.updateParamInt("pubmote_loop_delay", pubmoteLoopDelay.value)
+        mCustomConf.updateParamInt("can_loop_delay", canLoopFreq.value)
+        mCustomConf.updateParamInt("led_startup_timeout", ledStartupTimeout.value)
+        mCustomConf.updateParamDouble("led_dim_on_highbeam_ratio", parseFloat(ledDimOnHighbeamRatioLoader.item.value).toFixed(2))
+        mCustomConf.updateParamInt("bms_type", bmsType.currentIndex)
+        mCustomConf.updateParamEnum("led_status_timing", ledStatusStripType.currentIndex > 0 ? ledStatusTiming.currentIndex + 1 : 0)
+        mCustomConf.updateParamBool("bms_charge_only", bmsChargeOnly.checked)
+        mCustomConf.updateParamBool("led_show_battery_charging", ledShowBatteryCharging.checked)
+        mCustomConf.updateParamInt("led_front_highbeam_pin", ledFrontHighbeamPin.value)
+        mCustomConf.updateParamInt("led_rear_highbeam_pin", ledRearHighbeamPin.value)
+        mCustomConf.updateParamInt("bms_buff_size", bmsBuffSize.value)
+        mCustomConf.updateParamDouble("led_max_brightness", parseFloat(ledMaxBrightnessLoader.item.value).toFixed(2))
+        mCustomConf.updateParamInt("soc_type", voltageCurveSoc.checked * 1)
+        mCustomConf.updateParamInt("cell_type", cellType.value)
+        mCustomConf.updateParamBool("led_update_not_running", ledUpdateNotRunning.checked)
+        mCustomConf.updateParamBool("log_enabled", logEnabled.checked)
+        mCustomConf.updateParamDouble("log_rate", logRate.value)
+        mCustomConf.updateParamBool("log_append_gnss", logAppendGnss.checked)
+        mCustomConf.updateParamBool("humidity_enabled", humidityEnabled.checked)
+        mCustomConf.updateParamInt("humidity_sda_pin", humiditySdaPin.value)
+        mCustomConf.updateParamInt("humidity_slc_pin", humiditySlcPin.value)
+        mCustomConf.updateParamEnum("led_front_highbeam_mode", frontHbMode)
+        mCustomConf.updateParamInt("led_front_highbeam_pos", packHbPos(frontHbPos))
+        mCustomConf.updateParamDouble("led_front_highbeam_min", frontHbMin.toFixed(2))
+        mCustomConf.updateParamDouble("led_front_highbeam_max", frontHbMax.toFixed(2))
+        mCustomConf.updateParamEnum("led_rear_highbeam_mode", rearHbMode)
+        mCustomConf.updateParamInt("led_rear_highbeam_pos", packHbPos(rearHbPos))
+        mCustomConf.updateParamDouble("led_rear_highbeam_min", rearHbMin.toFixed(2))
+        mCustomConf.updateParamDouble("led_rear_highbeam_max", rearHbMax.toFixed(2))
+        mCustomConf.updateParamBool("gnss_enabled", gnssEnabled.checked)
+        mCustomConf.updateParamEnum("gnss_type", gnssType.currentIndex)
+        mCustomConf.updateParamInt("gnss_rx_pin", gnssRxPin.value)
+        mCustomConf.updateParamInt("gnss_tx_pin", gnssTxPin.value)
+        mCustomConf.updateParamInt("gnss_uart_num", gnssUartNum.value)
+        mCustomConf.updateParamInt("gnss_rate_ms", gnssRateMs.value)
+        mCustomConf.updateParamInt("gnss_baud", gnssBaud.value)
     }
 
     // Property to track enabled tabs
@@ -3976,148 +4409,14 @@ Item {
                 // Read settings on initial message
                 wasConnected = true
                 if (!readConfig) {
-                    sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-config)")
+                    mCommands.customConfigGet(faConfigIndex, false)
                 }
                 // The verbose-logging mask is not part of the config, so it
                 // has to be asked for separately.
                 sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(send-debug)")
             }
 
-            if (str.startsWith("settings")) {
-                var tokens = str.split(" ")
-                acceptTOS = (Number(tokens[4])) ? true : false
-                ledEnabled.checked = Number(tokens[5])
-                bmsEnabled.checked = Number(tokens[6])
-                pubmoteEnabled.checked = Number(tokens[7])
-                ledOn.checked = Number(tokens[8])
-                ledHighbeamOn.checked = Number(tokens[9])
-                ledMode.currentIndex = Number(tokens[10])
-                ledModeIdle.currentIndex = Number(tokens[11])
-                ledModeStatus.currentIndex = Number(tokens[12])
-                ledModeStartup.currentIndex = Number(tokens[13])
-                ledModeButton.currentIndex = Number(tokens[14])
-                ledModeFootpad.currentIndex = Number(tokens[15])
-                ledMallGrabEnabled.checked = Number(tokens[16])
-                ledBrakeLightEnabled.checked = Number(tokens[17])
-                ledBrakeLightMinAmps.value = Number(tokens[18])
-                idleTimeout.value = Number(tokens[19])
-                idleTimeoutShutoff.value = Number(tokens[20])
-                ledBrightnessLoader.item.value = Number(tokens[21])
-                ledBrightnessHighbeamLoader.item.value = Number(tokens[22])
-                ledBrightnessIdleLoader.item.value = Number(tokens[23])
-                ledBrightnessStatusLoader.item.value = Number(tokens[24])
-                ledStatusPin.value = Number(tokens[25])
-                ledStatusNum.value = Number(tokens[26])
-                ledStatusType.currentIndex = Number(tokens[27])
-                ledStatusReversed.checked = Number(tokens[28])
-                ledFrontPin.value = Number(tokens[29])
-                ledFrontNum.value = Number(tokens[30])
-                ledFrontType.currentIndex = Number(tokens[31])
-                ledFrontReversed.checked = Number(tokens[32])
-                var frontTiming = Number(tokens[33])
-                if (frontTiming > 0) {
-                    ledFrontTiming.currentIndex = frontTiming - 1
-                }
-                ledRearPin.value = Number(tokens[34])
-                ledRearNum.value = Number(tokens[35])
-                ledRearType.currentIndex = Number(tokens[36])
-                ledRearReversed.checked = Number(tokens[37])
-                var rearTiming = Number(tokens[38])
-                if (rearTiming > 0) {
-                    ledRearTiming.currentIndex = rearTiming - 1
-                }
-                ledButtonPin.value = Number(tokens[39])
-                ledButtonStripType.currentIndex = Number(tokens[40]) > 0 ? 1 : 0
-                ledFootpadPin.value = Number(tokens[41])
-                ledFootpadNum.value = Number(tokens[42])
-                ledFootpadType.currentIndex = Number(tokens[43])
-                ledFootpadReversed.checked = Number(tokens[44])
-                var footpadTiming = Number(tokens[45])
-                ledFootpadStripType.currentIndex = footpadTiming > 0 ? 1 : 0
-                if (footpadTiming > 0) {
-                    ledFootpadTiming.currentIndex = footpadTiming - 1
-                }
-                // Format and display MAC address... need to unpack
-                var unpack = unpackUint32ToBytes(Number(tokens[46])).concat(unpackUint32ToBytes(Number(tokens[47]))).slice(0,-2)
-                var macAddress = unpack.map(function(token) {
-                    return ("0" + Number(token).toString(16)).slice(-2);
-                }).join(":");
-                // pubmote-secret-code 48
-                bmsRs485DIPin.value = Number(tokens[49])
-                bmsRs485ROPin.value = Number(tokens[50])
-                bmsRs485DEREPin.value = Number(tokens[51])
-                bmsWakeupPin.value = Number(tokens[52])
-                bmsOverrideSOC.checked = Number(tokens[53])
-                bmsRS485Chip.checked = Number(tokens[54])
-                //Need to read and unpack. To set this is also going to be handled in seperate button like tos, pair-pubmote etc.
-                //bmsKeyA.value = Number(tokens[55])
-                //bmsKeyB.value = Number(tokens[56])
-                //bmsKeyC.value = Number(tokens[57])
-                //bmsKeyD.value = Number(tokens[58])
-                //bmsCounterA.value = Number(tokens[59])
-                //bmsCounterB.value = Number(tokens[60])
-                //bmsCounterC.value = Number(tokens[61])
-                //bmsCounterD.value = Number(tokens[62])
-                ledLoopDelay.value = Number(tokens[63])
-                bmsLoopDelay.value = Number(tokens[64])
-                pubmoteLoopDelay.value = Number(tokens[65])
-                canLoopFreq.value = Number(tokens[66])
-                ledStartupTimeout.value = Number(tokens[67])
-                ledDimOnHighbeamRatioLoader.item.value = Number(tokens[68])
-                bmsType.currentIndex = Number(tokens[69])
-                var statusTiming = Number(tokens[70])
-                ledStatusStripType.currentIndex = statusTiming > 0 ? 1 : 0
-                if (statusTiming > 0) {
-                    ledStatusTiming.currentIndex = statusTiming - 1
-                }
-                bmsChargeOnly.checked = Number(tokens[71])
-                ledShowBatteryCharging.checked = Number(tokens[72])
-                ledFrontHighbeamPin.value = Number(tokens[73])
-                ledRearHighbeamPin.value = Number(tokens[74])
-                bmsBuffSize.value = Number(tokens[75])
-                ledMaxBrightnessLoader.item.value = Number(tokens[76])
-                floatPkgSoc.checked = Number(tokens[77]) == 0
-                voltageCurveSoc.checked = Number(tokens[77]) == 1
-                cellType.currentIndex = Number(tokens[78])
-                ledUpdateNotRunning.checked = Number(tokens[79])
-                logEnabled.checked = Number(tokens[80])
-                logRate.value = Number(tokens[81])
-                logAppendGnss.checked = Number(tokens[82])
-                humidityEnabled.checked = Number(tokens[83])
-                humiditySdaPin.value = Number(tokens[84])
-                humiditySlcPin.value = Number(tokens[85])
-                frontHbMode = Number(tokens[86])
-                frontHbPos = unpackHbPos(Number(tokens[87]))
-                frontHbMin = Number(tokens[88])
-                frontHbMax = Number(tokens[89])
-                rearHbMode = Number(tokens[90])
-                rearHbPos = unpackHbPos(Number(tokens[91]))
-                rearHbMin = Number(tokens[92])
-                rearHbMax = Number(tokens[93])
-                gnssEnabled.checked = Number(tokens[94])
-                gnssType.currentIndex = Number(tokens[95])
-                gnssRxPin.value = Number(tokens[96])
-                gnssTxPin.value = Number(tokens[97])
-                gnssUartNum.value = Number(tokens[98])
-                gnssRateMs.value = Number(tokens[99])
-                gnssBaud.value = Number(tokens[100])
-
-                // The preset itself is not stored - recognize it from the
-                // loaded values, falling back to Custom.
-                ledFrontStripType.currentIndex = frontTiming > 0
-                    ? matchStripPreset(ledFrontNum.value, ledFrontType.currentIndex,
-                                       frontHbMode, frontHbPos, frontHbMin, frontHbMax)
-                    : 0
-                ledRearStripType.currentIndex = rearTiming > 0
-                    ? matchStripPreset(ledRearNum.value, ledRearType.currentIndex,
-                                       rearHbMode, rearHbPos, rearHbMin, rearHbMax)
-                    : 0
-
-                isPubmoteBle = (macAddress === "00:00:00:00:00:00");
-                isPubmotePaired = (Number(tokens[46]) != -1);
-                pubmoteMacAddress.text = !isPubmotePaired ? "MAC: Not Paired" : (isPubmoteBle ? "Connection: BLE" : "MAC: " + macAddress.toUpperCase());
-                readConfig = true;
-            } else if (str.startsWith("debug ")) {
+            if (str.startsWith("debug ")) {
                 // parseInt rather than Number: it stops at the trailing NUL
                 // the lisp string carries instead of returning NaN.
                 applyDebugMask(parseInt(str.split(" ")[1], 10) || 0)
