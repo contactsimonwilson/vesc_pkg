@@ -220,6 +220,7 @@
         (if (eq (ix r 0) 'exit-error)
             (dbg-err (str-merge "led init " (to-str (ix r 1))))
             (dbg DBG-LED (str-merge "led init " (str-from-n idx "%d") " segs")))
+        (ext-esp_led-fps 60)
         (if (>= seg-status 0) (ext-esp_led-seg-reverse seg-status led-status-reversed))
         (if (>= seg-front 0) (ext-esp_led-seg-reverse seg-front led-front-reversed))
         (if (>= seg-rear 0) (ext-esp_led-seg-reverse seg-rear led-rear-reversed))
@@ -266,7 +267,7 @@
         ; one left over from another mode cannot recolor the gauge
         (ext-esp_led-seg-pal seg 0)
         (ext-esp_led-seg-col seg 0)
-        (ext-esp_led-seg-level seg level)
+        (ext-esp_led-seg-fx-val seg level)
         (ext-esp_led-seg-spd seg spd)
         (ext-esp_led-seg-bri seg bri)
     })
@@ -300,8 +301,8 @@
             (seg-apply tail-seg FX-SOLID 0 0x0000FF00u32 32 tail-bri)
         })
         ((= mode 5) { ; Rainbow
-            (seg-apply head-seg FX-RAINBOW 0 0 32 head-bri)
-            (seg-apply tail-seg FX-RAINBOW 0 0 32 tail-bri)
+            (seg-apply head-seg FX-RAINBOW PAL-RGBW 0 32 head-bri)
+            (seg-apply tail-seg FX-RAINBOW PAL-RGBW 0 32 tail-bri)
         })
         ((= mode 6) { ; Strobe
             (seg-apply head-seg FX-STROBE 0 0xFFFFFFFFu32 128 head-bri)
@@ -324,8 +325,8 @@
             (seg-apply tail-seg FX-FELONY 0 0 128 tail-bri)
         })
         ((= mode 11) { ; Trans pride (slow rainbow sweep)
-            (seg-apply head-seg FX-RAINBOW 0 0 8 head-bri)
-            (seg-apply tail-seg FX-RAINBOW 0 0 8 tail-bri)
+            (seg-apply head-seg FX-RAINBOW PAL-RGBW 0 8 head-bri)
+            (seg-apply tail-seg FX-RAINBOW PAL-RGBW 0 8 tail-bri)
         })
         (t {
             (seg-apply head-seg FX-SOLID 0 0xFFFFFFFFu32 32 head-bri)
@@ -340,7 +341,7 @@
             (if (>= seg-status 0) {
                 (ext-esp_led-seg-fx seg-status FX-GAUGE)
                 (ext-esp_led-seg-col seg-status 0x000000FFu32)
-                (ext-esp_led-seg-level seg-status (cond ((= switch-state 3) 255) ((or (= switch-state 1) (= switch-state 2)) 128) (t 16)))
+                (ext-esp_led-seg-fx-val seg-status (cond ((= switch-state 3) 255) ((or (= switch-state 1) (= switch-state 2)) 128) (t 16)))
                 (ext-esp_led-seg-spd seg-status 0)
                 (ext-esp_led-seg-bri seg-status bri)
             })
@@ -360,7 +361,7 @@
                 (if (>= seg-status 0) {
                     (ext-esp_led-seg-fx seg-status FX-GAUGE)
                     (ext-esp_led-seg-col seg-status (cond ((> duty 0.8) 0x00FF0000u32) ((> duty 0.6) 0x00FFFF00u32) (t 0x0000FF00u32)))
-                    (ext-esp_led-seg-level seg-status (to-i (* 255.0 duty)))
+                    (ext-esp_led-seg-fx-val seg-status (to-i (* 255.0 duty)))
                     (ext-esp_led-seg-spd seg-status 0)
                     (ext-esp_led-seg-bri seg-status bri)
                 })
@@ -371,7 +372,7 @@
             (if (>= seg-status 0) {
                 (ext-esp_led-seg-fx seg-status FX-GAUGE)
                 (ext-esp_led-seg-col seg-status 0x0000FFFFu32)
-                (ext-esp_led-seg-level seg-status (if (= switch-state 3) 255 128))
+                (ext-esp_led-seg-fx-val seg-status (if (= switch-state 3) 255 128))
                 (ext-esp_led-seg-spd seg-status 0)
                 (ext-esp_led-seg-bri seg-status bri)
             })
@@ -385,12 +386,12 @@
 (defun update-aux-leds (bri) {
     (if (>= seg-footpad 0) {
         ; mode 0: rainbow
-        (seg-apply seg-footpad FX-RAINBOW 0 0 32 bri)
+        (seg-apply seg-footpad FX-RAINBOW PAL-RGBW 0 32 bri)
     })
     (if (>= seg-button 0) {
         (if (= led-mode-button 1)
             (seg-gauge seg-button (to-i (* 255.0 battery-percent-remaining)) (if bms-is-charging 32 0) bri)
-            (seg-apply seg-button FX-RAINBOW 0 0 32 bri)
+            (seg-apply seg-button FX-RAINBOW PAL-RGBW 0 32 bri)
         )
     })
 })
@@ -613,8 +614,8 @@
                         (seg-apply seg-rear FX-BREATHE 0 0x000000FFu32 64 rear-bri)
                     })
                     ((and (> last-activity-sec idle-timeout-shutoff) (< can-last-activity-time-sec 1) (!= state 5)) {
-                        (seg-apply seg-front FX-SOLID 0 0 32 0)
-                        (seg-apply seg-rear FX-SOLID 0 0 32 0)
+                        (seg-apply seg-front FX-OFF 0 0 32 0)
+                        (seg-apply seg-rear FX-OFF 0 0 32 0)
                     })
                     ((and (or (= current-led-mode 1) (= led-mall-grab 1)) (< can-last-activity-time-sec 1)) {
                         (seg-gauge seg-front (to-i (* 255.0 battery-percent-remaining)) (if bms-is-charging 32 0) front-bri)
@@ -643,10 +644,10 @@
                 (setq dbg-led-t3 (secs-since 0))
             }{
                 ; LEDs off: blank the drive/aux strips, keep the status bar
-                (seg-apply seg-front FX-SOLID 0 0 32 0)
-                (seg-apply seg-rear FX-SOLID 0 0 32 0)
-                (seg-apply seg-footpad FX-SOLID 0 0 32 0)
-                (seg-apply seg-button FX-SOLID 0 0 32 0)
+                (seg-apply seg-front FX-OFF 0 0 32 0)
+                (seg-apply seg-rear FX-OFF 0 0 32 0)
+                (seg-apply seg-footpad FX-OFF 0 0 32 0)
+                (seg-apply seg-button FX-OFF 0 0 32 0)
             })
         })
 
