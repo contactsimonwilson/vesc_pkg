@@ -53,9 +53,10 @@ Item {
             readonly property int defPal: 1
                 readonly property int defSpeed: 32
                     readonly property int defSize: 8
-                        readonly property int defLevel: 255
+                        readonly property int defFxVal: 255
                             readonly property int defBri: 255
                             readonly property bool defAutoWhite: false
+                            readonly property bool defReverse: false
 
                                 // One object per strip; array index == segment index on the device.
                                 property var strips: []
@@ -125,8 +126,8 @@ Item {
                                     pin: pin, len: len, ledType: type, timing: timing, offset: offset,
                                     fx: defFx, pal: defPal,
                                     w: 0, r: 255, g: 0, b: 0,
-                                    speed: defSpeed, size: defSize, level: defLevel, bri: defBri,
-                                    autoWhite: defAutoWhite
+                                    speed: defSpeed, size: defSize, fxVal: defFxVal, bri: defBri,
+                                    autoWhite: defAutoWhite, reverse: defReverse
                                 }
                             }
 
@@ -211,10 +212,12 @@ Item {
                                     if (s.pal !== defPal) c.push("(ext-esp_led-seg-pal " + i + " " + s.pal + ")")
                                 if (s.speed !== defSpeed) c.push("(ext-esp_led-seg-spd " + i + " " + s.speed + ")")
                                     if (s.size !== defSize) c.push("(ext-esp_led-seg-size " + i + " " + s.size + ")")
-                                if (s.level !== defLevel) c.push("(ext-esp_led-seg-level " + i + " " + s.level + ")")
+                                if (s.fxVal !== defFxVal) c.push("(ext-esp_led-seg-fx-val " + i + " " + s.fxVal + ")")
                                     if (s.bri !== defBri) c.push("(ext-esp_led-seg-bri " + i + " " + s.bri + ")")
                                 if (s.autoWhite !== defAutoWhite)
                                     c.push("(ext-esp_led-seg-auto-white " + i + " " + (s.autoWhite ? 1 : 0) + ")")
+                                if (s.reverse !== defReverse)
+                                    c.push("(ext-esp_led-seg-reverse " + i + " " + (s.reverse ? 1 : 0) + ")")
                                 var col = packColor(s.w, s.r, s.g, s.b)
                                 if (col !== 0) c.push("(ext-esp_led-seg-col " + i + " " + col + ")")
                                 if (c.length > 0) {
@@ -298,9 +301,10 @@ Item {
                                                 // d is a plain JS object, so QML cannot see fields
                                                 // being mutated inside it and bindings on d.<field>
                                                 // never re-evaluate. Anything the UI has to react to
-                                                // live needs a real property like this one, kept in
-                                                // step with d.ledType by the type combo.
+                                                // live needs a real property like these, kept in step
+                                                // with d by whatever control owns the value.
                                                 property int ledType: d.ledType
+                                                property int fx: d.fx
                                                 contentWidth: availableWidth
                                                 clip: true
 
@@ -400,9 +404,10 @@ Item {
                                                                 id: fxCombo
                                                                 model: ["Off", "Custom", "Solid", "Breathe", "Chase", "Rainbow", "Sparkle", "Comet", "Gauge", "Strobe", "Larson", "Felony", "Theater", "Wipe", "Waves", "Candle", "Heartbeat", "Turn signal"]
                                                                 Layout.fillWidth: true
-                                                                currentIndex: page.d.fx
+                                                                currentIndex: page.fx
                                                                 onActivated: {
-                                                                    page.d.fx = currentIndex
+                                                                    page.d.fx = currentIndex // model, replayed by applyStructure
+                                                                    page.fx = currentIndex   // notifies this combo's binding
                                                                     sendCode("(ext-esp_led-seg-fx " + page.seg + " " + currentIndex + ")")
                                                                 }
                                                             }
@@ -467,22 +472,32 @@ Item {
                                                 }
                                             }
 
-                                            Label { text: "Level" }
+                                            Label { text: "Effect value" }
                                             Loader {
                                                 sourceComponent: customValueSlider
                                                 Layout.fillWidth: true
                                                 onLoaded: {
-                                                    item.from = 0; item.to = 255; item.value = page.d.level
+                                                    item.from = 0; item.to = 255; item.value = page.d.fxVal
                                                     item.valueChanged.connect(function() {
-                                                    page.d.level = Math.round(item.value)
-                                                    queueSend("lvl" + page.seg,
-                                                    "(ext-esp_led-seg-level " + page.seg + " " + item.value.toFixed(0) + ")")
+                                                    page.d.fxVal = Math.round(item.value)
+                                                    queueSend("fxval" + page.seg,
+                                                    "(ext-esp_led-seg-fx-val " + page.seg + " " + item.value.toFixed(0) + ")")
                                                 })
                                                 item.interactionReleased.connect(function() {
-                                                queueSend("lvl" + page.seg,
-                                                "(ext-esp_led-seg-level " + page.seg + " " + item.value.toFixed(0) + ")")
+                                                queueSend("fxval" + page.seg,
+                                                "(ext-esp_led-seg-fx-val " + page.seg + " " + item.value.toFixed(0) + ")")
                                             })
                                         }
+                                    }
+
+                                    // One slider whose meaning comes from the effect, so
+                                    // the label cannot say what it does on its own.
+                                    Label { text: "" }
+                                    Label {
+                                        text: "What this does depends on the effect: the fill on Gauge, the mode on Turn signal (0 off, then left / right / hazard x solid / blink / sweep, 1-9). Other effects ignore it."
+                                        font.italic: true
+                                        wrapMode: Text.WordWrap
+                                        Layout.fillWidth: true
                                     }
 
                                     // Per-strip brightness. The firmware multiplies this by
@@ -503,6 +518,18 @@ Item {
                                         queueSend("bri" + page.seg,
                                         "(ext-esp_led-seg-bri " + page.seg + " " + item.value.toFixed(0) + ")")
                                     })
+                                }
+                            }
+
+                            // Mirrors the effect pixels as they are packed for the
+                            // wire, so moving effects run the other way - for strips
+                            // mounted with the data-in end at the far side.
+                            Label { text: "Reverse" }
+                            Switch {
+                                checked: page.d.reverse
+                                onToggled: {
+                                    page.d.reverse = checked
+                                    sendCode("(ext-esp_led-seg-reverse " + page.seg + " " + (checked ? 1 : 0) + ")")
                                 }
                             }
 
@@ -626,8 +653,10 @@ Item {
                 RowLayout {
                     Layout.fillWidth: true
 
-                    // Presets set a solid colour; the firmware ext also
-                    // forces the solid effect, so keep fx in sync.
+                    // Presets set a solid colour and switch to the solid
+                    // effect. ext-esp_led-seg-col only sets the colour - it is
+                    // ext-esp_led-col-rgb, the all-segment variant, that also
+                    // forces the effect - so the effect is sent explicitly.
                     Repeater {
                         model: [
                         { name: "Red", cr: 255, cg: 0, cb: 0 },
@@ -644,7 +673,7 @@ Item {
                                 page.d.b = modelData.cb
                                 page.d.w = 0 // the presets are RGB
                                 page.d.fx = fxSolid
-                                fxCombo.currentIndex = fxSolid
+                                page.fx = fxSolid // moves the combo via its binding
                                 page.refreshPreview()
                                 sendCode("(ext-esp_led-seg-col " + page.seg + " " +
                                 packColor(0, modelData.cr, modelData.cg, modelData.cb) + ")")
@@ -659,7 +688,7 @@ Item {
                         // effect, without disturbing its colour.
                         onClicked: {
                             page.d.fx = 0
-                            fxCombo.currentIndex = 0
+                            page.fx = 0
                             sendCode("(ext-esp_led-seg-fx " + page.seg + " 0)")
                         }
                     }
@@ -720,6 +749,26 @@ Component {
                 queueSend("fade", "(ext-esp_led-fade " + item.value.toFixed(0) + ")")
             })
         }
+    }
+
+    // Smoothness / CPU trade only: the firmware advances animations by
+    // elapsed real time, so effects run at the same speed whatever this
+    // is set to. Long strips may not reach a high setting - the loop
+    // paces itself against the work it actually did.
+    Label { text: "Frame rate" }
+    Loader {
+        sourceComponent: customValueSlider
+        Layout.fillWidth: true
+        onLoaded: {
+            item.from = 5; item.to = 120; item.value = 30
+            item.formatValue = function(val) { return val.toFixed(0) + " fps" }
+            item.valueChanged.connect(function() {
+            queueSend("fps", "(ext-esp_led-fps " + item.value.toFixed(0) + ")")
+        })
+        item.interactionReleased.connect(function() {
+        queueSend("fps", "(ext-esp_led-fps " + item.value.toFixed(0) + ")")
+    })
+}
     }
 
 }

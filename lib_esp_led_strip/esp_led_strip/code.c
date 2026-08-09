@@ -23,11 +23,13 @@
 // animates, applies brightness / auto-white and pushes pixels.
 // The hardware path is the firmware rgbled driver through the C interface,
 // addressed by pin: strips are registered with rgbled_init at start and each
-// frame's changed groups are pushed with rgbled_update(pin, ...). The
-// firmware pools the chip's RMT TX channels behind those calls (2 on the
-// ESP32-C3/C6, 4 on the S3), so any number of pin groups works - strips that
-// fit the pool stay lit continuously, and beyond that they share channels
-// and are refreshed in turn.
+// frame's changed groups are pushed with rgbled_update(pin, ...). Behind
+// those calls the firmware drives every strip from ONE RMT TX channel,
+// re-routed to the target pin through the GPIO matrix per update. Any number
+// of pin groups works - the strips latch and hold their last frame - but the
+// transmissions serialise on that channel, so a frame's wire time is the sum
+// over every group that changed, not the longest one. That is the ceiling a
+// high ext-esp_led-fps runs into first on multi-pin setups.
 //
 // Native-lib constraints shape the implementation: on the RISC-V targets
 // the lib executes in place from flash, so there are no writable globals -
@@ -44,25 +46,56 @@ HEADER
 
 #define esp_led_SEG_MAX     8
 #define esp_led_OV_MAX      8   // overlay pixels per segment
-#define esp_led_RENDER_MS   33  // ~30 fps
 
-// Frames without changes before a keepalive retransmit (~2 s): static
-// content keeps the data line quiet, but a pixel corrupted by line noise
-// still heals shortly.
-#define esp_led_REFRESH_FRAMES 60
+// Frame pacing. The render loop holds a real cadence - it sleeps the frame
+// time minus the work it just did, so that work is absorbed into the frame
+// instead of added to it - and advances the effect phase by measured elapsed
+// time. Animations therefore keep real-world speed both when the frame rate
+// is retuned with ext-esp_led-fps and when the loop falls behind.
+#define esp_led_FRAME_MS_DEF   33   // ~30 fps, the default target
+#define esp_led_FRAME_MS_MIN   5    // 200 fps ceiling - the lisp VM, wifi and
+                                    // bluetooth share this core on the C3/C6
+#define esp_led_FRAME_MS_MAX   200  // 5 fps floor
+
+// Phase is counted in units per esp_led_PHASE_REF_MS of real time, so a
+// segment's spd keeps the meaning it had when the loop was a fixed 33 ms
+// frame: at the default speed an effect looks exactly as it did before the
+// frame rate became configurable. Also the reference for the fade rate.
+#define esp_led_PHASE_REF_MS   33
+
+// Speed a segment starts at, and the fallback for spd 0 - which reads as
+// "unset" rather than "stopped", so a segment that was never given a speed
+// still animates.
+#define esp_led_SPD_DEF        32
+
+// Brightness easing rate the lib starts at: the fraction of the remaining gap
+// closed per esp_led_PHASE_REF_MS, in 32nds. 15/32 is ~47%, i.e. ~0.2 s to
+// settle. See ease_u8; 0 would make brightness changes instant.
+#define esp_led_FADE_DEF       15
+
+// A late frame advances the phase by the time it actually missed, so
+// animations hold real-world time instead of slowing down. Past this the
+// jump is capped: a long stall (a blocked transmission, the lisp VM hogging
+// the core) should resume the animation, not teleport it.
+#define esp_led_CATCHUP_MS_MAX 250
+
+// Milliseconds without changes before a keepalive retransmit: static content
+// keeps the data line quiet, but a pixel corrupted by line noise still heals
+// shortly. Timed rather than counted in frames so it stays ~2 s at any rate.
+#define esp_led_REFRESH_MS 2000
 
 // Effects. Lisp consumers mirror these ids in esp_led_defs.lisp - update that
 // file when this enum changes, or the wrong effect is selected silently.
 enum {
 	FX_OFF = 0,   // all pixels off (ignores the colour) - the zeroed default
 	FX_CUSTOM,    // consumer-supplied pixels (ext-esp_led-seg-pixel / -pixels)
-	FX_SOLID,     // steady colour
+	FX_SOLID,     // full strip of the segment colour (or palette if colour = 0)
 	FX_BREATHE,
 	FX_CHASE,
 	FX_RAINBOW,
 	FX_SPARKLE,
 	FX_COMET,
-	FX_GAUGE,     // fill by the level param; battery gradient when color = 0
+	FX_GAUGE,     // fill by the fx_val param; battery gradient when color = 0
 	FX_STROBE,    // hard on/off flash
 	FX_LARSON,    // bouncing eye with tail (knight rider)
 	FX_FELONY,    // halves alternate red/blue
@@ -71,10 +104,10 @@ enum {
 	FX_WAVES,     // overlapping slow waves (pacifica-like)
 	FX_CANDLE,    // warm uneven flicker
 	FX_HEARTBEAT, // thump-thump double pulse
-	FX_TURN,      // turn signal - the `level` param selects the mode (see below)
+	FX_TURN,      // turn signal - the fx_val param selects the mode (see below)
 };
 
-// Turn-signal mode, carried in seg.level for the FX_TURN effect. The strip is
+// Turn-signal mode, carried in seg.fx_val for the FX_TURN effect. The strip is
 // split in half; a mode selects a side (left half / right half / both) and a
 // style (solid = steady, blink = flash on/off, sweep = fill centre -> edge).
 // Laid out so (mode-1)/3 gives the side and (mode-1)%3 gives the style.
@@ -107,7 +140,8 @@ enum {
 
 // A palette is 4 anchor colors, interpolated across pos 0..255. The
 // PAL_<NAME> tag on each row is the canonical id; gen_defs.py mirrors it into
-// esp_led_defs.lisp, with the row's position as the value. Keep tags unique
+// esp_led_defs.lisp as the row's position + 1, because seg_palette_at()
+// reserves 0 for the segment's custom palette (see there). Keep tags unique
 // and the rows in id order.
 typedef struct { uint32_t c[4]; } palette_t;
 static const palette_t palettes[] = {
@@ -147,10 +181,14 @@ typedef struct {
 	uint8_t bri_cur;   // eased current brightness
 	uint8_t spd;       // 0..255
 	uint8_t size;      // chase head / comet tail length
-	uint8_t level;     // gauge fill 0..255
+	// Per-effect parameter: what it means is defined by the effect reading
+	// it - the gauge fill 0..255, the turn-signal mode (see the TURN_ enum).
+	// Effects that want no parameter simply ignore it.
+	uint8_t fx_val;
 	uint16_t offset;   // pixel offset within the pin's chain
 	uint32_t color;    // packed 0xWWRRGGBB
-	uint32_t phase;    // frames since effect start
+	uint32_t phase;    // effect position, advanced by elapsed real time
+	uint8_t phase_rem; // sub-unit phase carried between frames (render_thd)
 
 	// Overlay pixels: physical LEDs at fixed positions inside the strip
 	// (e.g. embedded highbeams) that show ov_color at ov_bri while the
@@ -188,7 +226,7 @@ typedef struct {
 	uint16_t chain_len;  // pixels
 	uint8_t *txbuf[2];   // chain_len * colors bytes each
 	uint8_t cur;         // buffer rendered and transmitted this frame
-	uint16_t quiet;      // frames since the last transmission
+	uint32_t quiet_ms;   // ms since the last transmission
 } group_t;
 
 typedef struct {
@@ -204,7 +242,9 @@ typedef struct {
 
 	uint8_t master_bri;  // target
 	uint8_t master_cur;  // eased current
-	uint8_t fade;        // gap fraction closed per frame in 32nds, 0 = instant
+	uint8_t fade;        // gap fraction closed per esp_led_PHASE_REF_MS in
+	                     // 32nds, 0 = instant
+	uint16_t frame_ms;   // target frame time, set by ext-esp_led-fps
 
 	uint16_t buf_len;    // pixels the work buffer holds
 	uint32_t *work;      // packed 0xWWRRGGBB, buf_len entries
@@ -270,13 +310,26 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 	uint32_t ph = s->phase;
 	int size = s->size ? s->size : 8;
 
+	// Animation rates. The base is one cycle per ~4 s at the default speed
+	// of 32, i.e. 4096 phase units - each effect divides ph so its own
+	// period (512 for a triangle, 256 for a uint8_t wrap) lands on that.
+	// Switching effects without touching the speed then behaves. Two groups
+	// deliberately sit off the base:
+	//   - Effects modelling something real keep that thing's rate: the
+	//     heartbeat is ~1 s (about 60 bpm), the turn blink ~1.9 Hz (road
+	//     signals run 1-2 Hz), strobe and felony stay a hard flash.
+	//   - Effects that travel the strip (chase, comet, larson, wipe, turn
+	//     sweep) have a period proportional to the LED count, so they hold
+	//     pixel velocity rather than crossing time - otherwise a long strip
+	//     would run its chase several times faster than a short one.
+	//
 	// Effects take their color from the color param; a color of 0 means
 	// "from the palette" (cycling with the animation phase). Rainbow always
 	// renders the palette, solid keeps 0 = black so segments can be
 	// blanked, and gauge uses its battery gradient for 0.
 	switch (s->fx) {
 	case FX_BREATHE: {
-		uint32_t b = triangle(ph / 32);
+		uint32_t b = triangle(ph / 4);
 		uint32_t c0 = s->color ? s->color : seg_palette_at(s,(uint8_t)(ph / 128));
 		uint32_t c = scale(c0, b);
 		for (int i = 0; i < n; i++) work[i] = c;
@@ -296,7 +349,7 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 
 	case FX_RAINBOW: {
 		for (int i = 0; i < n; i++) {
-			uint8_t pos = (uint8_t)((i * 255) / (n ? n : 1) + ph / 32);
+			uint8_t pos = (uint8_t)((i * 255) / (n ? n : 1) + ph / 16);
 			work[i] = seg_palette_at(s,pos);
 		}
 	} break;
@@ -304,10 +357,11 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 	case FX_SPARKLE: {
 		for (int i = 0; i < n; i++) {
 			// Deterministic twinkle from phase + index
-			uint32_t h = ((uint32_t)i * 2654435761u) ^ ((ph / 32) * 40503u);
+			uint32_t h = ((uint32_t)i * 2654435761u) ^ ((ph / 128) * 40503u);
 			uint32_t c = s->color ? s->color
 				: seg_palette_at(s,(uint8_t)(h >> 16));
-			work[i] = ((h >> 8) & 0xFF) < ((uint32_t)(s->spd ? s->spd : 32) / 2 + 1) ? c : 0;
+			work[i] = ((h >> 8) & 0xFF)
+				< ((uint32_t)(s->spd ? s->spd : esp_led_SPD_DEF) / 2 + 1) ? c : 0;
 		}
 	} break;
 
@@ -323,14 +377,14 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 	} break;
 
 	case FX_GAUGE: {
-		// Fill the first level/255 of the strip. Fill color: the segment
+		// Fill the first fx_val/255 of the strip. Fill color: the segment
 		// color if set; else the palette as a gradient along the strip,
 		// revealed by the fill; else (color 0, palette 0) a battery-style
 		// gradient - red when nearly empty, green when full. spd > 0
 		// pulses the fill (e.g. while charging).
-		int lit = (n * s->level + 254) / 255;
-		if (s->level > 0 && lit < 1) lit = 1;
-		uint32_t b = s->spd ? 140 + triangle(ph / 32) * 115 / 255
+		int lit = (n * s->fx_val + 254) / 255;
+		if (s->fx_val > 0 && lit < 1) lit = 1;
+		uint32_t b = s->spd ? 140 + triangle(ph / 8) * 115 / 255
 			: 255;
 		if (!s->color && s->pal) {
 			for (int i = 0; i < n; i++) {
@@ -343,10 +397,10 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 		uint32_t c;
 		if (s->color) {
 			c = s->color;
-		} else if (s->level < 51) { // < 20%: red
+		} else if (s->fx_val < 51) { // < 20%: red
 			c = 0xFF0000;
 		} else {
-			uint32_t g = ((uint32_t)s->level * 255) / 204; // level/0.8
+			uint32_t g = ((uint32_t)s->fx_val * 255) / 204; // fx_val/0.8
 			if (g > 255) g = 255;
 			c = pack(255 - g, g, 0, 0);
 		}
@@ -415,9 +469,9 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 		// floor so the strip shimmers instead of blinking.
 		for (int i = 0; i < n; i++) {
 			uint32_t p = ((uint32_t)i * 255) / (uint32_t)n;
-			uint32_t w1 = triangle(p * 2 + ph / 32);
-			uint32_t w2 = triangle(p * 3 + 170 + 1024 - ph / 48);
-			uint32_t w3 = triangle(p + 85 + ph / 80);
+			uint32_t w1 = triangle(p * 2 + ph / 8);
+			uint32_t w2 = triangle(p * 3 + 170 + 1024 - ph / 12);
+			uint32_t w3 = triangle(p + 85 + ph / 20);
 			uint32_t c0 = s->color ? s->color
 				: seg_palette_at(s,(uint8_t)((w1 + w3) / 2));
 			work[i] = scale(c0, 64 + (w2 * 191) / 255);
@@ -443,7 +497,7 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 
 	case FX_HEARTBEAT: {
 		// Double pulse: strong thump, short gap, weaker thump, rest
-		uint32_t cyc = (ph / 16) & 511;
+		uint32_t cyc = (ph / 2) & 511;
 		uint32_t b = 0;
 		if (cyc < 96) {
 			b = 255 - (cyc * 255) / 96;
@@ -458,11 +512,11 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 	} break;
 
 	case FX_TURN: {
-		// Turn signal. seg.level selects side + style (see the TURN_* enum);
+		// Turn signal. seg.fx_val selects side + style (see the TURN_* enum);
 		// the strip is split at the midpoint. Colour is the segment colour, or
 		// amber when none is set. Blank whenever off or the mode is invalid.
 		for (int i = 0; i < n; i++) work[i] = 0;
-		int mode = s->level;
+		int mode = s->fx_val;
 		if (mode < TURN_LEFT_SOLID || mode > TURN_HAZARD_SWEEP) {
 			break;
 		}
@@ -478,7 +532,7 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 			if (do_left)  for (int i = 0; i < half; i++) work[i] = c;
 			if (do_right) for (int i = half; i < n; i++) work[i] = c;
 		} else if (style == 1) {   // blink
-			if ((ph / 64) & 1) {
+			if ((ph / 256) & 1) {
 				if (do_left)  for (int i = 0; i < half; i++) work[i] = c;
 				if (do_right) for (int i = half; i < n; i++) work[i] = c;
 			}
@@ -514,18 +568,27 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 		break;
 
 	case FX_SOLID:
-	default:
-		for (int i = 0; i < n; i++) work[i] = s->color;
-		break;
+	default: {
+		uint32_t c = s->color ? s->color
+			: seg_palette_at(s,(uint8_t)(ph / 128));
+		for (int i = 0; i < n; i++) work[i] = c;
+	} break;
 	}
 }
 
 // ---- Render thread ------------------------------------------------------
 
-// Move cur toward target proportionally: close fade/32 of the remaining
-// gap per frame (at least 1), so large changes track quickly while the
-// tail of the fade stays smooth. 0 = jump immediately.
-static uint8_t ease_u8(uint8_t cur, uint8_t target, uint8_t fade) {
+// Move cur toward target proportionally: close fade/32 of the remaining gap
+// per esp_led_PHASE_REF_MS of real time (at least 1 per frame), so large
+// changes track quickly while the tail of the fade stays smooth. Scaled by
+// the elapsed time like the effect phase, so a fade takes the same wall-clock
+// time at any frame rate. 0 = jump immediately.
+//
+// The 1-step floor is what guarantees progress, and it is per frame: at very
+// high frame rates the last few counts of a gap close faster than the rate
+// asks. That only ever shortens the tail of a fade, never stalls it.
+static uint8_t ease_u8(uint8_t cur, uint8_t target, uint8_t fade,
+	uint32_t elapsed) {
 	if (fade == 0) {
 		return target;
 	}
@@ -534,7 +597,8 @@ static uint8_t ease_u8(uint8_t cur, uint8_t target, uint8_t fade) {
 		return cur;
 	}
 	int mag = d > 0 ? d : -d;
-	int step = (mag * fade) / 32;
+	int step = (int)(((uint32_t)mag * fade * elapsed)
+		/ (32u * esp_led_PHASE_REF_MS));
 	if (step < 1) step = 1;
 	if (step > mag) step = mag;
 	return d > 0 ? cur + step : cur - step;
@@ -613,14 +677,23 @@ static void render_seg(esp_led_t *st, seg_t *s) {
 
 static void render_thd(void *arg) {
 	esp_led_t *st = (esp_led_t*)arg;
+	systime_t prev = VESC_IF->system_time_ticks();
 
 	while (!VESC_IF->should_terminate()) {
+		systime_t start = VESC_IF->system_time_ticks();
+		uint32_t elapsed = (uint32_t)(start - prev);
+		prev = start;
+		if (elapsed > esp_led_CATCHUP_MS_MAX) {
+			elapsed = esp_led_CATCHUP_MS_MAX;
+		}
+
 		// Ease brightness toward the targets, once per frame.
 		VESC_IF->mutex_lock(st->lock);
-		st->master_cur = ease_u8(st->master_cur, st->master_bri, st->fade);
+		st->master_cur = ease_u8(st->master_cur, st->master_bri, st->fade,
+			elapsed);
 		for (int i = 0; i < st->seg_count; i++) {
 			seg_t *s = &st->seg[i];
-			s->bri_cur = ease_u8(s->bri_cur, s->bri, st->fade);
+			s->bri_cur = ease_u8(s->bri_cur, s->bri, st->fade, elapsed);
 		}
 		VESC_IF->mutex_unlock(st->lock);
 
@@ -641,7 +714,10 @@ static void render_thd(void *arg) {
 					}
 					// Accumulate speed so speed changes take effect
 					// in place, without moving the animation position.
-					s->phase += s->spd ? s->spd : 32;
+					uint32_t spd = s->spd ? s->spd : esp_led_SPD_DEF;
+					uint32_t inc = spd * elapsed + s->phase_rem;
+					s->phase += inc / esp_led_PHASE_REF_MS;
+					s->phase_rem = (uint8_t)(inc % esp_led_PHASE_REF_MS);
 					any = true;
 				}
 			}
@@ -655,13 +731,13 @@ static void render_thd(void *arg) {
 			// transmission so the comparison stays against the wire state.
 			bool send = false;
 			if (any) {
-				if (g->quiet >= esp_led_REFRESH_FRAMES
+				if (g->quiet_ms >= esp_led_REFRESH_MS
 					|| memcmp(g->txbuf[0], g->txbuf[1], (size_t)tx_bytes) != 0) {
 					send = true;
-					g->quiet = 0;
+					g->quiet_ms = 0;
 					g->cur ^= 1;
-				} else if (g->quiet < 0xFFFF) {
-					g->quiet++;
+				} else {
+					g->quiet_ms += elapsed;
 				}
 			}
 			VESC_IF->mutex_unlock(st->lock);
@@ -675,7 +751,10 @@ static void render_thd(void *arg) {
 			}
 		}
 
-		VESC_IF->sleep_ms(esp_led_RENDER_MS);
+		// Sleep until the next frame, but at least 1 ms to avoid a busy loop
+		uint32_t frame_ms = st->frame_ms;
+		uint32_t work = (uint32_t)(VESC_IF->system_time_ticks() - start);
+		VESC_IF->sleep_ms(work < frame_ms ? frame_ms - work : 1);
 	}
 }
 
@@ -748,11 +827,12 @@ static lbm_value ext_seg_def(lbm_value *args, lbm_uint argn) {
 	s->pal = 1; // Spectrum (0 is the custom palette, empty by default)
 	s->bri = 255;
 	s->bri_cur = 255;
-	s->spd = 32;
+	s->spd = esp_led_SPD_DEF;
 	s->size = 8;
-	s->level = 255;
+	s->fx_val = 255;
 	s->color = 0;
 	s->phase = 0;
+	s->phase_rem = 0;
 	s->ov_count = 0;
 	s->ov_color = 0;
 	s->ov_bri = 0;
@@ -873,7 +953,7 @@ static lbm_value ext_init(lbm_value *args, lbm_uint argn) {
 			st->group[s->group].cur = 0;
 			// Force the first frame out even if it renders all-black
 			// (both buffers start zeroed and would compare equal)
-			st->group[s->group].quiet = 0xFFFF;
+			st->group[s->group].quiet_ms = esp_led_REFRESH_MS;
 		} else {
 			if (st->group[s->group].colors != colors) {
 				VESC_IF->lbm_set_error_reason(
@@ -935,19 +1015,33 @@ static lbm_value ext_init(lbm_value *args, lbm_uint argn) {
 		}
 	}
 
+	int registered = 0;
+	bool led_ok = true;
+
 	if (alloc_ok) {
 		st->buf_len = max_len;
 		st->seg_count = n;
-		// Register each pin group as a strip so the firmware can bind RMT
-		// channels (dedicated while they fit, shared beyond that).
+		// Register each pin group as a strip so the firmware can bind the LED driver to that pin
 		for (int gi = 0; gi < st->group_count; gi++) {
-			VESC_IF->rgbled_init(st->group[gi].pin, st->group[gi].timing);
+			if (!VESC_IF->rgbled_init(st->group[gi].pin,
+					st->group[gi].timing)) {
+				VESC_IF->printf("esp_led: strip init failed on pin %d",
+					st->group[gi].pin);
+				led_ok = false;
+				break;
+			}
+			registered++;
 		}
-		st->thread = VESC_IF->spawn(render_thd, 3072, "esp_led_render", st);
-		alloc_ok = st->thread != NULL;
+		if (led_ok) {
+			st->thread = VESC_IF->spawn(render_thd, 3072, "esp_led_render", st);
+			alloc_ok = st->thread != NULL;
+		}
 	}
 
-	if (!alloc_ok) {
+	if (!alloc_ok || !led_ok) {
+		for (int gi = 0; gi < registered; gi++) {
+			VESC_IF->rgbled_deinit(st->group[gi].pin);
+		}
 		if (st->work) { VESC_IF->free(st->work); st->work = NULL; }
 		for (int gi = 0; gi < st->group_count; gi++) {
 			for (int b = 0; b < 2; b++) {
@@ -960,6 +1054,11 @@ static lbm_value ext_init(lbm_value *args, lbm_uint argn) {
 		st->group_count = 0;
 		st->seg_count = 0;
 		st->buf_len = 0;
+		if (!led_ok) {
+			VESC_IF->lbm_set_error_reason(
+				"Could not start a strip - check the pin numbers");
+			return VESC_IF->lbm_enc_sym_eerror;
+		}
 		return VESC_IF->lbm_enc_sym_merror;
 	}
 
@@ -974,6 +1073,15 @@ static void esp_led_stop(esp_led_t *st) {
 	}
 	VESC_IF->request_terminate(st->thread);
 	st->running = false;
+
+	for (int gi = 0; gi < st->group_count; gi++) {
+		group_t *g = &st->group[gi];
+		uint32_t bytes = (uint32_t)g->chain_len * g->colors;
+		if (g->txbuf[g->cur]) {
+			memset(g->txbuf[g->cur], 0, bytes);
+			VESC_IF->rgbled_update(g->pin, g->txbuf[g->cur], bytes);
+		}
+	}
 
 	for (int gi = 0; gi < st->group_count; gi++) {
 		VESC_IF->rgbled_deinit(st->group[gi].pin);
@@ -1020,6 +1128,7 @@ static lbm_value ext_seg_look(lbm_value *args, lbm_uint argn) {
 	if (s->fx != fx) {
 		s->fx = fx;
 		s->phase = 0; // restart only when the effect actually changes,
+		s->phase_rem = 0;
 		              // so repeated seg-look calls don't stall animations
 	}
 	s->pal = (uint8_t)VESC_IF->lbm_dec_as_i32(args[2]);
@@ -1033,12 +1142,13 @@ static lbm_value ext_seg_look(lbm_value *args, lbm_uint argn) {
 
 // Setters shared by the per-segment and all-segment variants. Field ids
 // keep one implementation for all the small setters.
-enum { SET_FX = 0, SET_PAL, SET_BRI, SET_SPD, SET_COLOR, SET_ON, SET_REVERSE, SET_SIZE, SET_LEVEL,
+enum { SET_FX = 0, SET_PAL, SET_BRI, SET_SPD, SET_COLOR, SET_ON, SET_REVERSE, SET_SIZE, SET_FX_VAL,
 	SET_AUTO_WHITE };
 
 static void seg_set(seg_t *s, int field, uint32_t v) {
 	switch (field) {
-	case SET_FX:      if (s->fx != (uint8_t)v) { s->fx = (uint8_t)v; s->phase = 0; } break;
+	case SET_FX:      if (s->fx != (uint8_t)v) { s->fx = (uint8_t)v; s->phase = 0;
+	                      s->phase_rem = 0; } break;
 	case SET_PAL:     s->pal = (uint8_t)v; break;
 	case SET_BRI:     s->bri = (uint8_t)v; break;
 	case SET_SPD:     s->spd = (uint8_t)v; break;
@@ -1046,7 +1156,7 @@ static void seg_set(seg_t *s, int field, uint32_t v) {
 	case SET_ON:      s->on = v != 0; break;
 	case SET_REVERSE: s->reverse = v != 0; break;
 	case SET_SIZE:    s->size = (uint8_t)v; break;
-	case SET_LEVEL:   s->level = (uint8_t)v; break;
+	case SET_FX_VAL:  s->fx_val = (uint8_t)v; break;
 	case SET_AUTO_WHITE: s->auto_white = v != 0; break;
 	}
 }
@@ -1093,8 +1203,10 @@ static lbm_value ext_seg_spd(lbm_value *a, lbm_uint n) { return set_one(a, n, SE
 // (ext-esp_led-seg-size i size) - chase head / comet tail length
 static lbm_value ext_seg_size(lbm_value *a, lbm_uint n) { return set_one(a, n, SET_SIZE); }
 
-// (ext-esp_led-seg-level i level) - gauge fill 0..255
-static lbm_value ext_seg_level(lbm_value *a, lbm_uint n) { return set_one(a, n, SET_LEVEL); }
+// (ext-esp_led-seg-fx-val i v) - the selected effect's parameter: the gauge
+// fill 0..255, the turn-signal mode. Named for the slot rather than any one
+// meaning, because a magnitude and a mode selector share it.
+static lbm_value ext_seg_fx_val(lbm_value *a, lbm_uint n) { return set_one(a, n, SET_FX_VAL); }
 
 // (ext-esp_led-seg-col i color) / (ext-esp_led-col color) - packed 0xWWRRGGBB
 static lbm_value ext_seg_col(lbm_value *a, lbm_uint n) { return set_one(a, n, SET_COLOR); }
@@ -1118,6 +1230,7 @@ static lbm_value ext_sync(lbm_value *args, lbm_uint argn) {
 	VESC_IF->mutex_lock(st->lock);
 	for (int i = 0; i < esp_led_SEG_MAX; i++) {
 		st->seg[i].phase = 0;
+		st->seg[i].phase_rem = 0;
 	}
 	VESC_IF->mutex_unlock(st->lock);
 	return VESC_IF->lbm_enc_sym_true;
@@ -1134,6 +1247,7 @@ static lbm_value ext_seg_sync(lbm_value *args, lbm_uint argn) {
 
 	VESC_IF->mutex_lock(st->lock);
 	s->phase = 0;
+	s->phase_rem = 0;
 	VESC_IF->mutex_unlock(st->lock);
 	return VESC_IF->lbm_enc_sym_true;
 }
@@ -1266,8 +1380,28 @@ static lbm_value ext_bri(lbm_value *args, lbm_uint argn) {
 	return VESC_IF->lbm_enc_sym_true;
 }
 
-// (ext-esp_led-fade rate) - brightness easing: fraction of the remaining
-// gap closed per frame, in 32nds (0 = instant, 8 = 25%/frame, 32 = full).
+// (ext-esp_led-fps n) - target frame rate. The render loop holds this cadence
+// by sleeping the frame time minus the work it just did. Animation and fade
+// speeds are unaffected: both advance by measured real time, so this trades
+// smoothness against CPU without retuning anything. Out-of-range values clamp
+// to the frame-time limits, i.e. an effective 5..200 fps.
+static lbm_value ext_fps(lbm_value *args, lbm_uint argn) {
+	esp_led_t *st = state();
+	if (!check_num_args(args, argn, 1)) return VESC_IF->lbm_enc_sym_terror;
+
+	int fps = VESC_IF->lbm_dec_as_i32(args[0]);
+	if (fps < 1) return VESC_IF->lbm_enc_sym_terror;
+
+	uint32_t ms = 1000u / (uint32_t)fps;
+	if (ms < esp_led_FRAME_MS_MIN) ms = esp_led_FRAME_MS_MIN;
+	if (ms > esp_led_FRAME_MS_MAX) ms = esp_led_FRAME_MS_MAX;
+	st->frame_ms = (uint16_t)ms;
+
+	return VESC_IF->lbm_enc_sym_true;
+}
+
+// (ext-esp_led-fade rate) - brightness easing: fraction of the remaining gap
+// closed per 33 ms of real time, in 32nds (0 = instant, 8 = 25%, 32 = full).
 // Applies to master and segment brightness changes.
 static lbm_value ext_fade(lbm_value *args, lbm_uint argn) {
 	esp_led_t *st = state();
@@ -1309,7 +1443,8 @@ INIT_FUN(lib_info *info) {
 
 	st->master_bri = 255;
 	st->master_cur = 255;
-	st->fade = 15; // close ~half the gap per frame (~0.2 s to settle)
+	st->fade = esp_led_FADE_DEF;
+	st->frame_ms = esp_led_FRAME_MS_DEF;
 	st->lock = VESC_IF->mutex_create();
 	if (!st->lock) {
 		VESC_IF->free(st);
@@ -1332,7 +1467,7 @@ INIT_FUN(lib_info *info) {
 	VESC_IF->lbm_add_extension("ext-esp_led-seg-bri", ext_seg_bri);
 	VESC_IF->lbm_add_extension("ext-esp_led-seg-spd", ext_seg_spd);
 	VESC_IF->lbm_add_extension("ext-esp_led-seg-size", ext_seg_size);
-	VESC_IF->lbm_add_extension("ext-esp_led-seg-level", ext_seg_level);
+	VESC_IF->lbm_add_extension("ext-esp_led-seg-fx-val", ext_seg_fx_val);
 	VESC_IF->lbm_add_extension("ext-esp_led-seg-col", ext_seg_col);
 	VESC_IF->lbm_add_extension("ext-esp_led-col", ext_col);
 	VESC_IF->lbm_add_extension("ext-esp_led-seg-on", ext_seg_on);
@@ -1347,6 +1482,7 @@ INIT_FUN(lib_info *info) {
 	VESC_IF->lbm_add_extension("ext-esp_led-col-rgbw", ext_col_rgbw);
 	VESC_IF->lbm_add_extension("ext-esp_led-bri", ext_bri);
 	VESC_IF->lbm_add_extension("ext-esp_led-fade", ext_fade);
+	VESC_IF->lbm_add_extension("ext-esp_led-fps", ext_fps);
 	VESC_IF->lbm_add_extension("ext-esp_led-seg-auto-white", ext_seg_auto_white);
 
 	VESC_IF->printf("esp_led-strip lib loaded");
