@@ -22,6 +22,24 @@
 ;
 ; dbg-err / dbg-warn are NOT gated - a real failure always prints.
 ;
+; Logging is not free, and it is not free in a way that shows up in exactly
+; the measurements people turn it on to take. A lisp `print` is synchronous:
+; commands_printf_lisp takes a global print mutex, mallocs a buffer, and
+; calls commands_send_packet on the calling thread - which for a BLE link
+; loops esp_ble_gatts_send_indicate until the whole packet is out. All of
+; that runs on the LispBM evaluator, and the evaluator (priority 6) is
+; preempted by every comm task in the firmware (comm_block 7, usb_rx /
+; tcp_task / can_proc 8).
+;
+; So a log line costs the loop that emitted it, and it costs every other
+; lisp thread with it. Turning DBG-LED on and watching the LED loop report
+; missed deadlines is partly watching the reporting: the tail of a stall is
+; the print that announced the previous one. Judge loop timing with logging
+; OFF where possible, and treat a rate with logging on as a floor.
+;
+; This is why the log lines below are throttled and edge-triggered rather
+; than emitted per iteration.
+;
 ; Message text is deliberately terse. Every literal here lives in the
 ; LispBM constant heap (flash), which this package very nearly fills, so
 ; log lines are telegraphic and carry their own short subsystem prefix
@@ -121,6 +139,9 @@
 (def dbg-led-t1 0.0)
 (def dbg-led-t2 0.0)
 (def dbg-led-t3 0.0)
+; Missed LED deadlines since the last overrun report, so the throttled line
+; says how often it is happening rather than just that it happened once.
+(def dbg-led-overruns 0)
 
 ; ---- Core helpers --------------------------------------------------------
 

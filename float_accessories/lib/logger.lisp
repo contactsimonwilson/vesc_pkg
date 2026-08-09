@@ -138,9 +138,8 @@
                     (str-merge "sdlog stop, vin " (str-from-n (to-float vin) "%.1f"))
                     "sdlog stop, no SD card")))
             (stop-log)
-            (sleep 1)
         })
-        (sleep 0.01)
+        (sleep 1.0)
     })
 })
 

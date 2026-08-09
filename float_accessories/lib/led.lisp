@@ -1,4 +1,28 @@
 ;@const-symbol-strings
+
+; Appearance cache for the segments: the last effect / palette / colour /
+; speed / brightness pushed to each one, so a steady state costs no
+; extension calls at all. The lib animates in its own thread and the loop
+; below only re-states the same appearance every tick, so almost every tick
+; is a steady state and the cache hits.
+;
+; Flat byte buffers rather than a tuple per segment: the compare runs on
+; every segment on every tick, and building a tuple to compare against would
+; allocate at the loop rate and pull the GC in with it.
+;
+; Above @const-start deliberately, like the buffers in bms-vars.lisp: these
+; are written in place with bufset, and buffers that live in the constant
+; heap cannot be written.
+;
+; Stride 8 per segment: fx, pal, spd, bri, fx-val (3 spare).
+(def seg-cache (bufcreate 64))
+; Colours, u32 per segment, in their own buffer for the 4-byte slots.
+(def seg-cache-col (bufcreate 32))
+; Overlay (embedded highbeam) brightness per segment. u16 so the post-reset
+; 0xFFFF cannot collide with a real 0..255 brightness - as a byte it would,
+; and a highbeam that came up at full brightness would then be skipped.
+(def seg-cache-ov (bufcreate 16))
+
 @const-start
 
 ; LED control on top of the esp_led_strip native lib. The lib owns the
@@ -83,6 +107,9 @@
 ; then footpad and button.
 (defun led-setup-segments () {
     (ext-esp_led-deinit)
+    ; deinit/init resets the lib's segment state, so nothing the appearance
+    ; cache remembers is true of the new segments.
+    (seg-cache-reset)
     (setq seg-front -1)
     (setq seg-rear -1)
     (setq seg-status -1)
@@ -242,7 +269,32 @@
     (> idx 0)
 })
 
+; Strip bring-up state. Globals rather than led-loop locals because setup()
+; brings the strips up before the loop is spawned, and a loop respawned by
+; its restart monitor must not deinit/reinit a strip that is already
+; rendering - that shows up as a blink after every crash.
+(def led-setup-done nil)
+(def led-have-segs nil)
+
+; Read the config into the lisp cache and define + start the segments.
+; Called from setup() so the strips light as early in the boot as they can,
+; and by led-loop for the cases setup() did not cover (lighting enabled at
+; runtime, a reinit after a settings change, a respawn after a crash).
+; Idempotent: a second caller gets the first one's result rather than a
+; deinit/reinit cycle.
+(defun led-start () {
+    (if (not led-setup-done) {
+        (load-led-settings)
+        (setq led-have-segs (led-setup-segments))
+        ; Set last, so a throw above leaves the flag clear and the next
+        ; caller (the LED loop) retries instead of running with no segments.
+        (setq led-setup-done t)
+    })
+    led-have-segs
+})
+
 (defun led-teardown () {
+    (setq led-setup-done nil)
     (ext-esp_led-deinit)
     (if (and (= led-front-highbeam-mode 1) (>= led-front-highbeam-pin 0)) (pwm-stop 0))
     (if (and (= led-rear-highbeam-mode 1) (>= led-rear-highbeam-pin 0)) (pwm-stop 1))
@@ -250,26 +302,75 @@
 
 (defun bri255 (b) (to-i (* 255.0 (min (max b 0.0) 1.0))))
 
+; Last PWM highbeam duty per channel, -1 = unknown.
+(def hb-duty-front -1.0)
+(def hb-duty-rear -1.0)
+
+; Invalidate every entry. fx 0xFF is not a real effect id, so the first
+; compare after this always misses and pushes. Must be called whenever the
+; lib's own segment state is reset, i.e. around deinit/init.
+(defun seg-cache-reset () {
+    (bufclear seg-cache 0xFF)
+    (bufclear seg-cache-ov 0xFF)
+    (setq hb-duty-front -1.0)
+    (setq hb-duty-rear -1.0)
+})
+
 (defun seg-apply (seg fx pal color spd bri) {
     (if (>= seg 0) {
-        (ext-esp_led-seg-fx seg fx)
-        (ext-esp_led-seg-pal seg pal)
-        (ext-esp_led-seg-col seg color)
-        (ext-esp_led-seg-spd seg spd)
-        (ext-esp_led-seg-bri seg bri)
+        (var o (* seg 8))
+        (if (or (!= (bufget-u8 seg-cache o) fx)
+                (!= (bufget-u8 seg-cache (+ o 1)) pal)
+                (!= (bufget-u8 seg-cache (+ o 2)) spd)
+                (!= (bufget-u8 seg-cache (+ o 3)) bri)
+                (!= (bufget-u32 seg-cache-col (* seg 4)) color)) {
+            ; One call, not five: seg-look sets the whole appearance under a
+            ; single lock acquisition in the lib.
+            (ext-esp_led-seg-look seg fx pal color spd bri)
+            (bufset-u8 seg-cache o fx)
+            (bufset-u8 seg-cache (+ o 1) pal)
+            (bufset-u8 seg-cache (+ o 2) spd)
+            (bufset-u8 seg-cache (+ o 3) bri)
+            (bufset-u32 seg-cache-col (* seg 4) color)
+        })
     })
 })
 
-(defun seg-gauge (seg level spd bri) {
+; A fill bar. `color` 0 selects the lib's battery gradient (red when nearly
+; empty, green when full); any other colour fills flat in that colour, and
+; FX-GAUGE ignores the palette once a colour is set. The palette is reset to
+; 0 either way so one left over from another mode cannot recolor the bar.
+(defun seg-bar (seg color level spd bri) {
     (if (>= seg 0) {
-        (ext-esp_led-seg-fx seg FX-GAUGE)
-        ; color 0 + palette 0 = the battery gradient; reset the palette so
-        ; one left over from another mode cannot recolor the gauge
-        (ext-esp_led-seg-pal seg 0)
-        (ext-esp_led-seg-col seg 0)
-        (ext-esp_led-seg-fx-val seg level)
-        (ext-esp_led-seg-spd seg spd)
-        (ext-esp_led-seg-bri seg bri)
+        (var o (* seg 8))
+        (if (or (!= (bufget-u8 seg-cache o) FX-GAUGE)
+                (!= (bufget-u8 seg-cache (+ o 1)) 0)
+                (!= (bufget-u8 seg-cache (+ o 2)) spd)
+                (!= (bufget-u8 seg-cache (+ o 3)) bri)
+                (!= (bufget-u8 seg-cache (+ o 4)) level)
+                (!= (bufget-u32 seg-cache-col (* seg 4)) color)) {
+            (ext-esp_led-seg-look seg FX-GAUGE 0 color spd bri)
+            (ext-esp_led-seg-fx-val seg level)
+            (bufset-u8 seg-cache o FX-GAUGE)
+            (bufset-u8 seg-cache (+ o 1) 0)
+            (bufset-u8 seg-cache (+ o 2) spd)
+            (bufset-u8 seg-cache (+ o 3) bri)
+            (bufset-u8 seg-cache (+ o 4) level)
+            (bufset-u32 seg-cache-col (* seg 4) color)
+        })
+    })
+})
+
+(defun seg-gauge (seg level spd bri) (seg-bar seg 0 level spd bri))
+
+; Overlay pixels are always driven white here, so only the brightness varies
+; and only that is cached.
+(defun seg-overlay-bri (seg bri) {
+    (if (>= seg 0) {
+        (if (!= (bufget-u16 seg-cache-ov (* seg 2)) bri) {
+            (ext-esp_led-seg-overlay seg 0xFFFFFFFFu32 bri)
+            (bufset-u16 seg-cache-ov (* seg 2) bri)
+        })
     })
 })
 
@@ -338,13 +439,9 @@
 (defun update-status-leds (can-last-activity-time-sec bri) {
     (cond
         (handtest-mode {
-            (if (>= seg-status 0) {
-                (ext-esp_led-seg-fx seg-status FX-GAUGE)
-                (ext-esp_led-seg-col seg-status 0x000000FFu32)
-                (ext-esp_led-seg-fx-val seg-status (cond ((= switch-state 3) 255) ((or (= switch-state 1) (= switch-state 2)) 128) (t 16)))
-                (ext-esp_led-seg-spd seg-status 0)
-                (ext-esp_led-seg-bri seg-status bri)
-            })
+            (seg-bar seg-status 0x000000FFu32
+                (cond ((= switch-state 3) 255) ((or (= switch-state 1) (= switch-state 2)) 128) (t 16))
+                0 bri)
         })
         ((= state 15) { ; disabled
             (seg-apply seg-status FX-SOLID 0 0x00FF0000u32 32 bri)
@@ -358,24 +455,14 @@
             }{
                 ; duty cycle bar
                 (var duty (abs duty-cycle-now))
-                (if (>= seg-status 0) {
-                    (ext-esp_led-seg-fx seg-status FX-GAUGE)
-                    (ext-esp_led-seg-col seg-status (cond ((> duty 0.8) 0x00FF0000u32) ((> duty 0.6) 0x00FFFF00u32) (t 0x0000FF00u32)))
-                    (ext-esp_led-seg-fx-val seg-status (to-i (* 255.0 duty)))
-                    (ext-esp_led-seg-spd seg-status 0)
-                    (ext-esp_led-seg-bri seg-status bri)
-                })
+                (seg-bar seg-status
+                    (cond ((> duty 0.8) 0x00FF0000u32) ((> duty 0.6) 0x00FFFF00u32) (t 0x0000FF00u32))
+                    (to-i (* 255.0 duty)) 0 bri)
             })
         })
         ((or (= switch-state 1) (= switch-state 2) (= switch-state 3)) {
             ; footpad indication
-            (if (>= seg-status 0) {
-                (ext-esp_led-seg-fx seg-status FX-GAUGE)
-                (ext-esp_led-seg-col seg-status 0x0000FFFFu32)
-                (ext-esp_led-seg-fx-val seg-status (if (= switch-state 3) 255 128))
-                (ext-esp_led-seg-spd seg-status 0)
-                (ext-esp_led-seg-bri seg-status bri)
-            })
+            (seg-bar seg-status 0x0000FFFFu32 (if (= switch-state 3) 255 128) 0 bri)
         })
         (t {
             (seg-gauge seg-status (to-i (* 255.0 battery-percent-remaining)) (if bms-is-charging 32 0) bri)
@@ -397,11 +484,10 @@
 })
 
 (defun led-loop () {
-    (load-led-settings)
+    (var have-segs (led-start))
     (dbg DBG-LED (str-merge "led start mode " (str-from-n led-mode "%d")
         " idle " (str-from-n led-mode-idle "%d")
         " hz " (str-from-n led-loop-delay "%d")))
-    (var have-segs (led-setup-segments))
     ; A zero rate would divide by zero here and put the loop into a
     ; crash/restart cycle with the LEDs stuck on the last frame.
     (if (< led-loop-delay 1) {
@@ -437,8 +523,7 @@
         (if led-reinit-flag {
             (dbg DBG-LED "led reinit")
             (led-teardown)
-            (load-led-settings)
-            (setq have-segs (led-setup-segments))
+            (setq have-segs (led-start))
             (if (< led-loop-delay 1) (setq led-loop-delay 50))
             (setq led-loop-delay-sec (/ 1.0 led-loop-delay))
             (setq led-reinit-flag nil)
@@ -546,18 +631,28 @@
             (var front-bri (bri255 (* led-current-brightness (if hb-front led-dim-on-highbeam-ratio 1.0))))
             (var rear-bri (bri255 (* led-current-brightness (if hb-rear led-dim-on-highbeam-ratio 1.0))))
 
+            ; Highbeam drive, only pushed on change - these sit in the loop
+            ; body and would otherwise re-send an unchanged duty every tick.
             (if (and (= led-front-highbeam-mode 1) (>= led-front-highbeam-pin 0)) {
-                (pwm-set-duty (if hb-front hb-frac 0.0) 0)
+                (var d (if hb-front hb-frac 0.0))
+                (if (!= d hb-duty-front) {
+                    (pwm-set-duty d 0)
+                    (setq hb-duty-front d)
+                })
             })
             (if (and (= led-rear-highbeam-mode 1) (>= led-rear-highbeam-pin 0)) {
-                (pwm-set-duty (if hb-rear hb-frac 0.0) 1)
+                (var d (if hb-rear hb-frac 0.0))
+                (if (!= d hb-duty-rear) {
+                    (pwm-set-duty d 1)
+                    (setq hb-duty-rear d)
+                })
             })
-            (if (and (= led-front-highbeam-mode 2) (>= seg-front 0)) {
-                (ext-esp_led-seg-overlay seg-front 0xFFFFFFFFu32
+            (if (= led-front-highbeam-mode 2) {
+                (seg-overlay-bri seg-front
                     (if hb-front (bri255 (+ led-front-highbeam-min (* (- led-front-highbeam-max led-front-highbeam-min) hb-frac))) 0))
             })
-            (if (and (= led-rear-highbeam-mode 2) (>= seg-rear 0)) {
-                (ext-esp_led-seg-overlay seg-rear 0xFFFFFFFFu32
+            (if (= led-rear-highbeam-mode 2) {
+                (seg-overlay-bri seg-rear
                     (if hb-rear (bri255 (+ led-rear-highbeam-min (* (- led-rear-highbeam-max led-rear-highbeam-min) hb-frac))) 0))
             })
 
@@ -662,13 +757,24 @@
                 ; work is small but the overrun is large, the loop is being
                 ; starved by another thread holding the evaluator rather
                 ; than being slow itself. decide/status/drive split the body.
-                (if (dbg-tick DBG-LED 'led-loop 5.0)
+                ;
+                ; Only reported past a quarter of the period, and with the
+                ; number of misses since the last report. The previous
+                ; version warned on any miss and printed one line per 5 s,
+                ; which made ordinary scheduler jitter look identical to a
+                ; real stall and hid how often either was happening.
+                (setq dbg-led-overruns (+ dbg-led-overruns 1))
+                (if (and (> (- 0 time-to-wait) (* led-loop-delay-sec 0.25))
+                         (dbg-tick DBG-LED 'led-loop 5.0)) {
                     (dbg-warn (str-merge "led overrun " (str-from-n (- 0 time-to-wait) "%.4f")
+                        " n " (str-from-n dbg-led-overruns "%d")
                         " want " (str-from-n led-loop-delay-sec "%.4f")
                         " work " (str-from-n work "%.4f")
                         " decide " (str-from-n (- dbg-led-t1 t-start) "%.4f")
                         " status " (str-from-n (- dbg-led-t2 dbg-led-t1) "%.4f")
-                        " drive " (str-from-n (- dbg-led-t3 dbg-led-t2) "%.4f"))))
+                        " drive " (str-from-n (- dbg-led-t3 dbg-led-t2) "%.4f")))
+                    (setq dbg-led-overruns 0)
+                })
                 (setq next-run-time (secs-since 0))
             }
         )

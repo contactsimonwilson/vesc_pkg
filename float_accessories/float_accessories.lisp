@@ -83,10 +83,23 @@
     (dbg DBG-CORE "libs loaded")
 })
 
+; Boot phase marks, seconds since power-on. Printed as one line at the end
+; of main so "it takes ages to boot" can be attributed instead of guessed
+; at: `code` is everything before main (firmware bringup plus loading this
+; package, or restoring its image), and the rest are the phases of main.
+(def boot-t-main 0.0)
+(def boot-t-libs 0.0)
+(def boot-t-led 0.0)
+
 (defun main () {
+    (setq boot-t-main (secs-since 0))
     (setup)
     (init)
-    (print (str-merge "Boot complete in " (str-from-n (/ (systime) 1000000.0) "%.3f") "s since power-on"))
+    (print (str-merge "Boot " (str-from-n (secs-since 0) "%.3f") "s"
+        " (code " (str-from-n boot-t-main "%.3f")
+        " libs " (str-from-n (- boot-t-libs boot-t-main) "%.3f")
+        " led " (str-from-n (- boot-t-led boot-t-libs) "%.3f")
+        " rest " (str-from-n (- (secs-since 0) boot-t-led) "%.3f") ")"))
 })
 (defun spawn-with-restart (name stack-size func) {
     (var monitor-fn (fn ()
@@ -143,16 +156,14 @@
     (setq bms-last-activity-time (systime))
     (setq led-last-activity-time (systime))
 
-    (spawn-event-handler-with-restart)
-    (event-enable 'event-data-rx)
-    (event-enable 'event-esp-now-rx)
     (if (!= (str-cmp (to-str (sysinfo 'hw-type)) "hw-express") 0) {
         (exit-error "Not running on hw-express")
     })
 
-    (if (< fw-num 6.05) (exit-error "hw-express needs to be running 6.05"))
+    (if (< fw-num 7.00) (exit-error "hw-express needs to be running 7.00"))
 
     (load-native-libs)
+    (setq boot-t-libs (secs-since 0))
 
     ; The fa_cfg lib loads the stored config itself (defaults when nothing
     ; valid is stored - the confparser signature replaces the old
@@ -163,6 +174,30 @@
     (setq led-brightness-highbeam (get-config 'led-brightness-highbeam))
     (setq led-brightness-idle (get-config 'led-brightness-idle))
     (setq led-brightness-status (get-config 'led-brightness-status))
+
+    ; Lighting first, and synchronously. Everything after this point either
+    ; spawns a thread that competes for the evaluator or blocks it outright
+    ; (CAN discovery, BMS/GNSS UART, humidity I2C), and lisp threads share a
+    ; single evaluator - so anything started before the strips are defined
+    ; delays the first frame. Defining the segments here rather than inside
+    ; the LED thread also gets the lib's render thread - a real FreeRTOS
+    ; thread, unaffected by whatever the evaluator is doing - running before
+    ; the loop has had its first slice.
+    ;
+    ; Trapped: this used to run inside spawn-with-restart, where a bad
+    ; config could only kill the LED thread. led-start leaves its done flag
+    ; clear if it throws, so the loop retries it.
+    (if (= (get-config 'led-enabled) 1) {
+        (var r (trap (led-start)))
+        (if (eq (ix r 0) 'exit-error)
+            (dbg-err (str-merge "led start " (to-str (ix r 1)))))
+        (setq led-context-id (spawn-with-restart "led-loop" nil led-loop))
+    })
+    (setq boot-t-led (secs-since 0))
+
+    (spawn-event-handler-with-restart)
+    (event-enable 'event-data-rx)
+    (event-enable 'event-esp-now-rx)
 })
 
 (defun init () {
@@ -170,10 +205,9 @@
     ; visible as a dead tick counter straight away.
     (spawn-with-restart "dbg-loop" nil dbg-loop)
 
-    ; Spawn the event handler thread and pass the ID it returns to C
-    (if (= (get-config 'led-enabled) 1) {
-        (setq led-context-id (spawn-with-restart "led-loop" nil led-loop))
-    }); start the led loop as soon as possible once checks are done. once CAN bus comes online it will start responding, and since this is multi-process now leds won't freeze when can is scanning. :)
+    ; The LED loop is not spawned here - setup() brings the strips up and
+    ; starts it before any of this, so the lights are already on while CAN
+    ; discovery and the rest of the peripherals come up behind them.
     (setq can-context-id (spawn-with-restart "can-loop" nil can-loop))
     ; Always inject the pubmote callbacks, even with pubmote disabled -
     ; enabling it later from the settings page spawns pubmote-loop through
