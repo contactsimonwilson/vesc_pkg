@@ -143,7 +143,7 @@
 
 (defun pubmote-loop () {
     (if (init-pubmote) {
-        (setq pubmote-loop-delay (pubmote-get-cfg 'pubmote-loop-delay))le
+        (setq pubmote-loop-delay (pubmote-get-cfg 'pubmote-loop-delay))
         (if (< pubmote-loop-delay 1) {
             (dbg-warn "rem bad rate, using 20Hz")
             (setq pubmote-loop-delay 20)
