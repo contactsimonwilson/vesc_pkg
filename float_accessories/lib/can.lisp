@@ -1,4 +1,3 @@
-;@const-symbol-strings
 @const-start
 (def can-loop-delay)
 (def fault-code 0)

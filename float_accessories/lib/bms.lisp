@@ -1,4 +1,3 @@
-;@const-symbol-strings
 @const-start
 
 (defun crypt (nonce-high nonce-low data start-offset len) {

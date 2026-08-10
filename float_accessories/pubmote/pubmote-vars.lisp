@@ -1,5 +1,3 @@
-;@const-symbol-strings
-
 ; Serialises esp-now-send across contexts - see pubmote-send-packet.
 ; Declared above @const-start deliberately: a mutex is a cons cell that
 ; mutex-lock/unlock mutate in place, so it must not be allocated in the

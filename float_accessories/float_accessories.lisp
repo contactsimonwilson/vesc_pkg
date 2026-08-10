@@ -1,16 +1,3 @@
-; float-accessories.lisp
-; Smart LED Control, Tilt Remote and stock OW BMS bridge for VESC Express
-; Version 2.0
-; Copyright 2024 Syler Clayton <syler.clayton@gmail.com>
-; Special Thanks: Benjamin Vedder, surfdado, NuRxG, Siwoz, lolwheel (OWIE), ThankTheMaker (rESCue), 4_fools & marcos (avaspark), auden_builds (pubmote)
-; gr33tz: outlandnish, exphat, datboig42069
-; Beta Testers: Pickles
-;
-; This version renders LEDs through the esp_led_strip native lib and keeps
-; its configuration in a VESC custom config (Float Accessories in VESC
-; Tool) provided by the fa_cfg native lib - see conf/settings.xml.
-
-; Native libs, one binary per chip.
 (import "fa_cfg/fa_cfg_esp32c3.bin" 'facfg-esp32c3)
 (import "fa_cfg/fa_cfg_esp32c6.bin" 'facfg-esp32c6)
 (import "fa_cfg/fa_cfg_esp32s3.bin" 'facfg-esp32s3)
@@ -21,10 +8,8 @@
 (import "../lib_esp_led_strip/esp_led_strip/esp_led_strip_esp32p4.bin" 'esp_led-esp32p4)
 
 @const-start
-; debug.lisp first: every other module logs through it.
 (import "lib/debug.lisp" 'debug)
 (read-eval-program debug)
-; Generated from the `version` file; utils' get-version returns pkg-version.
 (import "lib/version-gen.lisp" 'version-gen)
 (read-eval-program version-gen)
 (import "lib/utils.lisp" 'utils)
@@ -74,9 +59,6 @@
     (if (eq libs nil) {
         (exit-error (str-merge "No native libs for target " target))
     })
-    ; Trapped individually: without this a failed load shows up much later
-    ; as "undefined extension ext-facfg-get" from whichever thread touches
-    ; the config first, which points at the wrong thing entirely.
     (var r-cfg (trap (load-native-lib (ix libs 0))))
     (if (eq (ix r-cfg 0) 'exit-error)
         (dbg-err (str-merge "fa_cfg load: " (to-str (ix r-cfg 1)))))
@@ -86,10 +68,7 @@
     (dbg DBG-CORE "libs loaded")
 })
 
-; Boot phase marks, seconds since power-on. Printed as one line at the end
-; of main so "it takes ages to boot" can be attributed instead of guessed
-; at: `code` is everything before main (firmware bringup plus loading this
-; package, or restoring its image), and the rest are the phases of main.
+; Boot timings: the time spent in each of the three phases of boot, and the total time
 (def boot-t-main 0.0)
 (def boot-t-libs 0.0)
 (def boot-t-led 0.0)
@@ -168,9 +147,6 @@
     (load-native-libs)
     (setq boot-t-libs (secs-since 0))
 
-    ; The fa_cfg lib loads the stored config itself (defaults when nothing
-    ; valid is stored - the confparser signature replaces the old
-    ; magic/crc scheme). Mirror the control state into the lisp vars.
     (setq led-on (get-config 'led-on))
     (setq led-highbeam-on (get-config 'led-highbeam-on))
     (setq led-brightness (get-config 'led-brightness))
@@ -186,10 +162,6 @@
     ; the LED thread also gets the lib's render thread - a real FreeRTOS
     ; thread, unaffected by whatever the evaluator is doing - running before
     ; the loop has had its first slice.
-    ;
-    ; Trapped: this used to run inside spawn-with-restart, where a bad
-    ; config could only kill the LED thread. led-start leaves its done flag
-    ; clear if it throws, so the loop retries it.
     (if (= (get-config 'led-enabled) 1) {
         (var r (trap (led-start)))
         (if (eq (ix r 0) 'exit-error)
@@ -212,9 +184,7 @@
     ; starts it before any of this, so the lights are already on while CAN
     ; discovery and the rest of the peripherals come up behind them.
     (setq can-context-id (spawn-with-restart "can-loop" nil can-loop))
-    ; Always inject the pubmote callbacks, even with pubmote disabled -
-    ; enabling it later from the settings page spawns pubmote-loop through
-    ; apply-config, which must never run with unset callbacks.
+    ; Always inject the pubmote callbacks
     (pubmote-setup
         VEHICLE_TYPE_ONEWHEEL
         (fn (jsy jsx bt-c bt-z is-rev) {
@@ -240,11 +210,9 @@
             (set-config name val)
         })
         (fn () {
-            ; Persist the pairing (remote mac + secret) in the config
             (ext-facfg-store)
         })
         (fn (state) {
-            ; The QML pairing flow watches this
             (send-data (str-merge "pairing-status " (to-str state)))
         })
     )
@@ -262,13 +230,9 @@
 
     (if (= (get-config 'log-enabled) 1) (setq log-context-id (spawn-with-restart "log-loop" 50 log-loop)))
 
-    ; Apply config edits made in VESC Tool (Float Accessories) at runtime
     (spawn-with-restart "config-watch" nil config-watch-loop)
 })
 
-; Save the environment as a binary image for fast boot on subsequent power-cycles.
-; On the very next boot the reader is skipped and main() is called directly.
 (image-save)
-; Start immediately on this (first) boot too.
 (main)
 @const-end

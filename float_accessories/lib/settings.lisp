@@ -1,4 +1,3 @@
-;@const-symbol-strings
 @const-start
 
 ; Configuration access. The config itself is a VESC custom config provided

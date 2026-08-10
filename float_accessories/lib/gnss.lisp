@@ -1,4 +1,3 @@
-;@const-symbol-strings
 @const-start
 
 ; GNSS receiver support. Two module types:

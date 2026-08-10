@@ -1,4 +1,3 @@
-;@const-symbol-strings
 @const-start
 
 (defun command-rx (data) {

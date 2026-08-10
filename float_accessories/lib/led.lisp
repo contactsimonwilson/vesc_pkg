@@ -1,5 +1,3 @@
-;@const-symbol-strings
-
 ; Appearance cache for the segments: the last effect / palette / colour /
 ; speed / brightness pushed to each one, so a steady state costs no
 ; extension calls at all. The lib animates in its own thread and the loop

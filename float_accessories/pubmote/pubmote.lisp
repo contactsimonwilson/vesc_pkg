@@ -1,4 +1,3 @@
-;@const-symbol-strings
 @const-start
 
 ; Pubmote: ESP-NOW / BLE tilt-remote link for the VESC Express.
@@ -68,8 +67,6 @@
 ; ---- Lifecycle -----------------------------------------------------------
 
 (defunret init-pubmote () {
-    ; Running without the host callbacks would read nil config values and
-    ; blow up in the MAC unpacking - refuse instead.
     (if (eq pubmote-get-config nil) {
         (pubmote-send-msg "Pubmote: pubmote-setup must be called first")
         (return nil)
@@ -146,9 +143,7 @@
 
 (defun pubmote-loop () {
     (if (init-pubmote) {
-        (setq pubmote-loop-delay (pubmote-get-cfg 'pubmote-loop-delay))
-        ; A zero/negative configured rate would divide-by-zero below and put
-        ; the loop into a crash-restart cycle
+        (setq pubmote-loop-delay (pubmote-get-cfg 'pubmote-loop-delay))le
         (if (< pubmote-loop-delay 1) {
             (dbg-warn "rem bad rate, using 20Hz")
             (setq pubmote-loop-delay 20)
@@ -334,8 +329,7 @@
         })
 
         (t {
-            ; Gated: an unpaired remote nearby sends these at input rate and
-            ; an ungated print floods the console.
+            ; Gated: an unpaired remote nearby sends these at input rate and an ungated print floods the console.
             (if (and (not is-ble) (dbg-active DBG-REM))
                 (dbg DBG-REM (str-merge "rem cmd ? " (to-str cmd))))
         })

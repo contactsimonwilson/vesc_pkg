@@ -1,4 +1,3 @@
-;@const-symbol-strings
 @const-start
 
 ; Humidity / temperature sensor support. Detects a Si7021 (0x40) or AHT20

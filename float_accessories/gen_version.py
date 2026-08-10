@@ -16,9 +16,7 @@ HERE = pathlib.Path(__file__).parent
 VERSION = HERE / "version"
 OUT = HERE / "lib" / "version-gen.lisp"
 
-TEMPLATE = """;@const-symbol-strings
-
-; Generated from the `version` file by gen_version.py - do not edit.
+TEMPLATE = """; Generated from the `version` file by gen_version.py - do not edit.
 
 @const-start
 

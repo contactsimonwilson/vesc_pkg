@@ -1,5 +1,3 @@
-;@const-symbol-strings
-
 @const-start
 
 ; LED state. Rendering is done by the esp_led_strip native lib; this module

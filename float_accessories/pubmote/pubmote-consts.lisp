@@ -1,4 +1,3 @@
-;@const-symbol-strings
 @const-start
 
 ; Pubmote protocol constants. Load before the other pubmote files.

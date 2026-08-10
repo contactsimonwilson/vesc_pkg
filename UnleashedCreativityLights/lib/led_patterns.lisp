@@ -1,5 +1,3 @@
-;@const-symbol-strings
-
 @const-start
 (def rainbow-colors '(0x00FF0000 0x00FFFF00 0x0000FF00 0x0000FFFF 0x000000FF 0x00FF00FF))
 

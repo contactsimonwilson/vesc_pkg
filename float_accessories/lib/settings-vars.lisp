@@ -1,5 +1,3 @@
-;@const-symbol-strings
-
 @const-start
 
 ; Configuration lives in the fa_cfg native lib as a VESC custom config

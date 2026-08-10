@@ -1,4 +1,3 @@
-;@const-symbol-strings
 @const-start
 
 ; Pubmote internal helpers.
@@ -96,9 +95,6 @@
 })
 
 (defun should-unlock-channel (last-activity-time) {
-    ; Channel is locked
-    ; Station mode
-    ; Last activity time is not set or more than set time passed since last rx
     (if (and (> channel-locked 0) (is-station-mode) (> (secs-since last-activity-time) channel-locked-timeout)) {
         (unlock-channel (str-from-n pubmote-last-activity-time "Last activity time greater than set time"))
     })
@@ -118,8 +114,7 @@
 })
 
 (defun should-process-message (src data) {
-    ; Length check must come before bufget-i32: an out-of-range bufget raises
-    ; an eval error which would kill the event handler thread
+    ; Length check must come before bufget-i32: an out-of-range bufget raises an eval error which would kill the event handler thread
     (and (= pairing-state PAIR_STATE_IDLE) (>= (buflen data) 5) (eq pubmote-remote-mac src) (= (bufget-i32 data 1 'little-endian) (pubmote-get-cfg 'pubmote-secret-code)))
 })
 

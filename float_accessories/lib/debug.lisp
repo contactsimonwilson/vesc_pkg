@@ -1,5 +1,3 @@
-;@const-symbol-strings
-
 ; Verbose diagnostics logger.
 ;
 ; The enable flag (dbg-mask) lives in RAM only - deliberately NOT in the
@@ -60,11 +58,6 @@
 ; Note the naming: LispBM folds symbol case, so a function may not share a
 ; name with a DBG-* constant. (dbg-all) would BE the constant DBG-ALL.
 
-; Throttle table for rate-limited log lines. Deliberately built with
-; (list (cons ...)) above @const-start: dbg-due rewrites these cells in
-; place with setcdr, and cells that live in the constant heap cannot be
-; written. Pre-seeding every key also means the steady state allocates
-; nothing at all.
 (def dbg-throttle (list
     (cons 'cfg-ctl 0)
     (cons 'can-tel 0)

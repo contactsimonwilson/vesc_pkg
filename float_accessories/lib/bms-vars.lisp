@@ -1,5 +1,3 @@
-;@const-symbol-strings
-
 ;const
 (def key-crc '(3141361152u32))  ;AES-128 key. Offset in 6109: 0x12009
 (def counter-crc '(4092889840u32)) ;IV for counter. Offset in 6109: 0x12019
