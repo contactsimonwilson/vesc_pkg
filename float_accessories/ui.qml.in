@@ -462,6 +462,49 @@ Item {
     readonly property int faConfigIndex: 1
     property ConfigParams mCustomConf: VescIf.customConfig(faConfigIndex)
 
+    // VESC Tool deletes and rebuilds its ConfigParams objects every time it
+    // reads the custom configs (on connect, and on a manual reload). This page
+    // outlives a reconnect, so the property above - a one-shot binding, since
+    // customConfig() is a plain invokable with nothing to re-trigger it - is
+    // left holding a destroyed object, which QML nulls out. Re-resolve it when
+    // the configs are (re)loaded and again on demand, so writing settings after
+    // a reconnect updates the live object instead of throwing on null.
+    Connections {
+        target: VescIf
+        function onCustomConfigLoadDone() {
+            mCustomConf = VescIf.customConfig(faConfigIndex)
+        }
+    }
+
+    function resolveCustomConf() {
+        if (!mCustomConf) {
+            mCustomConf = VescIf.customConfig(faConfigIndex)
+        }
+        return mCustomConf ? true : false
+    }
+
+    property bool configReloadRequested: false
+
+    function requireCustomConf() {
+        if (resolveCustomConf()) {
+            return true
+        }
+
+        if (!configReloadRequested) {
+            configReloadRequested = true
+
+            VescIf.emitMessageDialog("Float Accessories",
+                                     "VESC Tool has not loaded this package's configuration, so the settings " +
+                                     "could not be saved. Re-reading it from the device now - this page will " +
+                                     "reload in a moment, then press Save Config again.",
+                                     false, false)
+
+            VescIf.reloadFirmware()
+        }
+
+        return false
+    }
+
     Connections {
         target: mCustomConf
         function onUpdated() {
@@ -474,6 +517,10 @@ Item {
     // config it has not received yet), so this is driven by the ConfigParams
     // updated() signal rather than by a request from this page.
     function applyConfigFromParams() {
+            if (!resolveCustomConf()) {
+                return
+            }
+
             acceptTOS = (mCustomConf.getParamBool("accept_tos")) ? true : false
             ledEnabled.checked = mCustomConf.getParamBool("led_enabled")
             bmsEnabled.checked = mCustomConf.getParamBool("bms_enabled")
@@ -4030,6 +4077,10 @@ Item {
                 onClicked: {
                     if (bmsEnabled.checked && !acceptTOS) {
                         termsPopup.visible = true
+                    }
+
+                    if (!requireCustomConf()) {
+                        return
                     }
 
                     writeConfigToParams()

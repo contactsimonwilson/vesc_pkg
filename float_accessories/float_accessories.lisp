@@ -61,7 +61,11 @@
     })
     (var r-cfg (trap (load-native-lib (ix libs 0))))
     (if (eq (ix r-cfg 0) 'exit-error)
-        (dbg-err (str-merge "fa_cfg load: " (to-str (ix r-cfg 1)))))
+        (exit-error (str-merge "fa_cfg load: " (to-str (ix r-cfg 1)))))
+    (var r-probe (trap (ext-facfg-get "led-enabled")))
+    (if (eq (ix r-probe 0) 'exit-error)
+        (exit-error (str-merge "fa_cfg unavailable: " (to-str (ix r-probe 1)))))
+
     (var r-led (trap (load-native-lib (ix libs 1))))
     (if (eq (ix r-led 0) 'exit-error)
         (dbg-err (str-merge "esp_led load: " (to-str (ix r-led 1)))))

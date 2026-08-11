@@ -117,6 +117,7 @@
     (var idx 0)
     (var pin-offsets nil) ; assoc pin -> next chain offset
     (var pin-timings nil) ; assoc pin -> chain timing preset
+    (var pin-types nil)   ; assoc pin -> chain colour order
 
     (var next-offset (fn (pin len) {
         (var entry (assoc pin-offsets pin))
@@ -133,6 +134,23 @@
         (if (eq entry nil) {
             (setq pin-timings (acons pin (- timing 1) pin-timings))
             (- timing 1)
+        } entry)
+    }))
+
+    ; The chain's colour order, claimed by the first strip defined on the
+    ; pin. Strips that have a colour-order setting pass their own and keep
+    ; using it - the lib allows different byte orders along a chain, only
+    ; the pixel width has to agree. The point of recording it is the button
+    ; LED, which has no setting of its own: chained behind another strip it
+    ; adopts that chain's order, because a hardcoded 3-byte GRB behind a
+    ; 4-byte RGBW strip is exactly the disagreement the lib refuses - and
+    ; it refuses the whole chain, so one wrongly-typed button LED took
+    ; every strip on the board dark. Alone on its pin it still gets GRB.
+    (var chain-type (fn (pin type) {
+        (var entry (assoc pin-types pin))
+        (if (eq entry nil) {
+            (setq pin-types (acons pin type pin-types))
+            type
         } entry)
     }))
 
@@ -159,6 +177,7 @@
     (if (and (> led-status-timing 0) (>= led-status-pin 0) (> led-status-num 0)) {
         (var off (next-offset led-status-pin led-status-num))
         (var tim (chain-timing led-status-pin led-status-timing))
+        (chain-type led-status-pin led-status-type)
         (if (dbg-active DBG-LED) (log-seg idx "status" led-status-pin led-status-type led-status-num off tim))
         (ext-esp_led-seg-def idx led-status-pin led-status-type led-status-num off tim)
         (setq seg-status idx)
@@ -168,11 +187,36 @@
     })
     ; Embedded highbeam LED positions (segment-relative), unpacked from
     ; the config int: one position per byte from the lowest, 255 = unused.
-    (var hb-positions (fn (packed) {
+    ;
+    ; Filtered against the strip rather than passed straight through. The
+    ; lib rejects a position at or past the segment footprint (len +
+    ; overlay count) with a type error, and an unhandled one used to take
+    ; the LED loop down for good: the restart monitor just respawns the
+    ; loop, which retries the same bad config every second with the strips
+    ; deinitialised - permanently dark, one ERR line per second. Reachable
+    ; straight from the UI, because switching a strip to the Custom preset
+    ; keeps the previous preset's positions while letting the LED count be
+    ; lowered underneath them.
+    ;
+    ; A duplicated position is left alone: it only costs the tail pixel the
+    ; renderer then never fills, and the code to strip duplicates is not
+    ; worth the const-heap space (see debug.lisp) to avoid a dark LED.
+    (var hb-positions (fn (packed num) {
         (var lst nil)
         (looprange k 0 4 {
             (var p (bitwise-and (shr packed (* k 8)) 0xFF))
             (if (!= p 0xFF) (setq lst (append lst (list p))))
+        })
+        ; Two passes, because dropping a position shrinks the footprint the
+        ; rest are measured against. Four positions can only cascade so far,
+        ; and anything still out of range after this is caught by the trap
+        ; in led-start rather than killing the loop.
+        (looprange k 0 2 {
+            (var limit (+ num (length lst)))
+            (var keep nil)
+            (loopforeach p lst (if (< p limit) (setq keep (append keep (list p)))))
+            (if (< (length keep) (length lst)) (dbg-warn "led hb pos range"))
+            (setq lst keep)
         })
         lst
     }))
@@ -186,9 +230,10 @@
     }))
 
     (if (and (> led-front-timing 0) (>= led-front-pin 0) (> led-front-num 0)) {
-        (var ps (if (= led-front-highbeam-mode 2) (hb-positions led-front-highbeam-pos) nil))
+        (var ps (if (= led-front-highbeam-mode 2) (hb-positions led-front-highbeam-pos led-front-num) nil))
         (var off (next-offset led-front-pin (+ led-front-num (length ps))))
         (var tim (chain-timing led-front-pin led-front-timing))
+        (chain-type led-front-pin led-front-type)
         (if (dbg-active DBG-LED) {
             (log-seg idx "front" led-front-pin led-front-type led-front-num off tim)
             (dbg DBG-LED (str-merge "led hb front mode " (str-from-n led-front-highbeam-mode "%d")
@@ -203,9 +248,10 @@
         (log-skip "front" led-front-pin led-front-num led-front-timing)
     })
     (if (and (> led-rear-timing 0) (>= led-rear-pin 0) (> led-rear-num 0)) {
-        (var ps (if (= led-rear-highbeam-mode 2) (hb-positions led-rear-highbeam-pos) nil))
+        (var ps (if (= led-rear-highbeam-mode 2) (hb-positions led-rear-highbeam-pos led-rear-num) nil))
         (var off (next-offset led-rear-pin (+ led-rear-num (length ps))))
         (var tim (chain-timing led-rear-pin led-rear-timing))
+        (chain-type led-rear-pin led-rear-type)
         (if (dbg-active DBG-LED) {
             (log-seg idx "rear" led-rear-pin led-rear-type led-rear-num off tim)
             (dbg DBG-LED (str-merge "led hb rear mode " (str-from-n led-rear-highbeam-mode "%d")
@@ -222,6 +268,7 @@
     (if (and (> led-footpad-timing 0) (>= led-footpad-pin 0) (> led-footpad-num 0)) {
         (var off (next-offset led-footpad-pin led-footpad-num))
         (var tim (chain-timing led-footpad-pin led-footpad-timing))
+        (chain-type led-footpad-pin led-footpad-type)
         (if (dbg-active DBG-LED) (log-seg idx "footpad" led-footpad-pin led-footpad-type led-footpad-num off tim))
         (ext-esp_led-seg-def idx led-footpad-pin led-footpad-type led-footpad-num off tim)
         (setq seg-footpad idx)
@@ -232,28 +279,43 @@
     (if (and (> led-button-timing 0) (>= led-button-pin 0)) {
         (var off (next-offset led-button-pin 1))
         (var tim (chain-timing led-button-pin led-button-timing))
-        (if (dbg-active DBG-LED) (log-seg idx "button" led-button-pin 0 1 off tim))
-        (ext-esp_led-seg-def idx led-button-pin 0 1 off tim)
+        ; No colour-order setting of its own - see chain-type.
+        (var typ (chain-type led-button-pin TYPE-GRB))
+        (if (dbg-active DBG-LED) (log-seg idx "button" led-button-pin typ 1 off tim))
+        (ext-esp_led-seg-def idx led-button-pin typ 1 off tim)
         (setq seg-button idx)
         (setq idx (+ idx 1))
     } {
         (log-skip "button" led-button-pin 1 led-button-timing)
     })
 
+    ; Whether the lib is actually rendering, which is not the same thing as
+    ; having defined segments: init rejects a chain whose segments disagree
+    ; on colour depth or timing preset, and every strip on the board goes
+    ; dark together when it does. Reporting success here regardless left the
+    ; loop pushing appearance into a stopped lib for the rest of the ride,
+    ; with one ERR line at boot as the only clue.
+    (var started nil)
     (if (> idx 0) {
         (var r (trap (ext-esp_led-init idx)))
         (if (eq (ix r 0) 'exit-error)
             (dbg-err (str-merge "led init " (to-str (ix r 1))))
-            (dbg DBG-LED (str-merge "led init " (str-from-n idx "%d") " segs")))
+            {
+                (setq started t)
+                (dbg DBG-LED (str-merge "led init " (str-from-n idx "%d") " segs"))
+            })
+    } {
+        ; Lighting is enabled but nothing was configured - the loop will run
+        ; and do nothing at all, which looks identical to a crash.
+        (dbg-warn "led no strip configured")
+    })
+
+    (if started {
         (ext-esp_led-fps 60)
         (if (>= seg-status 0) (ext-esp_led-seg-reverse seg-status led-status-reversed))
         (if (>= seg-front 0) (ext-esp_led-seg-reverse seg-front led-front-reversed))
         (if (>= seg-rear 0) (ext-esp_led-seg-reverse seg-rear led-rear-reversed))
         (if (>= seg-footpad 0) (ext-esp_led-seg-reverse seg-footpad led-footpad-reversed))
-    } {
-        ; Lighting is enabled but nothing was configured - the loop will run
-        ; and do nothing at all, which looks identical to a crash.
-        (dbg-warn "led no strip configured")
     })
 
     ; PWM highbeams (highbeam mode 1)
@@ -264,7 +326,7 @@
         (pwm-start 1000 0.0 1 led-rear-highbeam-pin 10)
     })
 
-    (> idx 0)
+    started
 })
 
 ; Strip bring-up state. Globals rather than led-loop locals because setup()
@@ -283,9 +345,20 @@
 (defun led-start () {
     (if (not led-setup-done) {
         (load-led-settings)
-        (setq led-have-segs (led-setup-segments))
-        ; Set last, so a throw above leaves the flag clear and the next
-        ; caller (the LED loop) retries instead of running with no segments.
+        ; Trapped, and the flag is set either way. A throw out of the setup
+        ; used to leave it clear so the next caller would retry - but the
+        ; only caller left after boot is the LED loop, and its restart
+        ; monitor respawns it a second after it dies. A config the lib
+        ; refuses is not something retrying fixes, so that turned one bad
+        ; setting into a permanent deinit/redefine/throw cycle with the
+        ; strips dark. Record the failure instead and let the loop idle;
+        ; a settings change clears the flag through led-teardown and gets
+        ; a real retry.
+        (var r (trap (led-setup-segments)))
+        (setq led-have-segs (if (eq (ix r 0) 'exit-error) {
+            (dbg-err (to-str (ix r 1)))
+            nil
+        } (ix r 1)))
         (setq led-setup-done t)
     })
     led-have-segs
@@ -334,30 +407,40 @@
     })
 })
 
-; A fill bar. `color` 0 selects the lib's battery gradient (red when nearly
-; empty, green when full); any other colour fills flat in that colour, and
-; FX-GAUGE ignores the palette once a colour is set. The palette is reset to
-; 0 either way so one left over from another mode cannot recolor the bar.
-(defun seg-bar (seg color level spd bri) {
+; seg-apply plus the selected effect's fx-val parameter - the gauge fill,
+; the turn-signal mode. Cached together in the spare byte at o+4 so the
+; pair is pushed as one unit and a steady state still costs nothing.
+;
+; Safe alongside seg-apply, which neither reads nor writes o+4: no effect
+; that takes an fx-val is ever set through seg-apply, so a stale value
+; there is always guarded by the fx byte comparing different first.
+(defun seg-apply-val (seg fx pal color spd bri val) {
     (if (>= seg 0) {
         (var o (* seg 8))
-        (if (or (!= (bufget-u8 seg-cache o) FX-GAUGE)
-                (!= (bufget-u8 seg-cache (+ o 1)) 0)
+        (if (or (!= (bufget-u8 seg-cache o) fx)
+                (!= (bufget-u8 seg-cache (+ o 1)) pal)
                 (!= (bufget-u8 seg-cache (+ o 2)) spd)
                 (!= (bufget-u8 seg-cache (+ o 3)) bri)
-                (!= (bufget-u8 seg-cache (+ o 4)) level)
+                (!= (bufget-u8 seg-cache (+ o 4)) val)
                 (!= (bufget-u32 seg-cache-col (* seg 4)) color)) {
-            (ext-esp_led-seg-look seg FX-GAUGE 0 color spd bri)
-            (ext-esp_led-seg-fx-val seg level)
-            (bufset-u8 seg-cache o FX-GAUGE)
-            (bufset-u8 seg-cache (+ o 1) 0)
+            (ext-esp_led-seg-look seg fx pal color spd bri)
+            (ext-esp_led-seg-fx-val seg val)
+            (bufset-u8 seg-cache o fx)
+            (bufset-u8 seg-cache (+ o 1) pal)
             (bufset-u8 seg-cache (+ o 2) spd)
             (bufset-u8 seg-cache (+ o 3) bri)
-            (bufset-u8 seg-cache (+ o 4) level)
+            (bufset-u8 seg-cache (+ o 4) val)
             (bufset-u32 seg-cache-col (* seg 4) color)
         })
     })
 })
+
+; A fill bar. `color` 0 selects the lib's battery gradient (red when nearly
+; empty, green when full); any other colour fills flat in that colour, and
+; FX-GAUGE ignores the palette once a colour is set. The palette is reset to
+; 0 either way so one left over from another mode cannot recolor the bar.
+(defun seg-bar (seg color level spd bri)
+    (seg-apply-val seg FX-GAUGE 0 color spd bri level))
 
 (defun seg-gauge (seg level spd bri) (seg-bar seg 0 level spd bri))
 
@@ -459,8 +542,20 @@
             })
         })
         ((or (= switch-state 1) (= switch-state 2) (= switch-state 3)) {
-            ; footpad indication
-            (seg-bar seg-status 0x0000FFFFu32 (if (= switch-state 3) 255 128) 0 bri)
+            ; Footpad indication. The bar is split at its midpoint and the
+            ; half matching the engaged sensor lights, so which pad is down
+            ; is readable rather than just how many - FX-TURN's solid styles
+            ; are exactly that split, which is why a turn-signal effect is
+            ; driving a footpad display.
+            ;
+            ; led-mode-status ("Status Bar Style") swaps the halves: the
+            ; Alternate setting is for a bar mounted the other way round.
+            (var swap (!= led-mode-status 0))
+            (seg-apply-val seg-status FX-TURN 0 0x0000FFFFu32 0 bri
+                (cond
+                    ((= switch-state 3) TURN-HAZARD-SOLID)
+                    ((= switch-state 1) (if swap TURN-RIGHT-SOLID TURN-LEFT-SOLID))
+                    (t (if swap TURN-LEFT-SOLID TURN-RIGHT-SOLID))))
         })
         (t {
             (seg-gauge seg-status (to-i (* 255.0 battery-percent-remaining)) (if bms-is-charging 32 0) bri)
@@ -470,7 +565,11 @@
 
 (defun update-aux-leds (bri) {
     (if (>= seg-footpad 0) {
-        ; mode 0: rainbow
+        ; Rainbow is the only value led-mode-footpad offers, so there is
+        ; nothing to branch on yet and a cond here would be two identical
+        ; arms. Left as a straight call deliberately: const-heap space is
+        ; the scarce resource in this package (see debug.lisp), so the
+        ; branch goes in when a second mode does, not before.
         (seg-apply seg-footpad FX-RAINBOW PAL-RGBW 0 32 bri)
     })
     (if (>= seg-button 0) {
@@ -551,6 +650,13 @@
                         })
                     })
                 })
+            }{
+                ; Settled back before the window elapsed, so drop the pending
+                ; change. Without this the timestamp survived the blip, and
+                ; the next genuine reversal found an already-expired timer and
+                ; committed on its first tick - one rock or a bit of rollback
+                ; disarmed the debounce for the rest of the ride.
+                (setq direction-change-start-time 0)
             })
         })
 
@@ -570,6 +676,19 @@
                         (setq led-on (if (= led-on 1) 0 1))
                         (setq led-highbeam-on (if (= led-highbeam-on 1) 0 1))
                     )
+                    ; Written back to the config, not just the ram cache.
+                    ; apply-config reloads both of these from the config on
+                    ; every settings write, so a cache-only toggle silently
+                    ; reverted the next time anything touched VESC Tool - the
+                    ; lights came back on by themselves. Persisted through
+                    ; control-store-pending rather than stored here, so a
+                    ; burst of presses costs one NVS write once it settles;
+                    ; the QML brightness sliders use the same path.
+                    (if short-press
+                        (set-config 'led-on led-on)
+                        (set-config 'led-highbeam-on led-highbeam-on)
+                    )
+                    (setq control-store-pending (systime))
                     (dbg DBG-LED (str-merge "led mallgrab press on " (str-from-n (to-i led-on) "%d")
                         " hb " (str-from-n (to-i led-highbeam-on) "%d")))
                     (setq mall-grab-press-active nil)
@@ -696,6 +815,22 @@
                 (var tail-bri (if (> direction 0) rear-bri front-bri))
                 (var aux-bri (bri255 led-current-brightness))
                 (var frozen (and (running-state) (= led-update-not-running 1) (> (secs-since led-run-start-time) 1)))
+                ; Hoisted out of the cond because the aux strips have to
+                ; honour it too: update-aux-leds runs after the cond and was
+                ; re-lighting the footpad every tick, so shutoff blanked the
+                ; front and rear and left the footpad rainbowing at idle
+                ; brightness until the battery gave up.
+                ;
+                ; Carries the two branches that outrank it in the cond, so it
+                ; means "the shutoff branch runs" rather than just "shutoff
+                ; elapsed" - otherwise a handtest long enough to pass the
+                ; timeout would keep the front and rear breathing while the
+                ; footpad went dark under it.
+                (var lights-off (and (!= state 15)
+                                     (not handtest-mode)
+                                     (> last-activity-sec idle-timeout-shutoff)
+                                     (< can-last-activity-time-sec 1)
+                                     (!= state 5)))
 
                 (cond
                     ((= state 15) {
@@ -706,7 +841,7 @@
                         (seg-apply seg-front FX-BREATHE 0 0x000000FFu32 64 front-bri)
                         (seg-apply seg-rear FX-BREATHE 0 0x000000FFu32 64 rear-bri)
                     })
-                    ((and (> last-activity-sec idle-timeout-shutoff) (< can-last-activity-time-sec 1) (!= state 5)) {
+                    (lights-off {
                         (seg-apply seg-front FX-OFF 0 0 32 0)
                         (seg-apply seg-rear FX-OFF 0 0 32 0)
                     })
@@ -733,7 +868,10 @@
                     (seg-gauge seg-rear (to-i (* 255.0 battery-percent-remaining)) 32 rear-bri)
                 })
 
-                (update-aux-leds aux-bri)
+                (if lights-off {
+                    (seg-apply seg-footpad FX-OFF 0 0 32 0)
+                    (seg-apply seg-button FX-OFF 0 0 32 0)
+                } (update-aux-leds aux-bri))
                 (setq dbg-led-t3 (secs-since 0))
             }{
                 ; LEDs off: blank the drive/aux strips, keep the status bar
