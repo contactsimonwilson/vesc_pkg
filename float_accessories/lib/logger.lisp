@@ -77,7 +77,7 @@
             )))
             (if (eq (ix r 0) 'exit-error) {
                 (dbg-err (str-merge "sdlog write " (to-str (ix r 1))))
-                (def log-running false)
+                (setq log-running false)
             })
             (sleep (/ 1.0 rate))
             ;(print-loglist loglist)
@@ -106,7 +106,7 @@
                     (= append-gnss 1) ; Append gnss
                 )
 
-                (def log-running true)
+                (setq log-running true)
                 (def log-thd-id (spawn log-thd rate loglist))
                 (dbg DBG-SDLOG (str-merge "sdlog start " (str-from-n (length loglist) "%d")
                     " fields " (str-from-n rate "%.1f") "Hz"))
@@ -119,7 +119,7 @@
         (log-stop -2)
         (if log-running
             (progn
-                (def log-running false)
+                (setq log-running false)
                 (wait log-thd-id)
                 (send-msg "Log stopped")
                 (if (= (second (f-fatinfo)) 0) {

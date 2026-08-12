@@ -25,6 +25,8 @@ ABOUT = HERE / "README-gen.md"
 VERSION = HERE / "version"
 OUT = HERE / "ui.qml"
 
+PLACEHOLDERS = ("{{VERSION}}", "{{ABOUT_MD}}")
+
 
 def qml_string(text):
     """Escape text so it survives inside a QML double-quoted string literal."""
@@ -46,7 +48,7 @@ def main():
     out = out.replace("{{VERSION}}", VERSION.read_text(encoding="utf-8").strip())
     out = out.replace("{{ABOUT_MD}}", qml_string(ABOUT.read_text(encoding="utf-8")))
 
-    left = [p for p in ("{{VERSION}}", "{{ABOUT_MD}}") if p in out]
+    left = [p for p in PLACEHOLDERS if p in out]
     if left:
         sys.exit(f"gen_ui.py: placeholder(s) not substituted: {', '.join(left)}")
 

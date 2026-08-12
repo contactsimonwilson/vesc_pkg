@@ -1,62 +1,32 @@
-; Verbose diagnostics logger.
+; Verbose diagnostics logger. dbg-mask is RAM only, never in the config: turning
+; logging on is a debugging action, so it must not survive a power cycle, wear NVS
+; or ship enabled. Resets to 0 on every boot.
 ;
-; The enable flag (dbg-mask) lives in RAM only - deliberately NOT in the
-; fa_cfg config. Turning verbose logging on is a debugging action: it must
-; not survive a power cycle, must not wear NVS, and must never ship enabled
-; on a user's board. It resets to 0 (silent) on every boot.
+; Every message is gated by a category bit, so one noisy subsystem can be watched
+; without the others drowning it out:
 ;
-; Every message is gated by a category bit so one noisy subsystem can be
-; watched without the others drowning it out:
+;   (dbg DBG-LED "led: message")
+;   (if (dbg-active DBG-LED) (dbg DBG-LED (str-merge ...)))   ; hot path
+;   (if (dbg-tick DBG-CAN 'can-tel 2.0) (dbg DBG-CAN ...))    ; max 1 per 2 s
 ;
-;   (dbg DBG-LED "led: message")             ; logged when DBG-LED is on
-;   (if (dbg-active DBG-LED)                 ; hot path: keep the str-merge
-;       (dbg DBG-LED (str-merge ...)))       ; out of the loop when off
-;   (if (dbg-tick DBG-CAN 'can-tel 2.0)      ; at most one line per 2 s
-;       (dbg DBG-CAN (str-merge ...)))
+; str-merge is the expensive part (it allocates), which is why call sites in loops
+; guard it rather than building a string to throw away. dbg-err / dbg-warn are
+; never gated - a real failure always prints.
 ;
-; str-merge is the expensive part (it allocates), which is why call sites in
-; loops guard it rather than passing a built string into a function that
-; then throws it away.
+; A lisp print is synchronous and runs on the evaluator, so it costs the loop that
+; emitted it and every other lisp thread with it. Turning DBG-LED on and watching
+; the LED loop miss deadlines is partly watching the reporting. Judge loop timing
+; with logging off; treat a rate measured with it on as a floor. Hence the lines
+; below are throttled and edge-triggered rather than per-iteration.
 ;
-; dbg-err / dbg-warn are NOT gated - a real failure always prints.
+; Message text is terse because every literal lives in the constant heap, which
+; this package very nearly fills. See README.md for what the categories mean.
 ;
-; Logging is not free, and it is not free in a way that shows up in exactly
-; the measurements people turn it on to take. A lisp `print` is synchronous:
-; commands_printf_lisp takes a global print mutex, mallocs a buffer, and
-; calls commands_send_packet on the calling thread - which for a BLE link
-; loops esp_ble_gatts_send_indicate until the whole packet is out. All of
-; that runs on the LispBM evaluator, and the evaluator (priority 6) is
-; preempted by every comm task in the firmware (comm_block 7, usb_rx /
-; tcp_task / can_proc 8).
+; Control it from the Diagnostics card, or the REPL: (dbg-on) (dbg-off)
+; (dbg-add DBG-LED) (dbg-del DBG-LED) (dbg-set 12) (dbg-status) (diag).
 ;
-; So a log line costs the loop that emitted it, and it costs every other
-; lisp thread with it. Turning DBG-LED on and watching the LED loop report
-; missed deadlines is partly watching the reporting: the tail of a stall is
-; the print that announced the previous one. Judge loop timing with logging
-; OFF where possible, and treat a rate with logging on as a floor.
-;
-; This is why the log lines below are throttled and edge-triggered rather
-; than emitted per iteration.
-;
-; Message text is deliberately terse. Every literal here lives in the
-; LispBM constant heap (flash), which this package very nearly fills, so
-; log lines are telegraphic and carry their own short subsystem prefix
-; rather than being formatted by a tag table. See README.md for what the
-; categories mean.
-;
-; Control it from the Diagnostics card on the QML Config tab, or from the
-; VESC Tool lisp REPL:
-;
-;   (dbg-on)            everything on
-;   (dbg-off)           everything off
-;   (dbg-add DBG-LED)   turn one category on
-;   (dbg-del DBG-LED)   turn one category off
-;   (dbg-set 12)        set the raw mask (DBG-CAN + DBG-LED)
-;   (dbg-status)        show the current mask
-;   (diag)              one-shot system report, works with logging off
-;
-; Note the naming: LispBM folds symbol case, so a function may not share a
-; name with a DBG-* constant. (dbg-all) would BE the constant DBG-ALL.
+; Naming: LispBM folds symbol case, so a function may not share a name with a
+; DBG-* constant - (dbg-all) would BE the constant DBG-ALL.
 
 (def dbg-throttle (list
     (cons 'cfg-ctl 0)

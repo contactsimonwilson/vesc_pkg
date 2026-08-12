@@ -1,24 +1,28 @@
 @const-start
 
-; Configuration access. The config itself is a VESC custom config provided
-; by the fa_cfg native lib (see conf/settings.xml). It is edited in VESC
-; Tool's standard parameter UI and persisted by the firmware - the package
-; no longer implements its own eeprom layout, magic numbers or CRCs.
-;
-; Parameter names: the lisp code uses its traditional dashed symbols
-; (e.g. 'led-front-pin); the native lib treats '-' and '_' as equal.
+; Configuration access. The config is a VESC custom config from the fa_cfg native
+; lib (see conf/settings.xml), edited in VESC Tool's parameter UI and persisted by
+; the firmware. Lisp uses dashed names ('led-front-pin); the lib treats - and _ as
+; equal.
 
 (defun get-config (name)
     (ext-facfg-get (sym2str name))
 )
 
-; Every write goes through here, so DBG-CFG gives a complete audit trail of
-; who changed what - the fastest way to find a setting being clobbered at
-; runtime (master push, mall-grab toggle, QML slider) rather than by the user.
+; Refused while test mode runs. Test mode drives the same telemetry globals as the
+; CAN parser, so downstream paths that persist a setting fire too - the mall grab
+; toggle would write led-on to NVS and keep it. Guarded here rather than at those
+; callers: this is the one funnel every write goes through, and a consumer that has
+; to ask about test mode is one the simulator is no longer transparent to.
 (defun set-config (name value) {
-    (if (and (dbg-active DBG-CFG) (not-eq (ext-facfg-get (sym2str name)) value))
-        (dbg DBG-CFG (str-merge "cfg " (sym2str name) " = " (to-str value))))
-    (ext-facfg-set (sym2str name) value)
+    (if sim-active {
+        (if (dbg-active DBG-CFG)
+            (dbg DBG-CFG (str-merge "cfg refused (test mode) " (sym2str name))))
+    }{
+        (if (and (dbg-active DBG-CFG) (not-eq (ext-facfg-get (sym2str name)) value))
+            (dbg DBG-CFG (str-merge "cfg " (sym2str name) " = " (to-str value))))
+        (ext-facfg-set (sym2str name) value)
+    })
 })
 
 (defun save-config () {
@@ -256,10 +260,9 @@
 })
 
 (defun status () {
-    ; Built as a list and joined once: accumulating with str-merge copies
-    ; the growing string on every step, which at the QML poll rate was the
-    ; main source of lbm memory churn between GC cycles.
-    ;
+      ; Built as a list and joined once: accumulating with str-merge copies the
+      ; growing string every step, which at the QML poll rate was the main source
+      ; of lbm memory churn between GC cycles.
     ; GNSS: fix flag, seconds since the last sentence, hdop, speed (m/s).
     ; The firmware stamps the age on every decoded sentence (fix or not),
     ; so a fix additionally needs a non-zero position.

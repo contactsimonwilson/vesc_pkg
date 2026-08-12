@@ -1,13 +1,10 @@
 @const-start
 
-; GNSS receiver support. Two module types:
-;   0 u-blox: driven by the firmware ublox driver (ublox-init), which
-;     configures the module and parses in the background.
-;   1 NMEA:   any module streaming NMEA sentences on a UART - read
-;     line-wise and fed to nmea-parse.
-; Either way the fix lands in the firmware GNSS state, so the gnss-*
-; extensions work, the SD log can append position (Log GNSS) and the
-; firmware answers the CAN GNSS broadcast.
+; GNSS receiver support. Type 0 u-blox: the firmware driver (ublox-init) configures
+; and parses in the background. Type 1 NMEA: any module streaming sentences on a
+; UART, read line-wise into nmea-parse. Either way the fix lands in the firmware
+; GNSS state, so the gnss-* extensions, the SD log position and the CAN GNSS
+; broadcast all work.
 
 (defunret init-gnss () {
     (var rx (get-config 'gnss-rx-pin))

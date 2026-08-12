@@ -46,6 +46,8 @@
 (read-eval-program pubmote)
 (import "lib/commands.lisp" 'commands)
 (read-eval-program commands)
+(import "lib/sim.lisp" 'sim)
+(read-eval-program sim)
 
 (defun load-native-libs () {
     (var target (sysinfo 'hw-target))
@@ -158,14 +160,11 @@
     (setq led-brightness-idle (get-config 'led-brightness-idle))
     (setq led-brightness-status (get-config 'led-brightness-status))
 
-    ; Lighting first, and synchronously. Everything after this point either
-    ; spawns a thread that competes for the evaluator or blocks it outright
-    ; (CAN discovery, BMS/GNSS UART, humidity I2C), and lisp threads share a
-    ; single evaluator - so anything started before the strips are defined
-    ; delays the first frame. Defining the segments here rather than inside
-    ; the LED thread also gets the lib's render thread - a real FreeRTOS
-    ; thread, unaffected by whatever the evaluator is doing - running before
-    ; the loop has had its first slice.
+    ; Lighting first, and synchronously. Everything after this either spawns a
+    ; thread competing for the evaluator or blocks it outright (CAN discovery,
+    ; BMS/GNSS UART, humidity I2C), so anything started before the strips are
+    ; defined delays the first frame. Defining them here also gets the lib's own
+    ; FreeRTOS render thread running before the loop has had a slice.
     (if (= (get-config 'led-enabled) 1) {
         (var r (trap (led-start)))
         (if (eq (ix r 0) 'exit-error)

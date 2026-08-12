@@ -16,8 +16,11 @@
             (float-accessories-command-rx data)
         })
 
-        ; Route to VESC Float package telemetry handler
-        (if (= magic-byte FLOAT_MAGIC) {
+        ; Route to VESC Float package telemetry handler.
+        ; Dropped while the bench simulator owns the telemetry globals: letting
+        ; it parse would have a real board on the bus fighting the scripted
+        ; values at the CAN poll rate, flickering the status LED between them.
+        (if (and (= magic-byte FLOAT_MAGIC) (not sim-active)) {
             (float-pkg-telemetry-rx data)
         })
 

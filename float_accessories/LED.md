@@ -232,6 +232,7 @@ turning the lights off does not blind you. First match wins:
 | Board disabled (state 15) | solid red |
 | CAN silent ≥ 1 s, or no CAN id yet | blue breathe ("connecting") |
 | `rpm > 250` and active pushback/tiltback (`sat > 2`) | red strobe |
+| `rpm > 250` and a pad off for ≥ 0.25 s | red split, or solid red if neither pad is down — see below |
 | `rpm > 250` otherwise | duty-cycle bar: green, yellow above 60%, red above 80% |
 | A footpad engaged | split half/half — see below |
 | Otherwise | battery gauge, pulsing while charging |
@@ -242,6 +243,21 @@ The bar splits at its midpoint. One half lights cyan for each engaged pad; both
 halves light when both pads are down. **Status Bar Style** swaps which half maps
 to which pad — `Classic` and `Alternate` exist because the bar can be mounted
 either way round.
+
+At speed the same split is drawn **red** instead of cyan, as a warning: the lit
+half is still the engaged sensor. With neither sensor engaged there is no half to
+point at, so the whole bar goes solid red rather than lighting both halves, which
+would read as "both down" — the opposite of what is happening.
+
+This outranks the duty bar, the way the tiltback strobe already does. It exists
+because a lifted pad at speed was previously invisible: the duty bar owned
+everything above 250 erpm, and the footpad fault states (`8` half, `9` full) only
+appear once the board has already stopped. The gap between lifting a pad and the
+board acting on it is exactly when the warning is useful.
+
+The 0.25 s hold (`footpad-warn-delay` in `lib/led-vars.lisp`) debounces it. A
+weight shift drops a single sensor for a few ticks at a time and must not flash
+the bar; only a release that persists is worth showing.
 
 ---
 

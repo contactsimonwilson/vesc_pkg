@@ -56,7 +56,6 @@
 (def led-startup-timeout)
 (def led-dim-on-highbeam-ratio 0.0)
 (def led-max-brightness)
-(def led-update-not-running)
 (def led-show-battery-charging 0)
 (def led-front-highbeam-pin)
 (def led-rear-highbeam-pin)
@@ -65,6 +64,53 @@
 (def led-current-brightness 0.0)
 (def direction 1)
 (def led-mall-grab 0)
+
+; Last time both footpads read engaged. update-status-leds stamps this every
+; tick that switch-state is 3, so (secs-since footpad-ok-time) is how long a pad
+; has been off - which is what the at-speed footpad warning debounces on.
+(def footpad-ok-time 0)
+; Long enough to ride out the blips a weight shift puts on one sensor. A feel
+; constant, so it is tuned here rather than exposed as a setting.
+(def footpad-warn-delay 0.25)
+
+; ---- Loop state ---------------------------------------------------------
+; Locals of what used to be one 380-line led-loop. Splitting it into phases means
+; the values it carried between parts have to outlive one function. Each is written
+; by one phase and read by later ones, in the order led-loop calls them.
+
+; Set by led-loop before the phases run.
+(def have-segs nil)
+(def led-loop-delay-sec 0.02)
+(def led-next-run-time 0)
+
+; led-track-direction: commit window for a reversal.
+(def prev-direction 1)
+(def direction-change-start-time 0)
+(def direction-change-window 0.5)
+
+; led-track-mall-grab: footpad press timing while nose-up.
+(def mall-grab-press-start 0)
+(def mall-grab-press-active nil)
+
+; led-decide: what the drawing phases render.
+(def current-led-mode 0)
+(def last-activity-sec 0.0)
+(def can-activity-sec 0.0)
+(def front-bri 0)
+(def rear-bri 0)
+(def status-bri 0)
+(def aux-bri 0)
+; head faces the direction of travel; tail trails it. Both are one of
+; seg-front / seg-rear, chosen by `direction`, with brightnesses to match.
+(def head-seg -1)
+(def tail-seg -1)
+(def head-bri 0)
+(def tail-bri 0)
+(def hb-front nil)
+(def hb-rear nil)
+(def hb-frac 0.0)
+(def lights-off nil)
+(def braking nil)
 
 ; esp_led segment index per strip, -1 when the strip is not present
 (def seg-front -1)

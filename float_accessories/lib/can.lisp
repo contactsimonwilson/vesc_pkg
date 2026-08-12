@@ -7,6 +7,7 @@
 (def sat-t 0)
 (def switch-state 0)
 (def handtest-mode nil)
+(def sim-active nil)
 (def rpm 0)
 (def speed 0)
 (def tot-current 0)
@@ -103,54 +104,56 @@
     (loopwhile t {
         (if (!= dbg-mask 0) (setq dbg-ticks-can (+ dbg-ticks-can 1)))
 
-        ; Discovery failed (or the ESC was powered up later). Keep looking,
-        ; but only with the passive probe - it reads the CAN status table and
-        ; blocks nobody. The ping sweep is never repeated here: it stalls the
-        ; whole lisp evaluator and would restart the LED stutter every 5 s.
-        (if (and (< can-id 0) (> (- (secs-since 0) last-rediscover) 5)) {
-            (setq last-rediscover (secs-since 0))
-            (var heard (can-devices-heard))
-            (if heard {
-                (dbg DBG-CAN (str-merge "can heard " (to-str heard)))
-                (if (try-can-devices heard) (finish-can-init -1))
+        (setq loop-start-time (secs-since 0))
+        (if (not sim-active) {
+            ; Discovery failed (or the ESC was powered up later). Keep looking,
+            ; but only with the passive probe - it reads the CAN status table and
+            ; blocks nobody. The ping sweep is never repeated here: it stalls the
+            ; whole lisp evaluator and would restart the LED stutter every 5 s.
+            (if (and (< can-id 0) (> (- (secs-since 0) last-rediscover) 5)) {
+                (setq last-rediscover (secs-since 0))
+                (var heard (can-devices-heard))
+                (if heard {
+                    (dbg DBG-CAN (str-merge "can heard " (to-str heard)))
+                    (if (try-can-devices heard) (finish-can-init -1))
+                })
             })
-        })
-        (setq loop-start-time  (secs-since 0))
-        ; Only poll once an ESC has actually been found: can-id is -1 until
-        ; then, and sending to id -1 at 20 Hz puts frames on the bus that
-        ; nothing can ack.
-        (if (>= can-id 0) {
-            (float-cmd can-id (list (assoc float-cmds 'COMMAND_GET_ALLDATA) 3))
-            (if (and refloat-humidity (get-config 'humidity-enabled)) (float-cmd can-id (list (assoc float-cmds 'COMMAND_HUMIDITY) (to-byte hum))))
-        })
-
-        (if (or (>= bms-can-id 0) (< (secs-since bms-last-activity-time) 1)){
-            (var prev-charging-state bms-is-charging)
-            (setq bms-is-charging (and (> (get-bms-val 'bms-v-charge) 10.0) (> (abs(get-bms-val 'bms-i-in-ic)) 0.1)))
-
-            (if (and bms-is-charging (not prev-charging-state)){
-                    (dbg DBG-CAN "can charger in")
-                    (setq bms-charger-just-plugged t)
-                    (setq bms-charger-plug-in-time (secs-since 0))
+            ; Only poll once an ESC has actually been found: can-id is -1 until
+            ; then, and sending to id -1 at 20 Hz puts frames on the bus that
+            ; nothing can ack.
+            (if (>= can-id 0) {
+                (float-cmd can-id (list (assoc float-cmds 'COMMAND_GET_ALLDATA) 3))
+                (if (and refloat-humidity (get-config 'humidity-enabled)) (float-cmd can-id (list (assoc float-cmds 'COMMAND_HUMIDITY) (to-byte hum))))
             })
-            (if (and prev-charging-state (not bms-is-charging))
-                (dbg DBG-CAN "can charger out"))
-            ; Check if we're within 5 seconds of initial plug-in and charging started
-            (if (not (and bms-charger-just-plugged (<= (- (secs-since 0) bms-charger-plug-in-time) 5))){
-                ; Reset the flag if more than 5 seconds have passed
-                (setq bms-charger-just-plugged nil)
+
+            (if (or (>= bms-can-id 0) (< (secs-since bms-last-activity-time) 1)){
+                (var prev-charging-state bms-is-charging)
+                (setq bms-is-charging (and (> (get-bms-val 'bms-v-charge) 10.0) (> (abs(get-bms-val 'bms-i-in-ic)) 0.1)))
+
+                (if (and bms-is-charging (not prev-charging-state)){
+                        (dbg DBG-CAN "can charger in")
+                        (setq bms-charger-just-plugged t)
+                        (setq bms-charger-plug-in-time (secs-since 0))
+                })
+                (if (and prev-charging-state (not bms-is-charging))
+                    (dbg DBG-CAN "can charger out"))
+                ; Check if we're within 5 seconds of initial plug-in and charging started
+                (if (not (and bms-charger-just-plugged (<= (- (secs-since 0) bms-charger-plug-in-time) 5))){
+                    ; Reset the flag if more than 5 seconds have passed
+                    (setq bms-charger-just-plugged nil)
+                })
+            })
+
+            (if need-fetch-cells {
+                (setq need-fetch-cells nil)
+                (setq last-fetch-cells-time (secs-since 0))
+                (fetch-series-cells)
+                (apply-battery-config (get-config 'soc-type) (get-config 'cell-type))
             })
         })
 
         (setq loop-end-time (secs-since 0))
         (var actual-loop-time (- loop-end-time loop-start-time))
-
-        (if need-fetch-cells {
-            (setq need-fetch-cells nil)
-            (setq last-fetch-cells-time (secs-since 0))
-            (fetch-series-cells)
-            (apply-battery-config (get-config 'soc-type) (get-config 'cell-type))
-        })
 
         (dbg-can-transitions)
         (if (dbg-tick DBG-CAN 'can-tel 2.0)
@@ -257,20 +260,14 @@
 
 ; --- CAN discovery --------------------------------------------------------
 ;
-; Finding the ESC is staged cheapest-first, because the obvious approach is
-; expensive in a way that is invisible from lisp:
+; Staged cheapest-first, because can-ping blocks: it waits on a semaphore for up
+; to 10 ms inside a lisp extension, and extensions run on the evaluator, so it
+; stalls every lisp thread - not just this one. Sweeping 0..254 that way held the
+; LED loop at 2-10 Hz for the first minute after boot, and an interleaved sleep
+; does not help because the 10 ms is not ours to yield.
 ;
-;   can-ping -> comm_can_ping() -> xSemaphoreTake(ping_sem, 10ms)
-;
-; That is a blocking wait inside a lisp extension, and extensions run on the
-; evaluator thread - so it stalls EVERY lisp thread, not just this one, for
-; up to 10 ms per probe. Sweeping 0..254 that way froze the LED loop down to
-; 2-10 Hz for the first minute after boot. The `(sleep 0.005)` that used to
-; sit between probes does not help: it yields the 5 ms it owns, but the 10 ms
-; inside can-ping is not ours to give away.
-;
-; So: stored id -> nodes we can already hear -> narrow ping scan -> full ping
-; scan. In the normal case only the first two run and nothing blocks at all.
+; So: stored id -> nodes already heard -> narrow ping scan -> full scan. Normally
+; only the first two run and nothing blocks.
 
 ; Nodes that have sent a CAN status message. comm_can keeps that table
 ; anyway, so reading it costs nothing and blocks nobody. Trapped because it

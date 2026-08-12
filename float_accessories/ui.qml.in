@@ -248,11 +248,8 @@ Item {
     property bool statusTimeout: true
     property bool readConfig: false
     property bool wasConnected: false
-    // Verbose-logging category mask, mirrored from the board. Not part of the
-    // config - it lives in RAM on the device and resets on reboot, so it is
-    // read back with (send-debug) on connect rather than from the settings
-    // string.
     property int debugMask: 0
+    property bool simOn: false
     property int floatPackageLastStatusTime: 0
     property int pubmoteLastStatusTime: 0
     property bool floatPackageConnected: false
@@ -462,13 +459,8 @@ Item {
     readonly property int faConfigIndex: 1
     property ConfigParams mCustomConf: VescIf.customConfig(faConfigIndex)
 
-    // VESC Tool deletes and rebuilds its ConfigParams objects every time it
-    // reads the custom configs (on connect, and on a manual reload). This page
-    // outlives a reconnect, so the property above - a one-shot binding, since
-    // customConfig() is a plain invokable with nothing to re-trigger it - is
-    // left holding a destroyed object, which QML nulls out. Re-resolve it when
-    // the configs are (re)loaded and again on demand, so writing settings after
-    // a reconnect updates the live object instead of throwing on null.
+        // VESC Tool rebuilds its ConfigParams object on every settings read, so a
+        // binding onto it goes stale; these are re-read on each connect instead.
     Connections {
         target: VescIf
         function onCustomConfigLoadDone() {
@@ -615,7 +607,6 @@ Item {
             floatPkgSoc.checked = mCustomConf.getParamInt("soc_type") == 0
             voltageCurveSoc.checked = mCustomConf.getParamInt("soc_type") == 1
             cellType.currentIndex = mCustomConf.getParamInt("cell_type")
-            ledUpdateNotRunning.checked = mCustomConf.getParamBool("led_update_not_running")
             logEnabled.checked = mCustomConf.getParamBool("log_enabled")
             logRate.value = mCustomConf.getParamDouble("log_rate")
             logAppendGnss.checked = mCustomConf.getParamBool("log_append_gnss")
@@ -706,6 +697,14 @@ Item {
         onTriggered: {
             sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(gnss-state)")
         }
+    }
+
+    Timer {
+        id: simThrottleTimer
+        interval: 50 // 20 Hz, matching the light controls
+        repeat: false
+        property var pending: ({})
+        onTriggered: simFlushPending()
     }
 
     // Timer for 60-second timeout
@@ -834,6 +833,413 @@ Item {
             }
         }
     }
+
+    // Test mode controls. Opening this popup turns test mode on and closing it
+    // turns it off, so the board cannot be left reporting scripted telemetry
+    // because a panel was scrolled past. The controls below are the whole state:
+    // a preset fills them in, it does not compose with them.
+    Popup {
+        id: simPopup
+        modal: true
+        focus: true
+        visible: false
+        anchors.centerIn: parent
+        closePolicy: Popup.CloseOnEscape
+        // Sized and painted like the About dialog. Taller cap than its 520,
+        // because this one holds controls rather than a block of text.
+        width: Math.min(container.width - 20, 400)
+        height: Math.min(container.height - 40, 620)
+        leftPadding: 12
+        rightPadding: 12
+        topPadding: 16
+        bottomPadding: 12
+
+        background: Rectangle {
+            color: Utility.getAppHexColor("darkBackground")
+            radius: cardStyle.radius
+            border.color: Qt.rgba(1, 1, 1, 0.1)
+            border.width: 1
+        }
+
+        // True while a preset is filling the controls. Their change handlers skip
+        // sending during that, and one sim-load goes out afterwards - ten separate
+        // packets would put the board through nine states nobody asked for.
+        property bool pushing: false
+
+        onOpened: {
+            simOn = true
+            sendSim("(sim-on)")
+            simPushAll()
+        }
+
+        // Closing hands telemetry back, on Escape and on the Close button alike.
+        onClosed: {
+            simOn = false
+            sendSim("(sim-off)")
+        }
+
+        // ...and on losing the link. A popup left open across a disconnect would
+        // show live controls for a test mode that is not running, and the
+        // (sim-off) on close would go nowhere.
+        property bool linkUp: !statusTimeout
+        onLinkUpChanged: if (!linkUp && opened) close()
+
+        // A child rather than contentItem itself, which is how the About dialog
+        // does it. Set as contentItem, anchors.fill made it fill the whole Popup
+        // and the padding above did nothing - the title sat against the top edge
+        // and the controls against the sides.
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 12
+
+            Text {
+                text: "Test Mode"
+                color: Utility.getAppHexColor("lightText")
+                font.bold: true
+                font.pointSize: 16
+                Layout.alignment: Qt.AlignHCenter
+            }
+
+            ScrollView {
+                id: simScroll
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                // On top of the dialog's own padding, so the controls are inset
+                // from the edge and clear of the vertical scrollbar. availableWidth
+                // accounts for both, so the column below still sizes correctly.
+                leftPadding: 4
+                rightPadding: 12
+                contentWidth: availableWidth
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                ColumnLayout {
+                    width: simScroll.availableWidth
+                    spacing: cardStyle.fieldSpacing
+
+                    Text {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        color: fieldLabelStyle.color
+                        font.pixelSize: fieldLabelStyle.pixelSize - 2
+                        text: "Fakes the telemetry the lighting reads, so you can check every status with no board attached. " +
+                              "Safe to use with a board connected - its real values are ignored while this is on. " +
+                              "RAM only: it turns itself off when the board reboots."
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        color: !simOn ? fieldLabelStyle.color : "#8fdc8f"
+                        font.pixelSize: fieldLabelStyle.pixelSize
+                        font.bold: true
+                        text: !simOn ? "Test mode: OFF" : "Test mode: ON"
+                    }
+
+                    // Presets. Purely a convenience for filling the controls: the
+                    // combinations that produce each status are the part worth
+                    // remembering (tiltback is sat > 2 AND rpm > 250, mall grab is
+                    // pitch > 70 AND not running AND both pads), and nobody should
+                    // have to read led.lisp to reproduce one.
+                    ColumnLayout {
+                        spacing: cardStyle.labelSpacing
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            color: fieldLabelStyle.color
+                            font.pixelSize: fieldLabelStyle.pixelSize
+                            font.bold: fieldLabelStyle.bold
+                            text: "Preset - fills the values below"
+                        }
+                        ComboBox {
+                            id: simPreset
+                            Layout.fillWidth: true
+                            textRole: "text"
+                            model: [
+                                {text: "Connecting",       st: 0,  sw: 0, sat: 2, rpm:     0, duty: 0.00, batt: 0.55, pitch:  0, chg: false, hand: false, link: false},
+                                {text: "Idle",             st: 0,  sw: 0, sat: 2, rpm:     0, duty: 0.00, batt: 0.55, pitch:  0, chg: false, hand: false, link: true},
+                                {text: "Idle, low batt",   st: 0,  sw: 0, sat: 2, rpm:     0, duty: 0.00, batt: 0.08, pitch:  0, chg: false, hand: false, link: true},
+                                {text: "Charging",         st: 0,  sw: 0, sat: 2, rpm:     0, duty: 0.00, batt: 0.42, pitch:  0, chg: true,  hand: false, link: true},
+                                {text: "Footpad left",     st: 0,  sw: 1, sat: 2, rpm:     0, duty: 0.00, batt: 0.55, pitch:  0, chg: false, hand: false, link: true},
+                                {text: "Footpad right",    st: 0,  sw: 2, sat: 2, rpm:     0, duty: 0.00, batt: 0.55, pitch:  0, chg: false, hand: false, link: true},
+                                {text: "Footpad both",     st: 0,  sw: 3, sat: 2, rpm:     0, duty: 0.00, batt: 0.55, pitch:  0, chg: false, hand: false, link: true},
+                                {text: "Mall grab",        st: 0,  sw: 3, sat: 2, rpm:     0, duty: 0.00, batt: 0.55, pitch: 75, chg: false, hand: false, link: true},
+                                {text: "Riding",           st: 1,  sw: 3, sat: 2, rpm:  1500, duty: 0.35, batt: 0.55, pitch:  2, chg: false, hand: false, link: true},
+                                {text: "Duty warn",        st: 1,  sw: 3, sat: 2, rpm:  1800, duty: 0.65, batt: 0.50, pitch:  3, chg: false, hand: false, link: true},
+                                {text: "Duty high",        st: 1,  sw: 3, sat: 2, rpm:  2200, duty: 0.85, batt: 0.45, pitch:  4, chg: false, hand: false, link: true},
+                                {text: "Pad off at speed", st: 1,  sw: 1, sat: 2, rpm:  1500, duty: 0.35, batt: 0.55, pitch:  2, chg: false, hand: false, link: true},
+                                {text: "Tiltback",         st: 2,  sw: 3, sat: 3, rpm:  2000, duty: 0.70, batt: 0.40, pitch:  6, chg: false, hand: false, link: true},
+                                {text: "Wheelslip",        st: 3,  sw: 3, sat: 2, rpm:  1600, duty: 0.50, batt: 0.50, pitch:  2, chg: false, hand: false, link: true},
+                                {text: "Reverse",          st: 1,  sw: 3, sat: 2, rpm: -1500, duty: 0.35, batt: 0.50, pitch: -2, chg: false, hand: false, link: true},
+                                {text: "Darkride",         st: 4,  sw: 3, sat: 2, rpm: -1500, duty: 0.40, batt: 0.50, pitch:  2, chg: false, hand: false, link: true},
+                                {text: "Flywheel",         st: 5,  sw: 3, sat: 2, rpm:  1200, duty: 0.30, batt: 0.50, pitch:  0, chg: false, hand: false, link: true},
+                                {text: "Fault - switch",   st: 8,  sw: 1, sat: 2, rpm:     0, duty: 0.00, batt: 0.55, pitch:  0, chg: false, hand: false, link: true},
+                                {text: "Quickstop",        st: 13, sw: 0, sat: 2, rpm:     0, duty: 0.00, batt: 0.55, pitch:  0, chg: false, hand: false, link: true},
+                                {text: "Disabled",         st: 15, sw: 0, sat: 2, rpm:     0, duty: 0.00, batt: 0.55, pitch:  0, chg: false, hand: false, link: true},
+                                {text: "Hand test",        st: 0,  sw: 3, sat: 2, rpm:     0, duty: 0.00, batt: 0.55, pitch:  0, chg: false, hand: true,  link: true}
+                            ]
+                            currentIndex: 8
+                            onActivated: simApplyPreset(model[currentIndex])
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        color: fieldLabelStyle.color
+                        font.pixelSize: fieldLabelStyle.pixelSize
+                        font.bold: true
+                        text: "Values"
+                    }
+
+                    ColumnLayout {
+                        spacing: cardStyle.labelSpacing
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            color: fieldLabelStyle.color
+                            font.pixelSize: fieldLabelStyle.pixelSize
+                            text: "Board state"
+                        }
+                        ComboBox {
+                            id: simState
+                            Layout.fillWidth: true
+                            textRole: "text"
+                            valueRole: "value"
+                            // The state numbers the float/refloat packages report.
+                            model: [
+                                {text: "Startup (0)",           value: 0},
+                                {text: "Running (1)",           value: 1},
+                                {text: "Tiltback (2)",          value: 2},
+                                {text: "Wheelslip (3)",         value: 3},
+                                {text: "Upside down (4)",       value: 4},
+                                {text: "Flywheel (5)",          value: 5},
+                                {text: "Fault pitch (6)",       value: 6},
+                                {text: "Fault roll (7)",        value: 7},
+                                {text: "Fault switch half (8)", value: 8},
+                                {text: "Fault switch full (9)", value: 9},
+                                {text: "Fault startup (11)",    value: 11},
+                                {text: "Fault reverse (12)",    value: 12},
+                                {text: "Quickstop (13)",        value: 13},
+                                {text: "Disabled (15)",         value: 15}
+                            ]
+                            currentIndex: 1
+                            onActivated: simSend("sim-in-state", model[currentIndex].value)
+                        }
+                    }
+
+                    ColumnLayout {
+                        spacing: cardStyle.labelSpacing
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            color: fieldLabelStyle.color
+                            font.pixelSize: fieldLabelStyle.pixelSize
+                            text: "Footpad"
+                        }
+                        ComboBox {
+                            id: simSwitch
+                            Layout.fillWidth: true
+                            textRole: "text"
+                            valueRole: "value"
+                            model: [
+                                {text: "None",  value: 0},
+                                {text: "Left",  value: 1},
+                                {text: "Right", value: 2},
+                                {text: "Both",  value: 3}
+                            ]
+                            currentIndex: 3
+                            onActivated: simSend("sim-in-switch", model[currentIndex].value)
+                        }
+                    }
+
+                    ColumnLayout {
+                        spacing: cardStyle.labelSpacing
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            color: fieldLabelStyle.color
+                            font.pixelSize: fieldLabelStyle.pixelSize
+                            text: "Tiltback - above None is what strobes the status bar red"
+                        }
+                        ComboBox {
+                            id: simSat
+                            Layout.fillWidth: true
+                            textRole: "text"
+                            valueRole: "value"
+                            model: [
+                                {text: "Centering (0)",   value: 0},
+                                {text: "Reversestop (1)", value: 1},
+                                {text: "None (2)",        value: 2},
+                                {text: "Duty (3)",        value: 3},
+                                {text: "High volts (4)",  value: 4},
+                                {text: "Low volts (5)",   value: 5}
+                            ]
+                            currentIndex: 2
+                            onActivated: simSend("sim-in-sat", model[currentIndex].value)
+                        }
+                    }
+
+                    ColumnLayout {
+                        spacing: cardStyle.labelSpacing
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            color: fieldLabelStyle.color
+                            font.pixelSize: fieldLabelStyle.pixelSize
+                            text: "Speed (erpm) - above 250 shows the duty bar, negative reverses direction"
+                        }
+                        Loader {
+                            id: simRpmLoader
+                            sourceComponent: customValueSlider
+                            onLoaded: {
+                                item.from = -3000.0
+                                item.to = 3000.0
+                                item.value = 1500.0
+                                item.valueChanged.connect(function() {
+                                    if (!simPopup.pushing)
+                                        simSendFThrottled("sim-in-rpm", simRpmLoader.item.value)
+                                })
+                                item.interactionReleased.connect(function() {
+                                    simFlushSlider("sim-in-rpm", simRpmLoader.item.value)
+                                })
+                            }
+                        }
+                    }
+
+                    ColumnLayout {
+                        spacing: cardStyle.labelSpacing
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            color: fieldLabelStyle.color
+                            font.pixelSize: fieldLabelStyle.pixelSize
+                            text: "Duty cycle - bar turns yellow past 60%, red past 80%"
+                        }
+                        Loader {
+                            id: simDutyLoader
+                            sourceComponent: customValueSlider
+                            onLoaded: {
+                                item.from = 0.0
+                                item.to = 1.0
+                                item.value = 0.35
+                                item.asPercent = true
+                                item.valueChanged.connect(function() {
+                                    if (!simPopup.pushing)
+                                        simSendFThrottled("sim-in-duty", simDutyLoader.item.value)
+                                })
+                                item.interactionReleased.connect(function() {
+                                    simFlushSlider("sim-in-duty", simDutyLoader.item.value)
+                                })
+                            }
+                        }
+                    }
+
+                    ColumnLayout {
+                        spacing: cardStyle.labelSpacing
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            color: fieldLabelStyle.color
+                            font.pixelSize: fieldLabelStyle.pixelSize
+                            text: "Pitch angle - past 70 with both pads down is mall grab"
+                        }
+                        Loader {
+                            id: simPitchLoader
+                            sourceComponent: customValueSlider
+                            onLoaded: {
+                                item.from = -90.0
+                                item.to = 90.0
+                                item.value = 0.0
+                                item.valueChanged.connect(function() {
+                                    if (!simPopup.pushing)
+                                        simSendFThrottled("sim-in-pitch", simPitchLoader.item.value)
+                                })
+                                item.interactionReleased.connect(function() {
+                                    simFlushSlider("sim-in-pitch", simPitchLoader.item.value)
+                                })
+                            }
+                        }
+                    }
+
+                    ColumnLayout {
+                        spacing: cardStyle.labelSpacing
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            color: fieldLabelStyle.color
+                            font.pixelSize: fieldLabelStyle.pixelSize
+                            text: "Battery - drives the gauge on the status and button strips"
+                        }
+                        Loader {
+                            id: simBattLoader
+                            sourceComponent: customValueSlider
+                            onLoaded: {
+                                item.from = 0.0
+                                item.to = 1.0
+                                item.value = 0.55
+                                item.asPercent = true
+                                item.valueChanged.connect(function() {
+                                    if (!simPopup.pushing)
+                                        simSendFThrottled("sim-in-batt", simBattLoader.item.value)
+                                })
+                                item.interactionReleased.connect(function() {
+                                    simFlushSlider("sim-in-batt", simBattLoader.item.value)
+                                })
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 12
+                        CheckBox {
+                            id: simCharging
+                            text: "Charging"
+                            onToggled: simSendB("sim-in-charging", checked)
+                        }
+                        CheckBox {
+                            id: simHandtest
+                            text: "Hand test"
+                            onToggled: simSendB("sim-in-handtest", checked)
+                        }
+                        CheckBox {
+                            id: simLink
+                            text: "Link up"
+                            checked: true
+                            onToggled: simSendB("sim-in-link", checked)
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        color: fieldLabelStyle.color
+                        font.pixelSize: fieldLabelStyle.pixelSize - 2
+                        text: "Link up off reports no ESC and a stale link, which is what the status bar shows as " +
+                              "\"connecting\". Speed, voltage, currents and temperatures are derived from the values " +
+                              "above rather than set here, so the telemetry page cannot be made to describe an " +
+                              "impossible board."
+                    }
+                }
+            }
+
+            Button {
+                text: "Close"
+                Layout.fillWidth: true
+                highlighted: true
+                onClicked: simPopup.close()
+            }
+        }
+    }
+
 
     Popup {
         id: keySettingPopup
@@ -1071,14 +1477,8 @@ Item {
             }
         }
 
-        // Coalesced rather than settled on each change: a config arrives one
-        // field at a time, and this only moves off tabs that have *become*
-        // invalid. An intermediate state with nothing enabled yet would push
-        // the selection off Control, and the later field that makes Control
-        // valid again would not bring it back - so the page would settle on
-        // the wrong tab. A whole parse is one JS call, so a zero-interval
-        // timer collapses it into a single settle against the final state,
-        // for the config read on connect and for every later re-read.
+                // Coalesced rather than stored per change: a config write is an NVS
+                // write, and dragging a slider would issue one per sample.
         Timer {
             id: settleTabTimer
             interval: 0
@@ -1996,12 +2396,6 @@ Item {
                                 // them unnecessary. Their wire-protocol slots
                                 // are kept as constants.
 
-                                CheckBox {
-                                    id: ledUpdateNotRunning
-                                    text: "Don't update LEDs while running"
-                                    checked: false
-                                }
-
                                 ColumnLayout {
                                     spacing: cardStyle.labelSpacing
                                     Layout.fillWidth: true
@@ -2287,6 +2681,13 @@ Item {
                                         value: 20
                                         editable: true
                                     }
+                                }
+
+                                Button {
+                                    text: "Test Mode"
+                                    Layout.fillWidth: true
+                                    enabled: !statusTimeout
+                                    onClicked: simPopup.open()
                                 }
                             }
                         }
@@ -3971,11 +4372,9 @@ Item {
                         }
                     }
 
-                    // Diagnostics. Unlike everything else on this page these
-                    // switches are NOT part of the config: they are applied
-                    // the moment they are toggled, live in RAM on the board
-                    // and reset to off on the next reboot. That is deliberate
-                    // - verbose logging is a debugging aid, not a setting.
+                    // Diagnostics. Unlike the rest of this page these are applied
+                    // the moment they are toggled, live in RAM, and reset on
+                    // reboot - verbose logging is a debugging aid, not a setting.
                     GroupBox {
                         title: "Diagnostics"
                         Layout.fillWidth: true
@@ -4056,6 +4455,7 @@ Item {
                             }
                         }
                     }
+
 
                     }
                 }
@@ -4337,7 +4737,6 @@ Item {
         mCustomConf.updateParamDouble("led_max_brightness", parseFloat(ledMaxBrightnessLoader.item.value).toFixed(2))
         mCustomConf.updateParamInt("soc_type", voltageCurveSoc.checked * 1)
         mCustomConf.updateParamInt("cell_type", cellType.value)
-        mCustomConf.updateParamBool("led_update_not_running", ledUpdateNotRunning.checked)
         mCustomConf.updateParamBool("log_enabled", logEnabled.checked)
         mCustomConf.updateParamDouble("log_rate", logRate.value)
         mCustomConf.updateParamBool("log_append_gnss", logAppendGnss.checked)
@@ -4429,6 +4828,94 @@ Item {
         var m = debugMaskFromUi()
         debugMask = m
         sendDebugMaskValue(m)
+    }
+
+    // ---- Test mode ----
+    // 102 is FLOAT_ACCESSORIES_MAGIC and 1 is COMMAND_RUN_LISP, so the string is
+    // evaluated on the board. The state there is ten plain globals, so a control
+    // change is a setq and nothing more - no setter to keep in step with this file,
+    // and a misspelled name fails loudly instead of creating a stray global.
+    function sendSim(code) {
+        sendCode(String.fromCharCode(102) + String.fromCharCode(1) + code)
+    }
+
+    function simSend(field, val) {
+        sendSim("(setq " + field + " " + val + ")")
+    }
+
+    // toFixed keeps a decimal point in the literal: these globals hold floats on
+    // the board and a bare "0" would pin an integer, which then divides as one in
+    // the derived speed and current values.
+    function simSendF(field, val) {
+        simSend(field, val.toFixed(2))
+    }
+
+    // Lisp needs t / nil, not true / false.
+    function simSendB(field, val) {
+        simSend(field, val ? "t" : "nil")
+    }
+
+    // Called on every valueChanged while a slider is dragged. First move goes out
+    // immediately so the strips react at once; the rest are held until the timer
+    // expires, one pending value per field.
+    function simSendFThrottled(field, val) {
+        if (!simThrottleTimer.running) {
+            simSendF(field, val)
+            simThrottleTimer.start()
+        } else {
+            simThrottleTimer.pending[field] = val
+        }
+    }
+
+    function simFlushPending() {
+        var p = simThrottleTimer.pending
+        for (var k in p) simSendF(k, p[k])
+        simThrottleTimer.pending = ({})
+    }
+
+    // On release. Queues the released value first so the board always ends on the
+    // exact position the slider was let go at, never a throttled sample from
+    // part-way through the drag.
+    function simFlushSlider(field, val) {
+        simThrottleTimer.pending[field] = val
+        simFlushPending()
+        simThrottleTimer.stop()
+    }
+
+    // Push all ten as one packet. Used on open and after a preset: ten separate
+    // setqs would walk the board through nine states nobody chose.
+    function simPushAll() {
+        sendSim("(sim-load " + [
+            simState.model[simState.currentIndex].value,
+            simSwitch.model[simSwitch.currentIndex].value,
+            simSat.model[simSat.currentIndex].value,
+            simRpmLoader.item.value.toFixed(2),
+            simDutyLoader.item.value.toFixed(2),
+            simBattLoader.item.value.toFixed(2),
+            simPitchLoader.item.value.toFixed(2),
+            simCharging.checked ? "t" : "nil",
+            simHandtest.checked ? "t" : "nil",
+            simLink.checked ? "t" : "nil"
+        ].join(" ") + ")")
+    }
+
+    // A preset fills the controls then pushes once. pushing stops each control
+    // echoing its own change: the combos would not (onActivated is user-only) but
+    // the sliders fire valueChanged on a programmatic set.
+    function simApplyPreset(preset) {
+        simPopup.pushing = true
+        simState.currentIndex = simState.indexOfValue(preset.st)
+        simSwitch.currentIndex = simSwitch.indexOfValue(preset.sw)
+        simSat.currentIndex = simSat.indexOfValue(preset.sat)
+        simRpmLoader.item.value = preset.rpm
+        simDutyLoader.item.value = preset.duty
+        simBattLoader.item.value = preset.batt
+        simPitchLoader.item.value = preset.pitch
+        simCharging.checked = preset.chg
+        simHandtest.checked = preset.hand
+        simLink.checked = preset.link
+        simPopup.pushing = false
+        simPushAll()
     }
 
     function hexStringToLispList(hexString) {
