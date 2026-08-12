@@ -86,7 +86,7 @@
 ; led-track-direction: commit window for a reversal.
 (def prev-direction 1)
 (def direction-change-start-time 0)
-(def direction-change-window 0.5)
+(def direction-change-window 0.25)
 
 ; led-track-mall-grab: footpad press timing while nose-up.
 (def mall-grab-press-start 0)

@@ -241,6 +241,14 @@
     ; led-def-strip. The button LED is one pixel, so it has no flag.
     (if started {
         (ext-esp_led-fps 60)
+        ; Front and rear ease their colour instead of switching it, so a reversal
+        ; crossfades white/red rather than swapping in one frame. The rate is
+        ; 32nds of the remaining gap per 33 ms, and the render thread runs at
+        ; 60 fps, so 10 settles a full white-to-red swing in about 0.5 s. Left
+        ; instant everywhere else: the status bar's colours are information, and
+        ; an alarm that fades in reads as a slow alarm.
+        (if (>= seg-front 0) (ext-esp_led-seg-color-fade seg-front 10))
+        (if (>= seg-rear 0) (ext-esp_led-seg-color-fade seg-rear 10))
         (if (>= seg-status 0) (ext-esp_led-seg-reverse seg-status led-status-reversed))
         (if (>= seg-front 0) (ext-esp_led-seg-reverse seg-front led-front-reversed))
         (if (>= seg-rear 0) (ext-esp_led-seg-reverse seg-rear led-rear-reversed))
@@ -463,7 +471,7 @@
             (seg-want-fx head-seg FX-RAINBOW PAL-RGBW 0 8 head-bri)
             (seg-want-fx tail-seg FX-RAINBOW PAL-RGBW 0 8 tail-bri)
         })
-        (t {
+        (t { ; unknown mode: same as White / Red
             (seg-want-fx head-seg FX-SOLID 0 0xFFFFFFFFu32 32 head-bri)
             (seg-want-fx tail-seg FX-SOLID 0 0x00FF0000u32 32 tail-bri)
         })
