@@ -481,7 +481,7 @@
 ; Footpad split: the bar halves at its midpoint and the half matching the engaged
 ; sensor lights - FX-TURN's solid styles are exactly that split. Status Bar Style
 ; swaps them for a bar mounted the other way round. Shared by the stationary
-; display (cyan) and the at-speed warning (red).
+; display (cyan) and the riding warning (red).
 (defun status-footpad-split (color bri) {
     (var swap (!= led-mode-status 0))
     (seg-want seg-status FX-TURN 0 color 0 bri
@@ -495,12 +495,13 @@
 ; drops a single sensor for a few ticks at a time and must not flash the bar, so
 ; only a release that persists past footpad-warn-delay counts.
 (defun footpad-released () {
-    (and (!= switch-state 3)
+    (and (!= state 5)
+         (!= switch-state 3)
          (> (secs-since footpad-ok-time) footpad-warn-delay))
 })
 
-; Above 250 erpm. Three things compete for the bar and this is their order.
-(defun status-at-speed (bri) {
+; While riding. Three things compete for the bar and this is their order.
+(defun status-riding (bri) {
     (cond
         ; Pushback/tiltback is actually pulling back - the most urgent thing the
         ; bar can say. 24 = 5.7 Hz on ~11 frames; it was 200 = 47 Hz on 1.3
@@ -509,7 +510,7 @@
         ((> sat-t 2)
             (seg-want-fx seg-status FX-STROBE 0 0x00FF0000u32 24 bri))
 
-                ; Footpad off at speed. Was unreachable: the duty bar owned
+                ; Footpad off while riding. Was unreachable: the duty bar owned
                 ; everything above 250 erpm, and the fault states (8, 9) only
                 ; appear once the board has already stopped.
         ((footpad-released)
@@ -520,7 +521,7 @@
                 (seg-want-fx seg-status FX-SOLID 0 0x00FF0000u32 32 bri)
                 (status-footpad-split 0x00FF0000u32 bri)))
 
-        ; Duty cycle bar, the normal at-speed display.
+        ; Duty cycle bar, the normal riding display.
         (t {
             (var duty (abs duty-cycle-now))
             (seg-want-bar seg-status
@@ -536,8 +537,9 @@
     ; Stamped every tick both pads are down, so footpad-released can measure how
     ; long one has been off. Outside the cond because it has to run on every tick
     ; regardless of which branch draws - including while the board is stationary,
-    ; so that stepping on resets the clock before the rider ever reaches 250 erpm.
+    ; so that stepping on resets the clock before the rider sets off.
     (if (= switch-state 3) (setq footpad-ok-time (systime)))
+    (if (> (abs rpm) 250.0) (setq rpm-fast-time (systime)))
 
     (cond
         (handtest-mode
@@ -553,8 +555,11 @@
         ((or (>= can-activity-sec 1) (< can-id 0)) ; connecting
             (seg-want-fx seg-status FX-BREATHE 0 0x000000FFu32 64 status-bri))
 
-        ((> rpm 250.0)
-            (status-at-speed status-bri))
+
+        ((and (running-state)
+              (or (> (abs rpm) 250.0)
+                  (< (secs-since rpm-fast-time) rpm-fast-hold)))
+            (status-riding status-bri))
 
         ((or (= switch-state 1) (= switch-state 2) (= switch-state 3))
             (status-footpad-split 0x0000FFFFu32 status-bri))
@@ -850,18 +855,16 @@
             (seg-want-gauge head-seg (to-i (* 255.0 battery-percent-remaining)) (if bms-is-charging 32 0) head-bri)
             (seg-want-gauge tail-seg (to-i (* 255.0 battery-percent-remaining)) (if bms-is-charging 32 0) tail-bri)
         })
-        ((and (> can-activity-sec 1) (> (secs-since 0) led-startup-timeout)) {
-            ; No telemetry: plain white/red
-            (apply-drive-mode 0)
-        })
+        ((= current-led-mode 1)
+            (apply-drive-mode 0))
         (t {
             (apply-drive-mode current-led-mode)
         })
     )
 
-        ; Brake light. After the cond, so its tail intent replaces the base
-        ; appearance - no sentinel, no second write. 24 = 5.7 Hz; 200 was past
-        ; Nyquist and shimmered instead of flashing.
+    ; Brake light. After the cond, so its tail intent replaces the base
+    ; appearance - no sentinel, no second write. 24 = 5.7 Hz; 200 was past
+    ; Nyquist and shimmered instead of flashing.
     (if braking
         (seg-want-fx tail-seg FX-STROBE 0 0x00FF0000u32 24 tail-bri))
 })

@@ -69,6 +69,11 @@
 ; tick that switch-state is 3, so (secs-since footpad-ok-time) is how long a pad
 ; has been off - which is what the at-speed footpad warning debounces on.
 (def footpad-ok-time 0)
+; Last time the board was actually moving. The riding display is held for
+; rpm-fast-hold after it drops below the threshold, so reversing - which passes
+; through zero - does not fall back to the footpad bar for the crossing.
+(def rpm-fast-time 0)
+(def rpm-fast-hold 1.0)
 ; Long enough to ride out the blips a weight shift puts on one sensor. A feel
 ; constant, so it is tuned here rather than exposed as a setting.
 (def footpad-warn-delay 0.25)

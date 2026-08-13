@@ -621,6 +621,7 @@ Item {
             rearHbPos = unpackHbPos(mCustomConf.getParamInt("led_rear_highbeam_pos"))
             rearHbMin = mCustomConf.getParamDouble("led_rear_highbeam_min")
             rearHbMax = mCustomConf.getParamDouble("led_rear_highbeam_max")
+            syncHbControls()
             gnssEnabled.checked = mCustomConf.getParamBool("gnss_enabled")
             gnssType.currentIndex = mCustomConf.getParamEnum("gnss_type")
             gnssRxPin.value = mCustomConf.getParamInt("gnss_rx_pin")
@@ -922,7 +923,7 @@ Item {
                         wrapMode: Text.WordWrap
                         color: fieldLabelStyle.color
                         font.pixelSize: fieldLabelStyle.pixelSize - 2
-                        text: "Fakes the telemetry the lighting reads, so you can check every status with no board attached. " +
+                        text: "Fakes the telemetry the package reads, so you can check every status with no board attached. " +
                               "Safe to use with a board connected - its real values are ignored while this is on. " +
                               "RAM only: it turns itself off when the board reboots."
                     }
@@ -1091,7 +1092,7 @@ Item {
                             wrapMode: Text.WordWrap
                             color: fieldLabelStyle.color
                             font.pixelSize: fieldLabelStyle.pixelSize
-                            text: "Speed (erpm) - above 250 shows the duty bar, negative reverses direction"
+                            text: "Speed (erpm) - negative is reverse. Direction commits past ±100, after a short debounce."
                         }
                         Loader {
                             id: simRpmLoader
@@ -1099,6 +1100,11 @@ Item {
                             onLoaded: {
                                 item.from = -3000.0
                                 item.to = 3000.0
+                                // Snapped so the value is a round number, both in
+                                // the bubble and in the (setq ...) that follows.
+                                item.stepSize = 25
+                                item.snapMode = Slider.SnapAlways
+                                item.formatValue = function(v) { return v.toFixed(0) }
                                 item.value = 1500.0
                                 item.valueChanged.connect(function() {
                                     if (!simPopup.pushing)
@@ -1119,7 +1125,7 @@ Item {
                             wrapMode: Text.WordWrap
                             color: fieldLabelStyle.color
                             font.pixelSize: fieldLabelStyle.pixelSize
-                            text: "Duty cycle - bar turns yellow past 60%, red past 80%"
+                            text: "Duty cycle - bar turns yellow past 60%, red past 80%. Shown whenever Board state is running."
                         }
                         Loader {
                             id: simDutyLoader
@@ -1127,6 +1133,8 @@ Item {
                             onLoaded: {
                                 item.from = 0.0
                                 item.to = 1.0
+                                item.stepSize = 0.01
+                                item.snapMode = Slider.SnapAlways
                                 item.value = 0.35
                                 item.asPercent = true
                                 item.valueChanged.connect(function() {
@@ -1148,7 +1156,7 @@ Item {
                             wrapMode: Text.WordWrap
                             color: fieldLabelStyle.color
                             font.pixelSize: fieldLabelStyle.pixelSize
-                            text: "Pitch angle - past 70 with both pads down is mall grab"
+                            text: "Pitch angle - past 70 is mall grab, but only while Board state is not a running one."
                         }
                         Loader {
                             id: simPitchLoader
@@ -1156,6 +1164,9 @@ Item {
                             onLoaded: {
                                 item.from = -90.0
                                 item.to = 90.0
+                                item.stepSize = 1
+                                item.snapMode = Slider.SnapAlways
+                                item.formatValue = function(v) { return v.toFixed(0) + "°" }
                                 item.value = 0.0
                                 item.valueChanged.connect(function() {
                                     if (!simPopup.pushing)
@@ -1184,6 +1195,8 @@ Item {
                             onLoaded: {
                                 item.from = 0.0
                                 item.to = 1.0
+                                item.stepSize = 0.01
+                                item.snapMode = Slider.SnapAlways
                                 item.value = 0.55
                                 item.asPercent = true
                                 item.valueChanged.connect(function() {
@@ -2682,13 +2695,6 @@ Item {
                                         editable: true
                                     }
                                 }
-
-                                Button {
-                                    text: "Test Mode"
-                                    Layout.fillWidth: true
-                                    enabled: !statusTimeout
-                                    onClicked: simPopup.open()
-                                }
                             }
                         }
 
@@ -2891,6 +2897,18 @@ Item {
                                     }
                                 }
 
+                                // Says why the fields above are missing, rather than leaving a gap where
+                                // the highbeam settings used to be.
+                                Text {
+                                        Layout.fillWidth: true
+                                        wrapMode: Text.WordWrap
+                                        visible: ledFrontStripType.currentIndex > 1
+                                        color: fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize - 2
+                                        text: "Highbeam is set by the " + ledFrontStripType.model[ledFrontStripType.currentIndex].text +
+                                              " preset. Pick Custom to configure it by hand."
+                                }
+
                                 ColumnLayout {
                                     id: ledFrontHighbeamPinLayout
                                     visible: frontHbMode === 1
@@ -2911,6 +2929,123 @@ Item {
                                         editable: true
                                     }
                                 }
+
+                                // Highbeam hardware, editable for any strip. The presets fill these in for the
+                                // boards they know; a strip that is not one of them had no way to declare an
+                                // overlay at all, and Embedded LEDs with no positions defines no overlay pixels -
+                                // which looked like the highbeam simply never lighting.
+                                ColumnLayout {
+                                    spacing: cardStyle.labelSpacing
+                                    Layout.fillWidth: true
+                                    // A recognised board defines its own highbeam hardware, so these are
+                                    // only editable for Custom. The PWM pin below stays visible either
+                                    // way: which GPIO it is wired to is not something a preset can know.
+                                    visible: ledFrontStripType.currentIndex === 1
+                                    Text {
+                                        Layout.fillWidth: true
+                                        wrapMode: Text.WordWrap
+                                        color: fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize
+                                        font.bold: fieldLabelStyle.bold
+                                        text: "Front Highbeam"
+                                    }
+                                    ComboBox {
+                                        id: ledFrontHighbeamMode
+                                        Layout.fillWidth: true
+                                        model: ["None", "PWM Pin", "Embedded LEDs"]
+                                        onActivated: frontHbMode = currentIndex
+                                    }
+                                    }
+
+                                ColumnLayout {
+                                    spacing: cardStyle.labelSpacing
+                                    Layout.fillWidth: true
+                                    visible: frontHbMode === 2 && ledFrontStripType.currentIndex === 1
+                                    Text {
+                                        Layout.fillWidth: true
+                                        wrapMode: Text.WordWrap
+                                        color: fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize
+                                        text: "Highbeam LED positions, counting from 0. Leave a box empty for an unused slot."
+                                    }
+                                    // Four boxes because the config stores exactly four: one position per byte of
+                                    // led_*_highbeam_pos, 255 meaning unused. A slot each is closer to what is
+                                    // actually stored than a comma-separated list, and there is nothing to parse.
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+                                        TextField {
+                                            id: ledFrontHbPos0
+                                            Layout.fillWidth: true
+                                            horizontalAlignment: TextInput.AlignHCenter
+                                            placeholderText: "-"
+                                            inputMethodHints: Qt.ImhDigitsOnly
+                                            validator: IntValidator { bottom: 0; top: 254 }
+                                            onEditingFinished: commitFrontHbSlots()
+                                        }
+                                        TextField {
+                                            id: ledFrontHbPos1
+                                            Layout.fillWidth: true
+                                            horizontalAlignment: TextInput.AlignHCenter
+                                            placeholderText: "-"
+                                            inputMethodHints: Qt.ImhDigitsOnly
+                                            validator: IntValidator { bottom: 0; top: 254 }
+                                            onEditingFinished: commitFrontHbSlots()
+                                        }
+                                        TextField {
+                                            id: ledFrontHbPos2
+                                            Layout.fillWidth: true
+                                            horizontalAlignment: TextInput.AlignHCenter
+                                            placeholderText: "-"
+                                            inputMethodHints: Qt.ImhDigitsOnly
+                                            validator: IntValidator { bottom: 0; top: 254 }
+                                            onEditingFinished: commitFrontHbSlots()
+                                        }
+                                        TextField {
+                                            id: ledFrontHbPos3
+                                            Layout.fillWidth: true
+                                            horizontalAlignment: TextInput.AlignHCenter
+                                            placeholderText: "-"
+                                            inputMethodHints: Qt.ImhDigitsOnly
+                                            validator: IntValidator { bottom: 0; top: 254 }
+                                            onEditingFinished: commitFrontHbSlots()
+                                        }
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        wrapMode: Text.WordWrap
+                                        color: hbFootprintBad(ledFrontNum.value, frontHbPos) ? "#e08f8f" : fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize - 2
+                                        // LED count excludes the highbeam pixels, which is the easiest thing to get
+                                        // wrong here, so the total is spelled out.
+                                        text: hbFootprintText(ledFrontNum.value, frontHbPos)
+                                    }
+                                    }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 10
+                                    visible: frontHbMode === 2 && ledFrontStripType.currentIndex === 1
+                                    Text {
+                                        color: fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize
+                                        text: "Drive % min / max"
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    SpinBox {
+                                        id: ledFrontHighbeamMin
+                                        from: 0
+                                        to: 100
+                                        onValueModified: frontHbMin = value / 100
+                                    }
+                                    SpinBox {
+                                        id: ledFrontHighbeamMax
+                                        from: 0
+                                        to: 100
+                                        onValueModified: frontHbMax = value / 100
+                                    }
+                                    }
+
 
                                 ColumnLayout {
                                     id: ledFrontCustomSettings
@@ -3064,6 +3199,18 @@ Item {
                                     }
                                 }
 
+                                // Says why the fields above are missing, rather than leaving a gap where
+                                // the highbeam settings used to be.
+                                Text {
+                                        Layout.fillWidth: true
+                                        wrapMode: Text.WordWrap
+                                        visible: ledRearStripType.currentIndex > 1
+                                        color: fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize - 2
+                                        text: "Highbeam is set by the " + ledRearStripType.model[ledRearStripType.currentIndex].text +
+                                              " preset. Pick Custom to configure it by hand."
+                                }
+
                                 ColumnLayout {
                                     id: ledRearHighbeamPinLayout
                                     visible: rearHbMode === 1
@@ -3084,6 +3231,123 @@ Item {
                                         editable: true
                                     }
                                 }
+
+                                // Highbeam hardware, editable for any strip. The presets fill these in for the
+                                // boards they know; a strip that is not one of them had no way to declare an
+                                // overlay at all, and Embedded LEDs with no positions defines no overlay pixels -
+                                // which looked like the highbeam simply never lighting.
+                                ColumnLayout {
+                                    spacing: cardStyle.labelSpacing
+                                    Layout.fillWidth: true
+                                    // A recognised board defines its own highbeam hardware, so these are
+                                    // only editable for Custom. The PWM pin below stays visible either
+                                    // way: which GPIO it is wired to is not something a preset can know.
+                                    visible: ledRearStripType.currentIndex === 1
+                                    Text {
+                                        Layout.fillWidth: true
+                                        wrapMode: Text.WordWrap
+                                        color: fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize
+                                        font.bold: fieldLabelStyle.bold
+                                        text: "Rear Highbeam"
+                                    }
+                                    ComboBox {
+                                        id: ledRearHighbeamMode
+                                        Layout.fillWidth: true
+                                        model: ["None", "PWM Pin", "Embedded LEDs"]
+                                        onActivated: rearHbMode = currentIndex
+                                    }
+                                    }
+
+                                ColumnLayout {
+                                    spacing: cardStyle.labelSpacing
+                                    Layout.fillWidth: true
+                                    visible: rearHbMode === 2 && ledRearStripType.currentIndex === 1
+                                    Text {
+                                        Layout.fillWidth: true
+                                        wrapMode: Text.WordWrap
+                                        color: fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize
+                                        text: "Highbeam LED positions, counting from 0. Leave a box empty for an unused slot."
+                                    }
+                                    // Four boxes because the config stores exactly four: one position per byte of
+                                    // led_*_highbeam_pos, 255 meaning unused. A slot each is closer to what is
+                                    // actually stored than a comma-separated list, and there is nothing to parse.
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+                                        TextField {
+                                            id: ledRearHbPos0
+                                            Layout.fillWidth: true
+                                            horizontalAlignment: TextInput.AlignHCenter
+                                            placeholderText: "-"
+                                            inputMethodHints: Qt.ImhDigitsOnly
+                                            validator: IntValidator { bottom: 0; top: 254 }
+                                            onEditingFinished: commitRearHbSlots()
+                                        }
+                                        TextField {
+                                            id: ledRearHbPos1
+                                            Layout.fillWidth: true
+                                            horizontalAlignment: TextInput.AlignHCenter
+                                            placeholderText: "-"
+                                            inputMethodHints: Qt.ImhDigitsOnly
+                                            validator: IntValidator { bottom: 0; top: 254 }
+                                            onEditingFinished: commitRearHbSlots()
+                                        }
+                                        TextField {
+                                            id: ledRearHbPos2
+                                            Layout.fillWidth: true
+                                            horizontalAlignment: TextInput.AlignHCenter
+                                            placeholderText: "-"
+                                            inputMethodHints: Qt.ImhDigitsOnly
+                                            validator: IntValidator { bottom: 0; top: 254 }
+                                            onEditingFinished: commitRearHbSlots()
+                                        }
+                                        TextField {
+                                            id: ledRearHbPos3
+                                            Layout.fillWidth: true
+                                            horizontalAlignment: TextInput.AlignHCenter
+                                            placeholderText: "-"
+                                            inputMethodHints: Qt.ImhDigitsOnly
+                                            validator: IntValidator { bottom: 0; top: 254 }
+                                            onEditingFinished: commitRearHbSlots()
+                                        }
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        wrapMode: Text.WordWrap
+                                        color: hbFootprintBad(ledRearNum.value, rearHbPos) ? "#e08f8f" : fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize - 2
+                                        // LED count excludes the highbeam pixels, which is the easiest thing to get
+                                        // wrong here, so the total is spelled out.
+                                        text: hbFootprintText(ledRearNum.value, rearHbPos)
+                                    }
+                                    }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 10
+                                    visible: rearHbMode === 2 && ledRearStripType.currentIndex === 1
+                                    Text {
+                                        color: fieldLabelStyle.color
+                                        font.pixelSize: fieldLabelStyle.pixelSize
+                                        text: "Drive % min / max"
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    SpinBox {
+                                        id: ledRearHighbeamMin
+                                        from: 0
+                                        to: 100
+                                        onValueModified: rearHbMin = value / 100
+                                    }
+                                    SpinBox {
+                                        id: ledRearHighbeamMax
+                                        from: 0
+                                        to: 100
+                                        onValueModified: rearHbMax = value / 100
+                                    }
+                                    }
+
 
                                 ColumnLayout {
                                     id: ledRearCustomSettings
@@ -4453,6 +4717,16 @@ Item {
                                 font.pixelSize: fieldLabelStyle.pixelSize - 2
                                 text: "Print Report dumps a one-shot snapshot (versions, thread ids, CAN/BMS/GNSS state, LED segment map) to the same console. It works with logging off."
                             }
+
+                            // Test mode fakes the telemetry every subsystem reads, not just the
+                            // lighting, so it belongs with the diagnostics rather than under the LED
+                            // config. Same rules as the switches above: live, RAM-only, gone on reboot.
+                            Button {
+                                text: "Test Mode"
+                                Layout.fillWidth: true
+                                enabled: !statusTimeout
+                                onClicked: simPopup.open()
+                            }
                         }
                     }
 
@@ -4563,6 +4837,86 @@ Item {
     property real rearHbMax: 1.0
 
     // Positions pack one per byte from the lowest, 255 = unused.
+    // Slots -> the array the config packer wants. Blank slots are skipped and a
+    // repeat of an earlier value is dropped, so the array is what will actually be
+    // stored; the caller re-fills the boxes from it, which is what makes a
+    // correction visible rather than silent. Entry order is kept: these are four
+    // slots, not a sorted set, and having values jump between boxes on commit
+    // would be worse than a preset showing as Custom.
+    function hbSlotsToArray(slots) {
+        var out = []
+        for (var i = 0; i < slots.length; i++) {
+            var t = String(slots[i].text).trim()
+            if (t === "") continue
+            var v = parseInt(t, 10)
+            if (isNaN(v) || v < 0 || v > 254) continue
+            if (out.indexOf(v) >= 0) continue
+            out.push(v)
+        }
+        return out
+    }
+
+    function hbArrayToSlots(pos, slots) {
+        for (var i = 0; i < slots.length; i++) {
+            slots[i].text = (pos && i < pos.length) ? String(pos[i]) : ""
+        }
+    }
+
+    function frontHbSlots() {
+        return [ledFrontHbPos0, ledFrontHbPos1, ledFrontHbPos2, ledFrontHbPos3]
+    }
+
+    function rearHbSlots() {
+        return [ledRearHbPos0, ledRearHbPos1, ledRearHbPos2, ledRearHbPos3]
+    }
+
+    function commitFrontHbSlots() {
+        frontHbPos = hbSlotsToArray(frontHbSlots())
+        hbArrayToSlots(frontHbPos, frontHbSlots())
+    }
+
+    function commitRearHbSlots() {
+        rearHbPos = hbSlotsToArray(rearHbSlots())
+        hbArrayToSlots(rearHbPos, rearHbSlots())
+    }
+
+    // The strip's real footprint. led_*_num excludes the highbeam pixels, so the
+    // total is num + however many positions are declared.
+    function hbFootprintText(num, pos) {
+        if (!pos || pos.length === 0) {
+            return num + " LEDs, no highbeam pixels"
+        }
+        var total = num + pos.length
+        var msg = num + " + " + pos.length + " highbeam = " + total + " LEDs on this strip"
+        if (hbFootprintBad(num, pos)) {
+            msg += " - position " + Math.max.apply(null, pos) + " is past the end and will be dropped"
+        }
+        return msg
+    }
+
+    // Mirrors hb-positions in led.lisp: a position at or past the footprint is
+    // rejected by the lib, so the package filters it out and warns.
+    function hbFootprintBad(num, pos) {
+        if (!pos || pos.length === 0) {
+            return false
+        }
+        return Math.max.apply(null, pos) >= num + pos.length
+    }
+
+    // Properties -> controls. Called after a config read and after a preset fills
+    // the properties in; the controls only ever write back on user interaction, so
+    // there is no binding loop to worry about.
+    function syncHbControls() {
+        ledFrontHighbeamMode.currentIndex = frontHbMode
+        hbArrayToSlots(frontHbPos, frontHbSlots())
+        ledFrontHighbeamMin.value = Math.round(frontHbMin * 100)
+        ledFrontHighbeamMax.value = Math.round(frontHbMax * 100)
+        ledRearHighbeamMode.currentIndex = rearHbMode
+        hbArrayToSlots(rearHbPos, rearHbSlots())
+        ledRearHighbeamMin.value = Math.round(rearHbMin * 100)
+        ledRearHighbeamMax.value = Math.round(rearHbMax * 100)
+    }
+
     function packHbPos(arr) {
         var v = 0
         for (var i = 0; i < 4; i++) {
@@ -4605,6 +4959,7 @@ Item {
         frontHbPos = p.hbPos
         frontHbMin = p.hbMin
         frontHbMax = p.hbMax
+        syncHbControls()
     }
 
     function updateRearLEDSettings() {
@@ -4618,6 +4973,7 @@ Item {
         rearHbPos = p.hbPos
         rearHbMin = p.hbMin
         rearHbMax = p.hbMax
+        syncHbControls()
     }
 
     function updateFootpadLEDSettings() {

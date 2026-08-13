@@ -112,7 +112,7 @@ static bool set_cfg(uint8_t *buffer) {
 }
 
 static int get_cfg_xml(uint8_t **buffer) {
-	*buffer = data_faconfig_;
+	*buffer = VESC_LIB_SYM_ADDR(data_faconfig_);
 	return DATA_FACONFIG__SIZE;
 }
 
