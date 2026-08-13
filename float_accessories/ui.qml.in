@@ -2416,7 +2416,7 @@ Item {
                                         color: fieldLabelStyle.color
                                         font.pixelSize: fieldLabelStyle.pixelSize
                                         font.bold: fieldLabelStyle.bold
-                                        text: "LED Max Brightness (80% by default)"
+                                        text: "LED Max Brightness"
                                     }
                                     Loader {
                                         id: ledMaxBrightnessLoader
