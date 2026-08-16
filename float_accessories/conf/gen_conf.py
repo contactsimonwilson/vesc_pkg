@@ -52,7 +52,7 @@ PARAMS = [
      " broadcast."),
     ("can_id", "CAN ID", (I, -1, 253, ""), -1,
      "CAN ID of the VESC. -1 scans and picks the first one found."),
-    ("can_loop_delay", "CAN Loop Rate", (I, 1, 100, " Hz"), 20,
+    ("can_loop_delay", "CAN Loop Rate", (I, 1, 100, " Hz"), 30,
      "Telemetry poll rate on the CAN bus."),
     ("led_on", "LEDs On", (B,), 1,
      "Master LED on/off. Also toggled from the QML page and mall grab."),
@@ -192,7 +192,7 @@ PARAMS = [
      "GPIO of the button LED data line."),
 
     # --- Pubmote ---------------------------------------------------------
-    ("pubmote_loop_delay", "Pubmote Loop Rate", (I, 1, 100, " Hz"), 20,
+    ("pubmote_loop_delay", "Pubmote Loop Rate", (I, 1, 100, " Hz"), 30,
      "Telemetry rate to the remote."),
     ("pubmote_remote_mac_a", "Remote MAC A", (I, -2147483648, 2147483647, ""), -1,
      "Paired remote MAC (upper bytes). Set by the pairing flow."),
