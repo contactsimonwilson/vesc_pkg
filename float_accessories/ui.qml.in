@@ -577,7 +577,7 @@ Item {
             bmsWakeupPin.value = mCustomConf.getParamInt("bms_wakeup_pin")
             bmsOverrideSOC.checked = mCustomConf.getParamInt("bms_override_soc")
             bmsRS485Chip.checked = mCustomConf.getParamInt("bms_rs485_chip")
-            //Need to read and unpack. To set this is also going to be handled in seperate button like tos, pair-pubmote etc.
+            //Need to read and unpack. To set this is also going to be handled in seperate button like tos, pubmote-pair etc.
             //bmsKeyA.value = mCustomConf.getParamInt("bms_key_a")
             //bmsKeyB.value = mCustomConf.getParamInt("bms_key_b")
             //bmsKeyC.value = mCustomConf.getParamInt("bms_key_c")
@@ -720,7 +720,7 @@ Item {
 
             if (remainingTime <= 0) {
                 pairingTimeout = true;
-                sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pair-pubmote -2)");  // Automatically reject if time runs out
+                sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pubmote-pair -2)");  // Automatically reject if time runs out
                 mCommands.customConfigGet(faConfigIndex, false)
                 pubmotePairPopup.close();
             }
@@ -769,7 +769,7 @@ Item {
                 pairingTimeoutTimer.start();  // Start the 1-second timer to count down
 
                 // Send the pairing request with the generated code
-                sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pair-pubmote " + pubmotePairCode + ")");
+                sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pubmote-pair " + pubmotePairCode + ")");
             } else {
                 pairingTimeoutTimer.stop();  // Stop timer if the popup is closed
             }
@@ -812,7 +812,7 @@ Item {
                     text: "Reject"
                     Layout.fillWidth: true
                     onClicked: {
-                        sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pair-pubmote -2)");  // Reject pairing manually
+                        sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pubmote-pair -2)");  // Reject pairing manually
                         mCommands.customConfigGet(faConfigIndex, false)
                         pubmotePairPopup.close();
                     }
@@ -825,7 +825,7 @@ Item {
                     enabled: !pairingTimeout
                     onClicked: {
                         if (!pairingTimeout) {
-                            sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pair-pubmote -1)");  // Accept pairing
+                            sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pubmote-pair -1)");  // Accept pairing
                             mCommands.customConfigGet(faConfigIndex, false)
                             pubmotePairPopup.close();
                         }
@@ -3737,7 +3737,7 @@ Item {
                                     Layout.preferredWidth: 500
                                     onClicked: {
                                         if (isPubmotePaired) {
-                                            sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pair-pubmote -2)");
+                                            sendCode(String.fromCharCode(102) + String.fromCharCode(1) + "(pubmote-pair -2)");
                                             mCommands.customConfigGet(faConfigIndex, false)
                                         } else {
                                             pubmotePairPopup.open();  // Open the confirmation popup with the random code

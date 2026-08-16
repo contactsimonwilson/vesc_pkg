@@ -188,9 +188,9 @@
     ; discovery and the rest of the peripherals come up behind them.
     (setq can-context-id (spawn-with-restart "can-loop" nil can-loop))
     ; Always inject the pubmote callbacks
-    (pubmote-setup
-        VEHICLE_TYPE_ONEWHEEL
-        (fn (jsy jsx bt-c bt-z is-rev) {
+    (pubmote-setup (list
+        (cons 'vehicle-type PUBMOTE_VEHICLE_ONEWHEEL)
+        (cons 'on-control (fn (jsy jsx bt-c bt-z is-rev) {
             (setq pubmote-last-jsy jsy)
             (setq pubmote-last-jsx jsx)
             (setq pubmote-last-bt-c bt-c)
@@ -199,26 +199,33 @@
             (if (>= (get-config 'can-id) 0) {
                 (can-cmd (get-config 'can-id) (str-replace (to-str (list jsy jsx bt-c bt-z is-rev)) "(" "(set-remote-state "))
             })
-        })
-        (fn () {
+        }))
+        (cons 'get-telemetry (fn () {
             (list fault-code pitch-angle roll-angle state switch-state vin rpm speed tot-current duty-cycle-now distance-abs fet-temp-filtered motor-temp-filtered odometer battery-percent-remaining)
-        })
-        (fn (text) {
+        }))
+        (cons 'send-msg (fn (text) {
             (send-msg text)
-        })
-        (fn (name) {
+        }))
+        (cons 'get-config (fn (name) {
             (get-config name)
-        })
-        (fn (name val) {
+        }))
+        (cons 'set-config (fn (name val) {
             (set-config name val)
-        })
-        (fn () {
+        }))
+        (cons 'save-config (fn () {
             (ext-facfg-store)
-        })
-        (fn (state) {
+        }))
+        (cons 'on-pairing-state (fn (state) {
             (send-data (str-merge "pairing-status " (to-str state)))
-        })
-    )
+        }))
+        (cons 'log (fn (level text) {
+            (cond ((= level PUBMOTE_LOG_ERROR) (dbg-err text))
+                  ((= level PUBMOTE_LOG_WARN) (dbg-warn text))
+                  ((= level PUBMOTE_LOG_INFO) (print text))
+                  (t (dbg DBG-REM text)))
+        }))
+        (cons 'log-active (fn () (dbg-active DBG-REM)))
+    ))
     (if (= (get-config 'pubmote-enabled) 1){
         (setq pubmote-context-id (spawn-with-restart "pubmote-loop" nil pubmote-loop))
     })

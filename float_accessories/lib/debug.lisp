@@ -80,7 +80,6 @@
 (def dbg-ticks-led 0)
 (def dbg-ticks-can 0)
 (def dbg-ticks-bms 0)
-(def dbg-ticks-rem 0)
 (def dbg-ticks-evt 0)
 
 ; Last-seen values for edge-triggered logging (only log on change, so a
@@ -94,7 +93,6 @@
 (def dbg-prev-led-on -99)
 (def dbg-prev-direction 0)
 (def dbg-prev-hb -1)
-(def dbg-prev-rem-conn -1)
 (def dbg-prev-gnss-fix -1)
 
 ; LED loop phase timestamps, filled in by led-loop and read by its overrun
@@ -187,14 +185,14 @@
             (print (str-merge "hz led " (str-from-n dbg-ticks-led "%d")
                 " can " (str-from-n dbg-ticks-can "%d")
                 " bms " (str-from-n dbg-ticks-bms "%d")
-                " rem " (str-from-n dbg-ticks-rem "%d")
+                " rem " (str-from-n pubmote-loop-ticks "%d")
                 " evt " (str-from-n dbg-ticks-evt "%d"))))
         ; Reset unconditionally so the counters stay bounded even if the
         ; category is toggled off mid-second.
         (setq dbg-ticks-led 0)
         (setq dbg-ticks-can 0)
         (setq dbg-ticks-bms 0)
-        (setq dbg-ticks-rem 0)
+        (setq pubmote-loop-ticks 0)
         (setq dbg-ticks-evt 0)
     })
 })
@@ -243,7 +241,7 @@
         " status " (str-from-n bms-status "%d")
         " v " (str-from-n (get-bms-val 'bms-v-tot) "%.2f"))))
     (trap (print (str-merge "rem conn " (str-from-n (is-pubmote-connected) "%d")
-        " pair " (str-from-n pairing-state "%d")
+        " pair " (str-from-n pubmote-pairing-state "%d")
         " ble " (if pubmote-ble-paired "1" "0")
         " ch " (str-from-n (if (> (conf-get 'wifi-mode) 0) (wifi-get-chan) -1) "%d"))))
     (trap (print (str-merge "gnss age " (str-from-n (gnss-age) "%.1f")
