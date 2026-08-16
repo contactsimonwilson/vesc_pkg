@@ -94,6 +94,10 @@
     (var next-run-time (secs-since 0))
     (var loop-start-time 0)
     (var loop-end-time 0)
+    (if (< can-loop-delay 1) {
+        (dbg-warn "can bad rate, using 30Hz")
+        (setq can-loop-delay 30)
+    })
     (var can-loop-delay-sec (/ 1.0 can-loop-delay))
     ; init-can returns 1/0, and 0 is truthy in lisp - compare explicitly.
     (if (!= (init-can) 1) (dbg-warn "can no ESC found"))
