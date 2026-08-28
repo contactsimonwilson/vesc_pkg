@@ -17,18 +17,16 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-// Example UI for lib_esp_led_strip. Each strip is one segment on its own pin;
-// the firmware pools RMT channels behind the pins, so several strips run at
-// once. Strips are managed as tabs that can be added and removed at runtime.
+// Example UI for lib_esp_led_strip. Each strip is one segment on its own pin,
+// managed as a tab that can be added or removed at runtime.
 //
-// The QML is the source of truth: ext-esp_led-seg-def resets a segment's
-// runtime state, so any structural change (add / remove / re-define) rebuilds
-// every segment and then replays each strip's non-default settings. Effect
-// and colour tweaks on an existing strip are sent live as single commands.
+// The QML is the source of truth: ext-esp_led-seg-def resets a segment, so any
+// structural change rebuilds every segment and replays each strip's non-default
+// settings. Effect and colour tweaks are sent live as single commands.
 //
-// Strips are held in the `strips` JS array. Add/remove reassign the array so
-// the tab delegates fully rebuild (correct indices and values); live edits
-// mutate the array in place, so sliders stay responsive without a rebuild.
+// Strips live in the `strips` JS array. Add/remove reassign it so the tab
+// delegates fully rebuild; live edits mutate it in place, so sliders stay
+// responsive without a rebuild.
 
 import QtQuick 2.15
 import QtQuick.Controls 2.15
@@ -44,14 +42,15 @@ Item {
 
     property Commands mCommands: VescIf.commands()
 
-    // Segment defaults set by ext-esp_led-seg-def. Replays skip values equal
-    // to these, keeping the burst after a rebuild small. fx 2 = solid (0 =
-    // off, 1 = custom), matching the firmware effect enum.
+    // Segment defaults set by ext-esp_led-seg-def. Replays skip values equal to
+    // these, keeping the burst after a rebuild small.
     readonly property int fxSolid: 2
         readonly property int defFx: fxSolid
-            // Palette 0 is the (empty) custom palette; 1 = Spectrum is the default.
+            // Palette 0 is the empty custom palette; 1 = Spectrum.
             readonly property int defPal: 1
                 readonly property int defSpeed: 32
+                // 0 = drive the animation with defSpeed, as every segment starts.
+                readonly property int defCycle: 0
                     readonly property int defSize: 8
                         readonly property int defFxVal: 255
                             readonly property int defBri: 0
@@ -63,17 +62,15 @@ Item {
 
                                 // ---- Comms -----------------------------------------------------------
 
-                                // The esp_led_strip.lisp script evaluates expressions sent as custom app
-                                // data. Each call is one lisp form beginning with '(' (the script only
-                                // evaluates data that starts with a parenthesis).
+                                // esp_led_strip.lisp evaluates custom app data that starts with '(', so
+                                // each call is one lisp form.
                                 function sendCode(str)
                                 {
                                     mCommands.sendCustomAppData(str + "\0")
                                 }
 
-                                // Throttled sends for live slider dragging: the first change goes out
-                                // immediately, further changes are coalesced per control key at 20 Hz and
-                                // the final value flushed on release. The strip smooths brightness itself.
+                                // Throttled for live slider dragging: first change goes out at once, the
+                                // rest coalesce per control key at 20 Hz, final value flushed on release.
                                 property var txPending: ({})
 
                                 function flushTx()
@@ -108,10 +105,9 @@ Item {
                                 }
                             }
 
-                            // Packed 0xWWRRGGBB, as the lib expects. Forced unsigned with
-                            // >>> 0 because a white byte of 0x80 or more makes the 32-bit
-                            // result negative in JS, which would be sent as a negative
-                            // literal.
+                            // Packed 0xWWRRGGBB. Forced unsigned with >>> 0: a white byte
+                            // of 0x80 or more makes the JS result negative, and it would be
+                            // sent as a negative literal.
                             function packColor(w, r, g, b)
                             {
                                 return (((Math.round(w) << 24) | (Math.round(r) << 16) |
@@ -126,14 +122,14 @@ Item {
                                     pin: pin, len: len, ledType: type, timing: timing, offset: offset,
                                     fx: defFx, pal: defPal,
                                     w: 0, r: 255, g: 0, b: 0,
-                                    speed: defSpeed, size: defSize, fxVal: defFxVal, bri: 255,
+                                    speed: defSpeed, cycle: defCycle,
+                                    size: defSize, fxVal: defFxVal, bri: 255,
                                     autoWhite: defAutoWhite, reverse: defReverse
                                 }
                             }
 
-                            // Called from the Add dialog once pin / length / type / timing / offset are
-                            // chosen, so a strip is only created (and init'd) on the pin the user
-                            // picked - never on a placeholder pin.
+                            // Called from the Add dialog once the fields are chosen, so a strip is never
+                            // created on a placeholder pin.
                             function addStripFrom(pin, len, type, timing, offset)
                             {
                                 var arr = strips.slice()
@@ -144,8 +140,7 @@ Item {
                             }
 
                             // Next free offset on a pin: the end of the furthest strip already on it,
-                            // so chained strips (0-20, 21-40, ...) can be placed with one fewer thing
-                            // to compute. 0 when the pin is unused.
+                            // so chained strips can be placed without doing the arithmetic. 0 if unused.
                             function nextOffsetForPin(pin)
                             {
                                 var end = 0
@@ -175,12 +170,10 @@ Item {
                                 applyStructure()
                             }
 
-                            // Rebuild the strips. The structure (deinit + every seg-def + init) goes
-                            // in ONE (progn ...) form so it is evaluated atomically on the device -
-                            // sending those as separate app-data packets risks drops/reordering that
-                            // run init before a segment is defined, leaving the strip un-started.
-                            // Each strip's non-default settings then follow as their own progn.
-                            // Called on add / remove and on setup-field edits.
+                            // Rebuild the strips. The structure (deinit + every seg-def + init) goes in
+                            // ONE (progn ...) so the device evaluates it atomically: as separate packets,
+                            // a drop or reorder could run init before a segment was defined. Each strip's
+                            // non-default settings then follow as their own progn.
                             function applyStructure()
                             {
                                 if (strips.length === 0)
@@ -202,12 +195,14 @@ Item {
                                 }
                             }
 
-                            // Send a strip's settings that differ from the seg-def defaults, as one
-                            // atomic progn (skipped entirely when everything is default).
+                            // A strip's non-default settings as one atomic progn.
                             function sendStripSettings(i)
                             {
                                 var s = strips[i]
                                 var c = []
+                                // Before the effect: the lib reads the cycle time to decide
+                                // whether this segment starts fresh or rejoins the others.
+                                if (s.cycle !== defCycle) c.push("(ext-esp_led-seg-cycle " + i + " " + s.cycle + ")")
                                 if (s.fx !== defFx) c.push("(ext-esp_led-seg-fx " + i + " " + s.fx + ")")
                                     if (s.pal !== defPal) c.push("(ext-esp_led-seg-pal " + i + " " + s.pal + ")")
                                 if (s.speed !== defSpeed) c.push("(ext-esp_led-seg-spd " + i + " " + s.speed + ")")
@@ -286,31 +281,24 @@ Item {
 
                                     ScrollView {
                                         id: page
-                                        // index / modelData come from the Repeater delegate context and
-                                        // are valid at creation (before the child controls initialize).
+                                        // From the Repeater delegate context, valid at creation.
                                         property int seg: index
                                             // The live element of `strips`, NOT modelData: a JS array
-                                            // model hands the delegate a *copy* of the element, so
-                                            // every edit written through modelData was lost to
-                                            // `strips` - and applyStructure(), which replays from
-                                            // `strips`, then pushed each strip's creation values
-                                            // (solid red) back over the user's settings. Re-binds on
-                                            // add / remove, when indices shift.
+                                            // model hands the delegate a *copy*, so edits through
+                                            // modelData were lost and applyStructure() replayed the
+                                            // creation values back over them. Re-binds when indices shift.
                                             property var d: index >= 0 && index < strips.length
                                                 ? strips[index] : makeStrip(0, 1, 0, 0, 0)
-                                                // d is a plain JS object, so QML cannot see fields
-                                                // being mutated inside it and bindings on d.<field>
-                                                // never re-evaluate. Anything the UI has to react to
-                                                // live needs a real property like these, kept in step
-                                                // with d by whatever control owns the value.
+                                                // d is a plain JS object, so bindings on d.<field> never
+                                                // re-evaluate. Anything the UI reacts to live needs a real
+                                                // property like these, kept in step by the owning control.
                                                 property int ledType: d.ledType
                                                 property int fx: d.fx
                                                 contentWidth: availableWidth
                                                 clip: true
 
-                                                // The white die is a separate emitter, so it cannot be shown
-                                                // exactly on screen - approximate it by lifting RGB towards
-                                                // white, which is close enough to tell the channels apart.
+                                                // The white die is a separate emitter, so approximate it by
+                                                // lifting RGB towards white - enough to tell the channels apart.
                                                 function refreshPreview()
                                                 {
                                                     colorPreview.color = Qt.rgba(Math.min(255, d.r + d.w) / 255,
@@ -351,9 +339,8 @@ Item {
                                                                 onValueModified: { page.d.len = value; applyStructure() }
                                                             }
 
-                                                            // Pixel offset within the pin's chain. Strips sharing a
-                                                            // pin must have non-overlapping [offset, offset+LEDs)
-                                                            // ranges (e.g. 0-20 then 21-40 on the same data line).
+                                                            // Pixel offset in the pin's chain. Strips sharing a pin
+                                                            // need non-overlapping [offset, offset+LEDs) ranges.
                                                             Label { text: "Offset" }
                                                             SpinBox {
                                                                 from: 0; to: 1024; editable: true
@@ -417,8 +404,7 @@ Item {
                                                                 model: ["Custom", "Spectrum", "Fire", "Ocean", "Neon", "Ember", "Traffic", "B&W Flash", "Police Blue", "Sunset", "Lava", "Aurora", "Forest", "Party", "Ice", "Halloween", "Christmas", "Pastel", "Sakura"]
                                                                 Layout.fillWidth: true
                                                                 currentIndex: page.d.pal
-                                                                // Colour 0 means "take colour from the palette", so
-                                                                // clear the colour when a palette is picked.
+                                                                // Colour 0 means "take it from the palette".
                                                                 onActivated: {
                                                                     page.d.pal = currentIndex
                                                                     page.d.r = 0; page.d.g = 0; page.d.b = 0
@@ -436,10 +422,14 @@ Item {
                                                                 Layout.fillWidth: true
                                                             }
 
-                                                            Label { text: "Speed" }
+                                                            Label {
+                                                                text: "Speed"
+                                                                enabled: !cycleSwitch.checked
+                                                            }
                                                             Loader {
                                                                 sourceComponent: customValueSlider
                                                                 Layout.fillWidth: true
+                                                                enabled: !cycleSwitch.checked
                                                                 onLoaded: {
                                                                     item.from = 1; item.to = 255; item.value = page.d.speed
                                                                     item.valueChanged.connect(function() {
@@ -452,6 +442,61 @@ Item {
                                                                 "(ext-esp_led-seg-spd " + page.seg + " " + item.value.toFixed(0) + ")")
                                                             })
                                                         }
+                                                    }
+
+                                                    // The alternative to Speed: speed is pixel velocity, so strips of
+                                                    // different lengths beat against each other, while a wall-clock
+                                                    // cycle makes them finish together. Bound to the switch, not to
+                                                    // page.d, which notifies nothing when it changes.
+                                                    Label { text: "Fixed cycle time" }
+                                                    Switch {
+                                                        id: cycleSwitch
+                                                        checked: page.d.cycle > 0
+                                                        onToggled: {
+                                                            page.d.cycle = (checked && cycleSlider.item)
+                                                                ? Math.round(cycleSlider.item.value) : 0
+                                                            sendCode("(ext-esp_led-seg-cycle " + page.seg + " " + page.d.cycle + ")")
+                                                        }
+                                                    }
+
+                                                    // Left inert rather than hidden: layouts skip invisible items, so
+                                                    // hiding a row would shift every row under it. The value survives.
+                                                    Label {
+                                                        text: "Cycle (ms)"
+                                                        enabled: cycleSwitch.checked
+                                                    }
+                                                    Loader {
+                                                        id: cycleSlider
+                                                        sourceComponent: customValueSlider
+                                                        Layout.fillWidth: true
+                                                        enabled: cycleSwitch.checked
+                                                        onLoaded: {
+                                                            item.from = 50
+                                                            item.to = 5000
+                                                            item.stepSize = 10
+                                                            item.value = page.d.cycle > 0 ? page.d.cycle : 1000
+                                                            item.valueChanged.connect(function() {
+                                                                if (cycleSwitch.checked) {
+                                                                    page.d.cycle = Math.round(item.value)
+                                                                    queueSend("cyc" + page.seg,
+                                                                        "(ext-esp_led-seg-cycle " + page.seg + " " + item.value.toFixed(0) + ")")
+                                                                }
+                                                            })
+                                                            item.interactionReleased.connect(function() {
+                                                                if (cycleSwitch.checked) {
+                                                                    queueSend("cyc" + page.seg,
+                                                                        "(ext-esp_led-seg-cycle " + page.seg + " " + item.value.toFixed(0) + ")")
+                                                                }
+                                                            })
+                                                        }
+                                                    }
+
+                                                    Label { text: "" }
+                                                    Label {
+                                                        text: "One cycle takes this long whatever the strip length, so strips sharing a cycle time start and finish together - at the cost of the longer one moving faster. A cycle is a lap for Chase and Comet, out and back for Larson, fill plus wipe for Wipe, one flash for Strobe. Effects whose rate does not follow the LED count already match on Speed alone."
+                                                        font.italic: true
+                                                        wrapMode: Text.WordWrap
+                                                        Layout.fillWidth: true
                                                     }
 
                                                     Label { text: "Size" }
@@ -490,8 +535,7 @@ Item {
                                         }
                                     }
 
-                                    // One slider whose meaning comes from the effect, so
-                                    // the label cannot say what it does on its own.
+                                    // One slider whose meaning comes from the effect.
                                     Label { text: "" }
                                     Label {
                                         text: "What this does depends on the effect: the fill on Gauge, the mode on Turn signal (0 off, then left / right / hazard x solid / blink / sweep, 1-9). Other effects ignore it."
@@ -500,9 +544,7 @@ Item {
                                         Layout.fillWidth: true
                                     }
 
-                                    // Per-strip brightness. The firmware multiplies this by
-                                    // the Global brightness slider, so the strip's output is
-                                    // (strip brightness / 255) * (global brightness / 255).
+                                    // Multiplied by the Global brightness slider on the device.
                                     Label { text: "Brightness" }
                                     Loader {
                                         sourceComponent: customValueSlider
@@ -521,9 +563,8 @@ Item {
                                 }
                             }
 
-                            // Mirrors the effect pixels as they are packed for the
-                            // wire, so moving effects run the other way - for strips
-                            // mounted with the data-in end at the far side.
+                            // Mirrors the effect pixels as they are packed for the wire,
+                            // for strips mounted with the data-in end at the far side.
                             Label { text: "Reverse" }
                             Switch {
                                 checked: page.d.reverse
@@ -533,10 +574,8 @@ Item {
                                 }
                             }
 
-                            // Only meaningful on strips with a white channel, so both
-                            // rows are hidden on the others. Layouts skip invisible
-                            // items, so the label and the switch must hide together
-                            // or the two-column grid shifts.
+                            // Only meaningful with a white channel. Label and switch hide
+                            // together, or the two-column grid shifts.
                             Label {
                                 text: "Auto white"
                                 visible: page.ledType >= 2
@@ -546,9 +585,8 @@ Item {
                                 checked: page.d.autoWhite
                                 onToggled: {
                                     page.d.autoWhite = checked
-                                    // Auto-white only acts on pixels whose white byte is 0,
-                                    // so clear any manual W - otherwise enabling this would
-                                    // appear to do nothing.
+                                    // Auto-white only acts where the white byte is 0, so clear
+                                    // any manual W or enabling it appears to do nothing.
                                     if (checked && page.d.w !== 0) {
                                         page.d.w = 0
                                         if (wSlider.item) wSlider.item.value = 0
@@ -623,11 +661,9 @@ Item {
                         }
                     }
 
-                    // Hidden on strips with no white die (label and slider together,
-                    // so the grid does not shift). Greyed rather than hidden while
-                    // auto-white is on, since that is a toggle right above: auto-white
-                    // derives the white byte and only acts when it is 0, so the two
-                    // are mutually exclusive.
+                    // Hidden with no white die (label and slider together, so the grid
+                    // does not shift). Greyed rather than hidden under auto-white,
+                    // which is the toggle right above and mutually exclusive with it.
                     Label {
                         text: "W"
                         visible: page.ledType >= 2
@@ -653,10 +689,8 @@ Item {
                 RowLayout {
                     Layout.fillWidth: true
 
-                    // Presets set a solid colour and switch to the solid
-                    // effect. ext-esp_led-seg-col only sets the colour - it is
-                    // ext-esp_led-col-rgb, the all-segment variant, that also
-                    // forces the effect - so the effect is sent explicitly.
+                    // ext-esp_led-seg-col only sets the colour (the all-segment
+                    // variant is what also forces the effect), so send both.
                     Repeater {
                         model: [
                         { name: "Red", cr: 255, cg: 0, cb: 0 },
@@ -684,8 +718,7 @@ Item {
                     Button {
                         text: "Off"
                         Layout.fillWidth: true
-                        // FX_OFF (0) blanks the strip whatever the
-                        // effect, without disturbing its colour.
+                        // FX_OFF blanks the strip without disturbing its colour.
                         onClicked: {
                             page.d.fx = 0
                             page.fx = 0
@@ -751,10 +784,9 @@ Component {
         }
     }
 
-    // Smoothness / CPU trade only: the firmware advances animations by
-    // elapsed real time, so effects run at the same speed whatever this
-    // is set to. Long strips may not reach a high setting - the loop
-    // paces itself against the work it actually did.
+    // Smoothness / CPU only: the firmware advances animations by elapsed
+    // real time, so effects keep their speed whatever this is. Long
+    // strips may not reach a high setting.
     Label { text: "Frame rate" }
     Loader {
         sourceComponent: customValueSlider
@@ -774,16 +806,14 @@ Component {
 }
 }
 
-// Restarts every strip's animation from phase 0 in one call, so effects
-// set up at different times line up. Nothing else about the strips
-// changes; strips running different speeds drift apart again from here.
+// Restarts every animation from phase 0, so effects set up at different
+// times line up. Different speeds drift apart again from here.
 Button {
     text: "Sync animations"
     Layout.fillWidth: true
     onClicked: {
-        // Flush first: a queued slider value landing after the sync
-        // would not disturb the phase, but the strips should be at the
-        // speed the user sees before they are lined up.
+        // Flush first, so the strips are at the speed the user sees
+        // before they are lined up.
         flushTx()
         sendCode("(ext-esp_led-sync)")
     }
@@ -797,6 +827,14 @@ Button {
         tabBar.currentIndex = 0
         sendCode("(ext-esp_led-deinit)")
     }
+}
+
+// Version on the button, not only inside the dialog - it should not take
+// a click to read when a strip misbehaves.
+Button {
+    text: "About (v{{VERSION}})"
+    Layout.fillWidth: true
+    onClicked: aboutDialog.open()
 }
 }
 }
@@ -862,6 +900,42 @@ Dialog {
     }
 }
 
+// ---- About: version and the package store description ----------------
+//
+// gen_ui.py substitutes both halves: {{VERSION}} from the `version` file and
+// {{ABOUT_MD}} from README-gen.md, which is the markdown the package store
+// renders through this same converter.
+
+Dialog {
+    id: aboutDialog
+    title: "ESP LED Strip {{VERSION}}"
+    modal: true
+    anchors.centerIn: parent
+    // Wide because gen_readme.py turns the extension reference into a real
+    // three-column table, and the Notes column needs the room.
+    width: Math.min(container.width - 20, 760)
+    height: Math.min(container.height - 40, 620)
+    standardButtons: Dialog.Close
+
+    ScrollView {
+        anchors.fill: parent
+        clip: true
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+        TextArea {
+            textFormat: Text.RichText
+            text: Utility.md2html("{{ABOUT_MD}}")
+            wrapMode: Text.WordWrap
+            readOnly: true
+            color: Utility.getAppHexColor("lightText")
+            background: null
+            onLinkActivated: function(url) {
+                Qt.openUrlExternally(url)
+            }
+        }
+    }
+}
+
 // ---- Layout: tab bar + stacked pages ---------------------------------
 
 ColumnLayout {
@@ -886,7 +960,6 @@ ColumnLayout {
         Button {
             text: "+ Add"
             onClicked: {
-                // Reset the dialog to sensible defaults each open.
                 dlgPin.value = 20
                 dlgLen.value = 30
                 dlgType.currentIndex = 0
@@ -911,6 +984,6 @@ ColumnLayout {
     }
 }
 
-// Opens with no strips; the device keeps whatever it was running until
-// the user adds a strip (+ Add) or presses Stop all.
+// Opens with no strips; the device keeps what it was running until the
+// user adds one or presses Stop all.
 }

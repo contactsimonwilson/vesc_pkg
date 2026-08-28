@@ -6,7 +6,7 @@ Works on all Express targets (ESP32-C3, C6, S3, P4) - the package contains one b
 
 ## Test UI
 
-The package includes a VESC Tool page for testing. Each LED strip is a tab: use **+ Add** to add a strip, set its pin / LED count / type / timing, then play with effects, palettes, colour, the per-effect value and RGBW auto-white (enabled only on strips with a white channel). Several strips on different pins run at once (the firmware drives them all from one re-routed RMT channel). A **Global** tab holds master brightness and fade, plus **Sync animations** (lines up the effects on every strip, which otherwise start whenever they were set) and **Stop all**. The controls send LispBM expressions to the device as custom app data, which `esp_led_strip.lisp` evaluates. The page opens with no strips, leaving the device running whatever it already had until a strip is added.
+The package includes a VESC Tool page for testing. Each LED strip is a tab: use **+ Add** to add a strip, set its pin / LED count / type / timing, then play with effects, palettes, colour, the per-effect value and RGBW auto-white (enabled only on strips with a white channel). Several strips on different pins run at once. A **Global** tab holds master brightness and fade, an **About** button with the version and this README, plus **Sync animations** (lines up the effects on every strip, which otherwise start whenever they were set) and **Stop all**. The controls send LispBM expressions to the device as custom app data, which `esp_led_strip.lisp` evaluates. The page opens with no strips, leaving the device running whatever it already had until a strip is added.
 
 ## Extensions
 
@@ -15,7 +15,7 @@ The package includes a VESC Tool page for testing. Each LED strip is a tab: use 
 | `ext-esp_led-seg-def` | `(i pin type len [offset] [timing])` | define segment `i` (type: 0 GRB, 1 RGB, 2 GRBW, 3 RGBW, 4 WRGB - white first, e.g. WS2814. Types 2+ are 4 bytes per pixel). Segments on the same pin form one chained strip; `offset` is the segment's pixel position in the chain. `timing` selects the wire timing: 0 generic (default), 1 WS2812B, 2 WS2815, 3 SK6812, 4 SK6815. A new segment starts at brightness 0, so it stays dark until you set one - the render thread starts at `ext-esp_led-init`, and anything else would light the strip at full brightness until your first appearance update lands |
 | `ext-esp_led-init` | `(n)` | start rendering the first `n` segments |
 | `ext-esp_led-deinit` | `()` | blank the strips, stop rendering and release the LED driver. The blank matters because the pixels latch: releasing a pin on its own would leave them lit on their last frame |
-| `ext-esp_led-seg-look` | `(i fx pal color spd bri)` | full appearance in one call |
+| `ext-esp_led-seg-look` | `(i fx pal color spd bri [cycle-ms])` | full appearance in one call. `cycle-ms` is applied before the effect, so a segment joining a set lines up on the same call that changes it; omit it to leave whatever `ext-esp_led-seg-cycle` last set |
 | `ext-esp_led-seg-fx` / `ext-esp_led-fx` | `(i fx)` / `(fx)` | effect per segment / all segments |
 | `ext-esp_led-seg-pal` / `ext-esp_led-pal` | `(i pal)` / `(pal)` | palette: 0 = custom (set with `ext-esp_led-seg-palette`), 1..18 = built-in |
 | `ext-esp_led-seg-col` / `ext-esp_led-col` | `(i color)` / `(color)` | packed `0xWWRRGGBB` |
@@ -23,6 +23,7 @@ The package includes a VESC Tool page for testing. Each LED strip is a tab: use 
 | `ext-esp_led-seg-bri` | `(i bri)` | per-segment brightness 0..255 |
 | `ext-esp_led-seg-spd` | `(i spd)` | animation speed 0..255 |
 | `ext-esp_led-seg-size` | `(i size)` | chase head / comet tail length |
+| `ext-esp_led-seg-cycle` / `ext-esp_led-cycle` | `(i ms)` / `(ms)` | pin one cycle of the effect to a wall-clock time instead of driving it with `spd`. 0 (the default) hands the segment back to `spd`. Use it when strips of different lengths have to animate together: `spd` holds pixel velocity, so a travelling effect crosses a long strip more slowly and the two beat against each other, while one cycle time makes them start and finish together — at the cost of the longer strip's dot moving faster. Segments sharing a cycle time are one animation: one of them changing effect rejoins the others at their point in the cycle rather than restarting them. Reset by `ext-esp_led-seg-def` |
 | `ext-esp_led-seg-fx-val` | `(i v)` | the selected effect's parameter: gauge fill 0..255, or the turn-signal mode on effect 17. Named for the slot rather than either meaning, since a magnitude and a mode selector share it; effects with no parameter ignore it |
 | `ext-esp_led-seg-overlay-def` | `(i idx...)` | define up to 8 fixed overlay pixel positions (e.g. embedded highbeam LEDs) before init; effect pixels flow around them. No indices clears the overlay |
 | `ext-esp_led-seg-overlay` | `(i color bri)` | overlay color and brightness at runtime (bri 0 = off) |
@@ -104,10 +105,10 @@ lines differ. Pick the style that matches where your code lives:
 )
 ```
 
-All three forms are resolved by VESC Tool when the consumer package is built,
-and the imported data is copied into it - so the finished `.vescpkg` is
-self-contained either way. The difference is only what has to exist at build
-time: the archive, a built `.vescpkg`, or the raw `.bin` files.
+All three are resolved when the consumer package is built and the data copied
+into it, so the finished `.vescpkg` is self-contained either way. Only what has
+to exist at build time differs: the archive, a built `.vescpkg`, or the `.bin`
+files.
 
 Relative paths resolve against the directory of the lisp file being packaged.
 For an ad-hoc script that has never been saved there is no such directory, so
@@ -126,11 +127,26 @@ plain lisp file, imported and evaluated rather than loaded as a lib:
 (ext-esp_led-seg-fx 0 FX-RAINBOW)
 ```
 
-Generate it with `make -C ../lib_esp_led_strip defs` (the `libs` target does it
-too). It is not in git, and it is **not reachable through `pkg::`** - the
-library's own lisp imports only the four binaries, so there is no label for the
-defs. Consumers outside this repo have to use the numeric ids from the tables
-above, or copy the file.
+Generated by `make defs` (and `libs`), not in git, and **not reachable through
+`pkg::`** - the library's lisp imports only the four binaries, so there is no
+label for the defs. Consumers outside this repo use the numeric ids from the
+tables above, or copy the file.
+
+### The library version
+
+`esp_led_version.lisp` is generated the same way, from the `version` file, and
+defines `esp_led-version` as a `(major minor patch)` list:
+
+```clj
+(import "../lib_esp_led_strip/esp_led_version.lisp" 'esp-led-version-gen)
+(read-eval-program esp-led-version-gen)
+
+(print (str-merge "esp_led " (to-str esp_led-version)))
+```
+
+Worth importing next to the defs: a consumer embeds the `.bin` files by path, so
+nothing else says which build it carries, and a stale copy misbehaves subtly
+rather than failing. Generated by `make defs` (and `libs`); not in git.
 
 ### What does not come across
 
@@ -148,11 +164,11 @@ QML page has to provide its own command handling.
 (ext-esp_led-seg-fx 0 5)        ; rainbow - see the effect ids above
 ```
 
-Segments can sit on different pins. Behind the LED driver the firmware drives every strip from a single RMT TX channel, re-routed to the target pin through the GPIO matrix on each update, so any number of pins works - the strips latch and hold their last frame between updates. The cost is that transmissions serialise: a frame's wire time is the sum over every pin group that changed (roughly 30 us per pixel), which is what a high `ext-esp_led-fps` runs into first on multi-pin setups. The firmware tracks at most 8 distinct pins at once, shared with anything else using `rgbled-init`; `ext-esp_led-init` fails with an error if a pin cannot be claimed. The default timing is the firmware's universal preset, which covers WS2812B / WS2815 / SK6812 / SK6815; a strip-specific preset can be picked per pin with the `timing` argument of `ext-esp_led-seg-def`.
+Segments can sit on different pins: the firmware drives every strip from a single RMT TX channel, re-routed to the target pin on each update, so any number of pins works - the strips latch and hold their last frame between updates. The cost is that transmissions serialise, so a frame's wire time is the sum over every pin group that changed (roughly 30 us per pixel), which is what a high `ext-esp_led-fps` runs into first. At most 8 distinct pins are tracked at once, shared with anything else using `rgbled-init`; `ext-esp_led-init` errors if a pin cannot be claimed. The default timing preset covers WS2812B / WS2815 / SK6812 / SK6815; pick a specific one per pin with the `timing` argument of `ext-esp_led-seg-def`.
 
 Frames are only transmitted when they differ from what the strip already shows (WLED-style dirty tracking), so static content keeps the data line quiet - useful on setups prone to EMF pickup. A keepalive retransmit every ~2 s heals pixels corrupted by line noise.
 
-The render loop targets 30 fps and holds that cadence: it sleeps the frame time minus the work it just did, rather than a fixed interval on top of it. Animation, fade and keepalive timing all advance by measured elapsed time, so `ext-esp_led-fps` is purely a smoothness / CPU trade - retuning it does not change how fast anything runs. It also means a frame that lands late is caught up rather than dropped, which holds real-world speed at the cost of a small jump; catch-up is capped at 250 ms so a long stall resumes the animation instead of teleporting it.
+The render loop targets 30 fps and holds that cadence by sleeping the frame time minus the work it just did. Animation, fade and keepalive timing all advance by measured elapsed time, so `ext-esp_led-fps` is purely a smoothness / CPU trade - retuning it does not change how fast anything runs. A late frame is caught up rather than dropped, capped at 250 ms so a long stall resumes the animation instead of teleporting it.
 
 ## Quirks and limitations
 
@@ -160,7 +176,7 @@ The render loop targets 30 fps and holds that cadence: it sleeps the frame time 
 - Overlay pixels deliberately bypass master brightness and fading - they are meant for headlights that must not dim with the effects. Turning a segment off (`ext-esp_led-seg-on i 0`) blanks its overlay pixels too.
 - The effect phase is a 32-bit accumulator advanced by elapsed time; at maximum speed it wraps about once a week, causing a single one-frame jump in the animation.
 - A very high `ext-esp_led-fps` does not guarantee that rate: the loop paces itself against the work it actually did, so long chains (transmission runs at roughly 30 us per pixel) and busy setups simply settle at whatever they can sustain. Animation speed is unaffected either way.
-- `ext-esp_led-sync` lines animations up only at the moment it is called. Segments then keep their own phase, so any difference in speed makes them drift apart again, and the position-based effects (chase, comet, larson, wipe, theater, turn sweep) still look different on strips of different lengths because their period follows the LED count.
+- `ext-esp_led-sync` lines animations up only at the moment it is called. Segments then keep their own phase, so any difference in speed makes them drift apart again, and the position-based effects (chase, comet, larson, wipe, theater, turn sweep) still look different on strips of different lengths because their period follows the LED count. `ext-esp_led-seg-cycle` is the durable answer to both: a shared cycle time makes the period length-independent and keeps the segments in step on their own.
 - The C interface has no way to destroy a mutex, so each load/unload cycle of the lib leaks one FreeRTOS mutex (~80 bytes of kernel heap). This only matters if LispBM is restarted very many times without a reboot.
 - Segments on one pin must not overlap on the chain (validated at `ext-esp_led-init`), and must share the same color depth (3 vs 4 bytes per pixel) and timing preset.
 
@@ -169,6 +185,18 @@ The render loop targets 30 fps and holds that cadence: it sleeps the frame time 
 ```sh
 make
 ```
+
+The version lives in the `version` file (`MAJOR.MINOR.PATCH`) and nowhere else.
+Bump it there and the build stamps it into `esp_led_version.lisp`, into the
+Build Info the Makefile appends to `README-gen.md`, and into the About dialog.
+
+Four files here are generated and not in git - edit the source, not the output:
+`ui.qml` from **`ui.qml.in`**, `esp_led_defs.lisp` from `code.c`,
+`esp_led_version.lisp` from `version`, and `README-gen.md` from **this file**.
+That last one is why this README is plain GitHub-flavoured markdown while VESC
+Tool renders a dialect with neither GFM tables nor an escape for `_`:
+`gen_readme.py` translates between them, so write normal GFM here and see its
+docstring for what it fixes.
 
 Needs the `riscv32-esp-elf` and `xtensa-esp32s3-elf` toolchains, the `c_libs/RVfplib` submodule and `vesc_tool`.
 

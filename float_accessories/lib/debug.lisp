@@ -205,6 +205,7 @@
 (defun diag () {
     (print "--- fa diag ---")
     (trap (print (str-merge "ver " (to-str (get-version))
+        " esp_led " (to-str esp_led-version)
         " fw " (str-from-n fw-num "%.2f")
         " " (sysinfo 'hw-target)
         " cpu " (str-from-n (sysinfo 'cpu-freq) "%d")

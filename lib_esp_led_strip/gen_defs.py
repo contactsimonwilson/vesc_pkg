@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
 """Generate esp_led_defs.lisp from esp_led_strip/code.c.
 
-The C source is the single source of truth for the esp_led effect / palette /
-type / timing / turn-mode ids. This script mirrors them into lisp so consumers
-(float_accessories, the test UI, ...) cannot drift from the firmware-facing
-enums. Run `make defs` in this directory; the package build runs it too.
-
-Sources parsed from code.c:
-  - the FX_ / TYPE_ / TIMING_ / TURN_ enums (values follow C rules)
-  - the palettes[] table, one PAL_<NAME> per row (id = row position + 1, see
-    parse_palettes)
+code.c is the source of truth for the effect / palette / type / timing /
+turn-mode ids; this mirrors them into lisp so consumers cannot drift. Parses
+the FX_ / TYPE_ / TIMING_ / TURN_ enums and the palettes[] table (one
+PAL_<NAME> per row, id = position + 1, see parse_palettes). Run `make defs`.
 """
 
 import re

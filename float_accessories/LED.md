@@ -20,8 +20,8 @@ retype the numbers.
 | `lib/led.lisp` | The state machine: which strip shows which effect, at what colour and brightness, right now |
 
 The lisp side never touches pixels. It decides an *appearance* per segment
-(effect, palette, colour, speed, brightness) and pushes it with one
-`ext-esp_led-seg-look` call. The lib animates that appearance in its own
+(effect, palette, colour, speed *or* cycle time, brightness) and pushes it with
+one `ext-esp_led-seg-look` call. The lib animates that appearance in its own
 FreeRTOS thread, so effects keep running smoothly even when the lisp evaluator
 is busy with CAN, BMS or GNSS work.
 
@@ -175,11 +175,69 @@ list. `head` is the strip facing travel.
 | 6 | Strobe | white strobe | white strobe |
 | 7 | Rave | fast rainbow, neon palette | fast rainbow, neon palette |
 | 8 | Rave Directional | solid white | fast rainbow, neon palette |
-| 9 | Knight Rider | red larson scanner | red larson scanner |
+| 9 | Knight Rider | red larson scanner, 1.0 s/sweep | red larson scanner, 1.0 s/sweep |
 | 10 | Felony | alternating red/blue halves | alternating red/blue halves |
 | 11 | Trans Pride | slow rainbow sweep | slow rainbow sweep |
 
 Anything unrecognised falls back to White/Red.
+
+### Animation speed, and strips of different lengths
+
+An effect's rate is set one of two ways, and a segment uses whichever the
+appearance carries:
+
+- **Speed** (`spd`, the default) is *pixel velocity*. Effects that travel the
+  strip — chase, comet, larson, wipe — have a period proportional to the LED
+  count, so the dot moves at the same pixels per second on any strip and a long
+  strip simply takes longer to cross. Effects whose rate does not follow the LED
+  count (strobe, felony, breathe, rainbow, heartbeat, theater) are unaffected by
+  length and already match across strips on `spd` alone.
+- **Cycle time** (`cyc`, milliseconds) instead pins one full cycle of the effect
+  to a wall-clock time. Both strips finish a sweep at the same instant whatever
+  their lengths; the trade is that the longer strip's dot moves faster.
+
+This matters as soon as the front and rear differ — a 10-LED front and a 15-LED
+rear on `spd` run a larson sweep in 0.48 s and 0.74 s, which reads as the two
+bars beating against each other.
+
+### One animation per pattern
+
+Segments sharing a cycle time are treated by the lib as **one animation**: it
+holds them in step, and one that changes effect rejoins the others at their
+point in the cycle rather than restarting them. So the cycle time doubles as the
+identity of a pattern's set, and every strip showing that pattern joins the set
+whatever its length.
+
+`led.lisp` therefore names one constant per pattern, and every place that draws
+the pattern uses that constant — which is why the footpad and button rainbow
+share `CYC-RAINBOW` with LED mode 5, and why the brake light shares
+`CYC-STROBE-ALARM` with the status bar's pushback alarm. No two patterns share a
+number, so no two are accidentally pooled.
+
+| Constant | ms | Pattern | Was |
+|---|---|---|---|
+| `CYC-STROBE-ALARM` | 176 | brake light, pushback alarm | spd 24 |
+| `CYC-STROBE` | 211 | mode 6 white strobe | spd 20 |
+| `CYC-RAINBOW-RAVE` | 614 | modes 7 and 8 rave rainbow | spd 220 |
+| `CYC-FELONY` | 792 | mode 10 | spd 4 |
+| `CYC-LARSON` | 1000 | mode 9 Knight Rider | *new rate* |
+| `CYC-BREATHE` | 1056 | handtest, status "connecting" | spd 64 |
+| `CYC-RAINBOW` | 4224 | mode 5, footpad, button | spd 32 |
+| `CYC-RAINBOW-SLOW` | 16896 | mode 11 trans pride | spd 8 |
+
+Only larson is a new rate — it is the one that could not be expressed as a speed
+at all. The rest are the rates the old `spd` values already produced (`period *
+33 / spd`, within 0.1%), so nothing changed speed; what changed is that the
+strips now stay in step across a brake-light episode or a mode change instead of
+drifting apart the first time one strip was driven on its own.
+
+**The gauge is deliberately left on `spd`**: its renderer reads `spd` itself as
+the pulse-or-not flag, so moving it to a cycle time would silently stop the
+charging pulse. Its period does not follow the LED count anyway, so strips
+showing it are already in step.
+
+`(seg-want-cyc seg fx pal color cyc bri)` is the cycle-time counterpart of
+`seg-want-fx`; passing 0 for either hands the segment back to the other.
 
 ### Which mode is in force
 

@@ -28,6 +28,8 @@
 (read-eval-program humidity)
 (import "../lib_esp_led_strip/esp_led_defs.lisp" 'esp_led-defs)
 (read-eval-program esp_led-defs)
+(import "../lib_esp_led_strip/esp_led_version.lisp" 'esp_led-version-defs)
+(read-eval-program esp_led-version-defs)
 (import "lib/led-vars.lisp" 'led-vars)
 (read-eval-program led-vars)
 (import "lib/led.lisp" 'led)
@@ -71,7 +73,7 @@
     (var r-led (trap (load-native-lib (ix libs 1))))
     (if (eq (ix r-led 0) 'exit-error)
         (dbg-err (str-merge "esp_led load: " (to-str (ix r-led 1)))))
-    (dbg DBG-CORE "libs loaded")
+    (dbg DBG-CORE (str-merge "libs loaded, esp_led " (to-str esp_led-version)))
 })
 
 ; Boot timings: the time spent in each of the three phases of boot, and the total time

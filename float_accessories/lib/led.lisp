@@ -2,7 +2,8 @@
 ; no extension calls at all. Flat byte buffers rather than a tuple per segment -
 ; the compare runs on every segment every tick, and building a tuple would
 ; allocate at loop rate. Above @const-start deliberately: bufset cannot write a
-; buffer that lives in the constant heap. Stride 8: fx, pal, spd, bri, fx-val.
+; buffer that lives in the constant heap. Stride 8: fx, pal, spd, bri, fx-val,
+; then the cycle time as a u16 at +6, where the stride keeps it 2-byte aligned.
 (def seg-cache (bufcreate 64))
 ; Colours, u32 per segment, in their own buffer for the 4-byte slots.
 (def seg-cache-col (bufcreate 32))
@@ -326,7 +327,7 @@
 ; many rules as you like - the last one wins, which is how precedence is
 ; expressed now.
 
-(defun seg-want (seg fx pal color spd bri val) {
+(defun seg-want (seg fx pal color spd bri val cyc) {
     (if (>= seg 0) {
         (var o (* seg 8))
         (bufset-u8 seg-want-look o fx)
@@ -334,6 +335,7 @@
         (bufset-u8 seg-want-look (+ o 2) spd)
         (bufset-u8 seg-want-look (+ o 3) bri)
         (bufset-u8 seg-want-look (+ o 4) val)
+        (bufset-u16 seg-want-look (+ o 6) cyc)
         (bufset-u32 seg-want-col (* seg 4) color)
         (bufset-u8 seg-want-set seg 1)
     })
@@ -341,17 +343,29 @@
 
 ; Effects that ignore fx-val still have to pin it to something, or a value left
 ; over from a gauge would follow them into the cache compare. 0 for all of them.
+; Same for the cycle time: 0 hands the segment back to spd, which is what
+; everything that is not being matched against another strip wants.
 (defun seg-want-fx (seg fx pal color spd bri)
-    (seg-want seg fx pal color spd bri 0))
+    (seg-want seg fx pal color spd bri 0 0))
 
-(defun seg-want-off (seg) (seg-want seg FX-OFF 0 0 32 0 0))
+; The cycle time in ms replaces spd: one full cycle of the effect takes cyc
+; whatever the strip's length, instead of spd's fixed pixel velocity. That is
+; what puts strips of different lengths in step - a 10 LED front and a 15 LED
+; rear start and finish a sweep together instead of beating against each other -
+; and it is also the readable way to ask for "a sweep a second". Only the
+; effects whose period follows the LED count need it (chase, comet, larson,
+; wipe); the rest are already in step on spd alone.
+(defun seg-want-cyc (seg fx pal color cyc bri)
+    (seg-want seg fx pal color 0 bri 0 cyc))
+
+(defun seg-want-off (seg) (seg-want seg FX-OFF 0 0 32 0 0 0))
 
 ; A fill bar. `color` 0 selects the lib's battery gradient (red when nearly
 ; empty, green when full); any other colour fills flat in that colour, and
 ; FX-GAUGE ignores the palette once a colour is set. The palette is 0 either way
 ; so one left over from another mode cannot recolor the bar.
 (defun seg-want-bar (seg color level spd bri)
-    (seg-want seg FX-GAUGE 0 color spd bri level))
+    (seg-want seg FX-GAUGE 0 color spd bri level 0))
 
 (defun seg-want-gauge (seg level spd bri) (seg-want-bar seg 0 level spd bri))
 
@@ -370,22 +384,28 @@
             (var spd (bufget-u8 seg-want-look (+ o 2)))
             (var bri (bufget-u8 seg-want-look (+ o 3)))
             (var val (bufget-u8 seg-want-look (+ o 4)))
+            (var cyc (bufget-u16 seg-want-look (+ o 6)))
             (var color (bufget-u32 seg-want-col (* s 4)))
             (if (or (!= (bufget-u8 seg-cache o) fx)
                     (!= (bufget-u8 seg-cache (+ o 1)) pal)
                     (!= (bufget-u8 seg-cache (+ o 2)) spd)
                     (!= (bufget-u8 seg-cache (+ o 3)) bri)
                     (!= (bufget-u8 seg-cache (+ o 4)) val)
+                    (!= (bufget-u16 seg-cache (+ o 6)) cyc)
                     (!= (bufget-u32 seg-cache-col (* s 4)) color)) {
                 ; One call, not five: seg-look sets the whole appearance under a
-                ; single lock acquisition in the lib.
-                (ext-esp_led-seg-look s fx pal color spd bri)
+                ; single lock acquisition in the lib. The cycle time rides along
+                ; as the 7th argument because the lib applies it before deciding
+                ; how to restart the effect - pushed as its own call it would
+                ; land one call too late to line this segment up with the others.
+                (ext-esp_led-seg-look s fx pal color spd bri cyc)
                 (ext-esp_led-seg-fx-val s val)
                 (bufset-u8 seg-cache o fx)
                 (bufset-u8 seg-cache (+ o 1) pal)
                 (bufset-u8 seg-cache (+ o 2) spd)
                 (bufset-u8 seg-cache (+ o 3) bri)
                 (bufset-u8 seg-cache (+ o 4) val)
+                (bufset-u16 seg-cache (+ o 6) cyc)
                 (bufset-u32 seg-cache-col (* s 4) color)
             })
         })
@@ -407,13 +427,46 @@
     (or bms-charger-just-plugged (and (= led-show-battery-charging 1) bms-is-charging (not (running-state))))
 )
 
-; Head/tail pattern per LED mode. head-seg faces the direction of travel.
+; Animation cycle times in ms, one per pattern drawn on more than one strip.
 ;
-; Effect speeds: the lib advances phase by spd * elapsed_ms / 33, and each effect
-; divides it by its own cycle length, so Hz = spd * 30.3 / cycle - strobe 128
-; units, felony 96, larson 32 * (leds - 1). At the 60 fps this package sets, a
-; cycle spans 2 * cycle / spd frames and two is Nyquist: strobe at spd 128 was
-; 30 Hz on 2 frames, felony at 128 was undersampled. Keep 6+ frames per cycle.
+; The lib offers two ways to pace an effect. spd is pixel velocity: phase gains
+; spd units per 33 ms and each effect divides that by its own period, so Hz =
+; spd * 30.3 / period (strobe 128 units, felony 96, breathe 2048, rainbow 4096,
+; larson 32 * (leds - 1)). A cycle time instead pins one period to a wall-clock
+; time, which is what the constants below are.
+;
+; Two reasons the patterns here use them. Larson could not be expressed as a
+; speed at all - its period follows the LED count, so at one spd a 10 LED front
+; turned around while a 15 LED rear was still two thirds of the way out, and the
+; two beat against each other. And the lib treats segments sharing a cycle time
+; as one animation: it holds them in step and lets one that was pulled away
+; rejoin the rest, which is what survives the brake light claiming the rear on
+; its own. So the value doubles as the identity of the pattern's set, and every
+; strip showing a pattern joins that set whatever its length - which is why each
+; pattern gets its own number and no two share one. Where the same pattern is
+; drawn from several places (rave rainbow on front and rear, plain rainbow on
+; front, rear, footpad and button) they all name the same constant on purpose.
+;
+; Only larson is a new rate. The rest are the rates the old spd values already
+; produced - period * 33 / spd, within 0.1% - so nothing changes speed. At the
+; 60 fps this package sets, a cycle spans cycle_ms / 16.7 frames and two is
+; Nyquist: strobe once ran at 30 Hz on 2 frames and felony was undersampled, so
+; keep 6+ frames (100 ms) per cycle.
+;
+; The gauge is deliberately absent: its renderer reads spd itself as the
+; pulse-or-not flag, so moving it to a cycle time would silently stop the
+; charging pulse. Its period does not follow the LED count anyway, so strips
+; showing it are already in step.
+(def CYC-STROBE-ALARM  176) ; was spd 24 - 5.7 Hz, brake light and pushback
+(def CYC-STROBE        211) ; was spd 20 - 4.7 Hz
+(def CYC-RAINBOW-RAVE  614) ; was spd 220
+(def CYC-FELONY        792) ; was spd 4 - 1.3 Hz red/blue alternation
+(def CYC-LARSON       1000) ; chosen: 1.0 s per sweep on every strip
+(def CYC-BREATHE      1056) ; was spd 64
+(def CYC-RAINBOW      4224) ; was spd 32
+(def CYC-RAINBOW-SLOW 16896) ; was spd 8 - trans pride
+
+; Head/tail pattern per LED mode. head-seg faces the direction of travel.
 (defun apply-drive-mode (mode) {
     (cond
         ((= mode 0) { ; White / Red
@@ -436,40 +489,41 @@
             (seg-want-fx head-seg FX-SOLID 0 0x00FFFF00u32 32 head-bri)
             (seg-want-fx tail-seg FX-SOLID 0 0x0000FF00u32 32 tail-bri)
         })
-        ((= mode 5) { ; Rainbow
-            (seg-want-fx head-seg FX-RAINBOW PAL-RGBW 0 32 head-bri)
-            (seg-want-fx tail-seg FX-RAINBOW PAL-RGBW 0 32 tail-bri)
+        ((= mode 5) { ; Rainbow - the same set as the footpad and button bars,
+                      ; which draw this pattern too
+            (seg-want-cyc head-seg FX-RAINBOW PAL-RGBW 0 CYC-RAINBOW head-bri)
+            (seg-want-cyc tail-seg FX-RAINBOW PAL-RGBW 0 CYC-RAINBOW tail-bri)
         })
-        ((= mode 6) { ; Strobe - 20 = 4.7 Hz, ~6 frames per flash cycle
-            (seg-want-fx head-seg FX-STROBE 0 0xFFFFFFFFu32 20 head-bri)
-            (seg-want-fx tail-seg FX-STROBE 0 0xFFFFFFFFu32 20 tail-bri)
+        ((= mode 6) { ; Strobe - 4.7 Hz, ~13 frames per flash cycle
+            (seg-want-cyc head-seg FX-STROBE 0 0xFFFFFFFFu32 CYC-STROBE head-bri)
+            (seg-want-cyc tail-seg FX-STROBE 0 0xFFFFFFFFu32 CYC-STROBE tail-bri)
         })
         ((= mode 7) { ; Rave
-            (seg-want-fx head-seg FX-RAINBOW PAL-NEON 0 220 head-bri)
-            (seg-want-fx tail-seg FX-RAINBOW PAL-NEON 0 220 tail-bri)
+            (seg-want-cyc head-seg FX-RAINBOW PAL-NEON 0 CYC-RAINBOW-RAVE head-bri)
+            (seg-want-cyc tail-seg FX-RAINBOW PAL-NEON 0 CYC-RAINBOW-RAVE tail-bri)
         })
-        ((= mode 8) { ; Rave directional
+        ((= mode 8) { ; Rave directional - the tail shares mode 7's rave set, so
+                      ; switching between the two modes does not restart it
             (seg-want-fx head-seg FX-SOLID 0 0xFFFFFFFFu32 32 head-bri)
-            (seg-want-fx tail-seg FX-RAINBOW PAL-NEON 0 220 tail-bri)
+            (seg-want-cyc tail-seg FX-RAINBOW PAL-NEON 0 CYC-RAINBOW-RAVE tail-bri)
         })
-        ((= mode 9) { ; Knight Rider - 20 is ~1.0 s per sweep on a 20 LED strip.
-                      ; Scales with strip length by design (the lib holds pixel
-                      ; velocity, not crossing time), so a longer strip sweeps
-                      ; proportionally slower at the same spd.
-            (seg-want-fx head-seg FX-LARSON 0 0x00FF0000u32 20 head-bri)
-            (seg-want-fx tail-seg FX-LARSON 0 0x00FF0000u32 20 tail-bri)
+        ((= mode 9) { ; Knight Rider - the sweep every strip takes 1.0 s over,
+                      ; whatever its length. The trade is pixel velocity: the
+                      ; longer strip's eye moves faster.
+            (seg-want-cyc head-seg FX-LARSON 0 0x00FF0000u32 CYC-LARSON head-bri)
+            (seg-want-cyc tail-seg FX-LARSON 0 0x00FF0000u32 CYC-LARSON tail-bri)
         })
-        ((= mode 10) { ; Felony - 4 = 1.3 Hz red/blue alternation, ~48 frames.
-                       ; Integer spd gets coarse this low: the next steps down
-                       ; are 3 = 0.95 Hz and 2 = 0.63 Hz, and 0 is not an option
-                       ; (the lib reads 0 as "unset" and substitutes its default
-                       ; of 32, which would jump it back to 10 Hz).
-            (seg-want-fx head-seg FX-FELONY 0 0 4 head-bri)
-            (seg-want-fx tail-seg FX-FELONY 0 0 4 tail-bri)
+        ((= mode 10) { ; Felony - 1.3 Hz red/blue alternation, ~48 frames. As a
+                       ; speed this was spd 4 and getting coarse: the next steps
+                       ; down were 0.95 and 0.63 Hz, with 0 not an option (the
+                       ; lib reads 0 as "unset"). A cycle time has none of that
+                       ; problem, being ms rather than a 1..255 divisor.
+            (seg-want-cyc head-seg FX-FELONY 0 0 CYC-FELONY head-bri)
+            (seg-want-cyc tail-seg FX-FELONY 0 0 CYC-FELONY tail-bri)
         })
         ((= mode 11) { ; Trans pride (slow rainbow sweep)
-            (seg-want-fx head-seg FX-RAINBOW PAL-RGBW 0 8 head-bri)
-            (seg-want-fx tail-seg FX-RAINBOW PAL-RGBW 0 8 tail-bri)
+            (seg-want-cyc head-seg FX-RAINBOW PAL-RGBW 0 CYC-RAINBOW-SLOW head-bri)
+            (seg-want-cyc tail-seg FX-RAINBOW PAL-RGBW 0 CYC-RAINBOW-SLOW tail-bri)
         })
         (t { ; unknown mode: same as White / Red
             (seg-want-fx head-seg FX-SOLID 0 0xFFFFFFFFu32 32 head-bri)
@@ -488,7 +542,8 @@
         (cond
             ((= switch-state 3) TURN-HAZARD-SOLID)
             ((= switch-state 1) (if swap TURN-RIGHT-SOLID TURN-LEFT-SOLID))
-            (t (if swap TURN-LEFT-SOLID TURN-RIGHT-SOLID))))
+            (t (if swap TURN-LEFT-SOLID TURN-RIGHT-SOLID)))
+        0)
 })
 
 ; True once a pad has been off long enough to be worth showing. A weight shift
@@ -504,11 +559,12 @@
 (defun status-riding (bri) {
     (cond
         ; Pushback/tiltback is actually pulling back - the most urgent thing the
-        ; bar can say. 24 = 5.7 Hz on ~11 frames; it was 200 = 47 Hz on 1.3
-        ; frames, undersampled into an erratic shimmer, so the one branch that
-        ; has to read as an alarm did not.
+        ; bar can say. 5.7 Hz on ~11 frames; it once ran at 47 Hz on 1.3 frames,
+        ; undersampled into an erratic shimmer, so the one branch that has to
+        ; read as an alarm did not. Same set as the brake light: braking under
+        ; pushback then flashes the bar and the rear strip together.
         ((> sat-t 2)
-            (seg-want-fx seg-status FX-STROBE 0 0x00FF0000u32 24 bri))
+            (seg-want-cyc seg-status FX-STROBE 0 0x00FF0000u32 CYC-STROBE-ALARM bri))
 
                 ; Footpad off while riding. Was unreachable: the duty bar owned
                 ; everything above 250 erpm, and the fault states (8, 9) only
@@ -553,7 +609,7 @@
             (seg-want-fx seg-status FX-SOLID 0 0x00FF0000u32 32 status-bri))
 
         ((or (>= can-activity-sec 1) (< can-id 0)) ; connecting
-            (seg-want-fx seg-status FX-BREATHE 0 0x000000FFu32 64 status-bri))
+            (seg-want-cyc seg-status FX-BREATHE 0 0x000000FFu32 CYC-BREATHE status-bri))
 
 
         ((and (running-state)
@@ -573,12 +629,14 @@
 (defun update-aux-leds (bri) {
     (if (>= seg-footpad 0) {
         ; Rainbow is the only mode led-mode-footpad offers, so no branch yet.
-        (seg-want-fx seg-footpad FX-RAINBOW PAL-RGBW 0 32 bri)
+        ; Same set as LED mode 5, so a footpad bar and the drive strips run one
+        ; rainbow between them rather than three that happen to look alike.
+        (seg-want-cyc seg-footpad FX-RAINBOW PAL-RGBW 0 CYC-RAINBOW bri)
     })
     (if (>= seg-button 0) {
         (if (= led-mode-button 1)
             (seg-want-gauge seg-button (to-i (* 255.0 battery-percent-remaining)) (if bms-is-charging 32 0) bri)
-            (seg-want-fx seg-button FX-RAINBOW PAL-RGBW 0 32 bri)
+            (seg-want-cyc seg-button FX-RAINBOW PAL-RGBW 0 CYC-RAINBOW bri)
         )
     })
 })
@@ -844,8 +902,8 @@
             (seg-want-fx tail-seg FX-SOLID 0 0x00FF0000u32 32 tail-bri)
         })
         (handtest-mode {
-            (seg-want-fx head-seg FX-BREATHE 0 0x000000FFu32 64 head-bri)
-            (seg-want-fx tail-seg FX-BREATHE 0 0x000000FFu32 64 tail-bri)
+            (seg-want-cyc head-seg FX-BREATHE 0 0x000000FFu32 CYC-BREATHE head-bri)
+            (seg-want-cyc tail-seg FX-BREATHE 0 0x000000FFu32 CYC-BREATHE tail-bri)
         })
         (lights-off {
             (seg-want-off head-seg)
@@ -863,10 +921,11 @@
     )
 
     ; Brake light. After the cond, so its tail intent replaces the base
-    ; appearance - no sentinel, no second write. 24 = 5.7 Hz; 200 was past
-    ; Nyquist and shimmered instead of flashing.
+    ; appearance - no sentinel, no second write. 5.7 Hz; it once ran at 47 Hz,
+    ; past Nyquist, and shimmered instead of flashing. Shares the alarm set with
+    ; the status bar's pushback strobe, which is the same pattern.
     (if braking
-        (seg-want-fx tail-seg FX-STROBE 0 0x00FF0000u32 24 tail-bri))
+        (seg-want-cyc tail-seg FX-STROBE 0 0x00FF0000u32 CYC-STROBE-ALARM tail-bri))
 })
 
 (defun led-draw-aux () {

@@ -2,6 +2,8 @@
 (import "esp_led_strip/esp_led_strip_esp32c6.bin" 'lib-esp32c6)
 (import "esp_led_strip/esp_led_strip_esp32s3.bin" 'lib-esp32s3)
 (import "esp_led_strip/esp_led_strip_esp32p4.bin" 'lib-esp32p4)
+(import "esp_led_version.lisp" 'esp_led-version-gen)
+(read-eval-program esp_led-version-gen)
 
 ; Native libs only run on the chip they were built for. Requires firmware
 ; with support for (sysinfo 'hw-target).
@@ -17,7 +19,11 @@
 
 (if (eq lib nil)
     (print (str-merge "esp_led_strip: no native lib for target " target))
-    (load-native-lib lib)
+    {
+        (load-native-lib lib)
+        (print (str-merge "esp_led_strip " (to-str esp_led-version)
+            " on " target))
+    }
 )
 
 ; The test UI sends lisp expressions as custom app data - evaluate them.
@@ -28,8 +34,7 @@
                 (if (and (> (buflen data) 0) (= (bufget-u8 data 0) 40))
                     {
                         ; trap keeps a bad command from killing the handler;
-                        ; log the error and the offending command so failures
-                        ; are visible in the VESC Tool lisp console.
+                        ; log it so failures show in the lisp console.
                         (var res (trap (eval (read data))))
                         (if (eq (car res) 'exit-error)
                             (print (list "esp_led eval error" (ix res 1) data)))
