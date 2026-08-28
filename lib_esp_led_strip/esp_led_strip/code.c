@@ -91,9 +91,9 @@ enum {
 	FX_TURN,      // turn signal - the fx_val param selects the mode (see below)
 };
 
-// Turn-signal mode in seg.fx_val for FX_TURN. The strip splits in half; a mode
-// picks a side and a style. Laid out so (mode-1)/3 is the side and (mode-1)%3
-// the style: 0 solid, 1 blink, 2 sweep centre -> edge.
+// Turn-signal mode in seg.fx_val for FX_TURN. The strip splits at its centre;
+// a mode picks a side and a style. Laid out so (mode-1)/3 is the side and
+// (mode-1)%3 the style: 0 solid, 1 blink, 2 sweep centre -> edge.
 enum {
 	TURN_OFF = 0,
 	TURN_LEFT_SOLID,   TURN_LEFT_BLINK,   TURN_LEFT_SWEEP,
@@ -485,8 +485,8 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 	} break;
 
 	case FX_TURN: {
-		// seg.fx_val selects side + style (TURN_* enum), split at the midpoint.
-		// Amber when no segment colour is set; blank if off or the mode is bad.
+		// seg.fx_val selects side + style (TURN_* enum). Amber when no segment
+		// colour is set; blank if off or the mode is bad.
 		for (int i = 0; i < n; i++) work[i] = 0;
 		int mode = s->fx_val;
 		if (mode < TURN_LEFT_SOLID || mode > TURN_HAZARD_SWEEP) {
@@ -498,30 +498,30 @@ static void fx_render(const seg_t *s, uint32_t *work) {
 		bool do_left  = (side == 0 || side == 2);
 		bool do_right = (side == 1 || side == 2);
 		uint32_t c = s->color_cur ? s->color_cur : 0xFF6400; // amber default
-		int half = n / 2;
+
+		// Pixels per side: left is [0, half), right is [n - half, n). On an odd
+		// strip that makes the centre pixel part of BOTH sides, which is what
+		// keeps the effect symmetric - splitting it away instead leaves one side
+		// a pixel longer, so the two sweeps run at different periods and drift,
+		// and fx_period can only describe one of them. Even strips split in two
+		// exactly as before.
+		int half = (n + 1) / 2;
 
 		if (style == 0) {          // solid
 			if (do_left)  for (int i = 0; i < half; i++) work[i] = c;
-			if (do_right) for (int i = half; i < n; i++) work[i] = c;
+			if (do_right) for (int i = n - half; i < n; i++) work[i] = c;
 		} else if (style == 1) {   // blink
 			if ((ph / 256) & 1) {
 				if (do_left)  for (int i = 0; i < half; i++) work[i] = c;
-				if (do_right) for (int i = half; i < n; i++) work[i] = c;
+				if (do_right) for (int i = n - half; i < n; i++) work[i] = c;
 			}
 		} else {                   // sweep, centre -> edge, with a blank gap
-			if (do_left && half > 0) {
-				int period = half + (half / 2 > 3 ? half / 2 : 3);
-				int prog = (int)((ph / 32) % (uint32_t)period);
-				int lit = prog < half ? prog + 1 : 0;
-				for (int j = 0; j < lit; j++) work[(half - 1) - j] = c; // centre outward
-			}
-			int hr = n - half;
-			if (do_right && hr > 0) {
-				int period = hr + (hr / 2 > 3 ? hr / 2 : 3);
-				int prog = (int)((ph / 32) % (uint32_t)period);
-				int lit = prog < hr ? prog + 1 : 0;
-				for (int j = 0; j < lit; j++) work[half + j] = c; // centre outward
-			}
+			// One period for both sides, so hazard stays in step.
+			int period = half + (half / 2 > 3 ? half / 2 : 3);
+			int prog = (int)((ph / 32) % (uint32_t)period);
+			int lit = prog < half ? prog + 1 : 0;
+			if (do_left)  for (int j = 0; j < lit; j++) work[(half - 1) - j] = c;
+			if (do_right) for (int j = 0; j < lit; j++) work[(n - half) + j] = c;
 		}
 	} break;
 
@@ -570,10 +570,8 @@ static uint32_t fx_period(const seg_t *s) {
 			return 512u;                        // blink
 		}
 		if (style == 2) {                       // sweep, centre -> edge
-			int h = (int)n / 2;
-			if (h < 1) {
-				h = 1;
-			}
+			// Both sides are this long (see FX_TURN), and n >= 1, so h >= 1.
+			int h = ((int)n + 1) / 2;
 			return 32u * (uint32_t)(h + (h / 2 > 3 ? h / 2 : 3));
 		}
 		return 4096u;                           // solid: nothing animates
